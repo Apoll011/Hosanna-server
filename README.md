@@ -1,7 +1,8 @@
 # HOssana-server
 
-Production-ready rewrite of the ChoPro song/service sync server. Same API
-contract as the original (`/api/sync`, `/api/save_song`, `/api/delete_song`),
+Production-ready rewrite of the ChoPro song/service sync server. Now supports
+full ChordPro library management for desktop dashboards.
+Same API contract as the original (`/api/sync`, `/api/save_song`, `/api/delete_song`),
 rebuilt with the hardening, reliability, and operational features a real
 deployment needs.
 
@@ -48,6 +49,16 @@ deployment needs.
     (`express.static` + SPA fallback) instead of always running a Vite dev
     server; Vite is only loaded (optionally) in development.
 
+## What's New: Dashboard Support
+
+The server now includes a set of endpoints designed to support a desktop dashboard for full ChordPro library management:
+
+- **Folder Management**: Create and delete directories within the songs library.
+- **File/Folder Renaming**: Move or rename files and folders with safety checks.
+- **Improved Listing**: Dedicated `/api/songs` endpoint for lightweight library browsing.
+
+All features maintain full backwards compatibility with existing clients.
+
 ## API
 
 All endpoints are prefixed with `/api` and (except `/health`) require:
@@ -62,7 +73,15 @@ Authorization: Bearer <SYNC_API_TOKEN>
 | POST   | `/api/sync`           | Returns all song files plus the merged service list. Body: `{ services?: [{ id, ...fields }] }`. Services are upserted by `id`. |
 | POST   | `/api/save_song`      | Body: `{ path, content }`. Writes/overwrites a song file.  |
 | DELETE | `/api/delete_song`    | Body: `{ path }`. Idempotent.                              |
-| GET    | `/api/songs`          | *(new)* Lists song files without touching services.        |
+| GET    | `/api/songs`          | Lists song files without touching services.                |
+| POST   | `/api/create_folder`   | Body: `{ path }`. Creates a directory (recursive).         |
+| DELETE | `/api/delete_folder`   | Body: `{ path }`. Deletes a directory and its contents.    |
+| POST   | `/api/rename`          | Body: `{ oldPath, newPath }`. Renames or moves a file/folder. |
+| GET    | `/api/tree`            | Returns the complete folder tree of the library.        |
+| GET    | `/api/search`          | Query params: `query`, `folder`, `tags`, `artist`, `title`. Fast search. |
+| POST   | `/api/upload`          | Body: `multipart/form-data` with `files` and optional `folder`. |
+| GET    | `/api/download`        | Query params: `path`. Returns original ChordPro file.    |
+| POST   | `/api/create_empty`    | Body: `{ path, title? }`. Creates an empty song.         |
 
 Error responses:
 

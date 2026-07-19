@@ -40,6 +40,24 @@ export interface SongFile {
   path: string;
   content: string;
   updatedAt: number;
+  metadata?: SongMetadata;
+}
+
+export interface SongMetadata {
+  title?: string;
+  artist?: string;
+  key?: string;
+  capo?: string;
+  album?: string;
+  tags?: string[];
+  [key: string]: string | string[] | undefined;
+}
+
+export interface LibraryNode {
+  name: string;
+  path: string;
+  type: "folder" | "song";
+  children?: LibraryNode[];
 }
 
 export interface ServiceRecord {
