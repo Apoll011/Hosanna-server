@@ -1,63 +1,4 @@
-# HOssana-server
-
-Production-ready rewrite of the ChoPro song/service sync server. Now supports
-full ChordPro library management for desktop dashboards.
-Same API contract as the original (`/api/sync`, `/api/save_song`, `/api/delete_song`),
-rebuilt with the hardening, reliability, and operational features a real
-deployment needs.
-
-## What changed vs. the original
-
-- **Security**
-  - Path-traversal protection now *rejects* unsafe paths (`safeResolve`)
-    instead of silently rewriting them.
-  - Bearer token comparison uses `crypto.timingSafeEqual` to avoid timing
-    side-channels.
-  - The server **refuses to start in production** without an explicit
-    `SYNC_API_TOKEN` (no silent fallback to a default/dev token).
-  - `helmet` security headers, configurable CORS allow-list (no more
-    wildcard-by-default in production), and per-route rate limiting.
-  - Request body size and per-song size limits are enforced and configurable.
-  - File writes are extension-allow-listed (`.chopro`, `.cho`, `.pro`).
-- **Reliability**
-  - Atomic writes: content is written to a temp file and `rename`d into
-    place, so a crash mid-write can never leave a corrupt/partial file.
-  - `services.json` reads/writes are serialized with a mutex, eliminating
-    the read-modify-write race in the original (two concurrent syncs could
-    silently drop each other's updates).
-  - Deletes are idempotent (deleting a non-existent song still returns
-    success, matching client expectations).
-  - Symlinks inside the songs directory are not followed when listing files.
-  - A single unreadable file no longer fails the entire sync; it's skipped
-    and logged.
-- **Operability**
-  - Structured JSON logs (`pino`) with per-request IDs, pretty-printed in
-    development.
-  - `GET /api/health` for load balancers / container orchestrators.
-  - Graceful shutdown on `SIGTERM`/`SIGINT` with a force-exit timeout.
-  - All configuration is validated at startup with `zod`; the process exits
-    immediately with a clear error instead of failing weirdly at runtime.
-  - Dockerfile (multi-stage, non-root user, healthcheck) and Compose file.
-- **Correctness / DX**
-  - Request bodies are validated with `zod` schemas (clear 400s instead of
-    `undefined` crashes).
-  - Centralized error handling — every error path returns a consistent
-    `{ error, code, details, requestId }` shape.
-  - Full TypeScript strictness (`strict`, `noUnusedLocals`, etc.), ESM
-    throughout.
-  - Static frontend hosting is now a proper production code path
-    (`express.static` + SPA fallback) instead of always running a Vite dev
-    server; Vite is only loaded (optionally) in development.
-
-## What's New: Dashboard Support
-
-The server now includes a set of endpoints designed to support a desktop dashboard for full ChordPro library management:
-
-- **Folder Management**: Create and delete directories within the songs library.
-- **File/Folder Renaming**: Move or rename files and folders with safety checks.
-- **Improved Listing**: Dedicated `/api/songs` endpoint for lightweight library browsing.
-
-All features maintain full backwards compatibility with existing clients.
+# Hossana-server
 
 ## API
 
@@ -124,19 +65,24 @@ See `.env.example` for the full list. Key variables:
 | `CORS_ORIGINS` | `*` | Comma-separated allow-list; set explicitly in production. |
 | `MAX_SONG_SIZE_BYTES` | `2097152` (2 MB) | Per-song content size cap. |
 | `RATE_LIMIT_MAX_REQUESTS` / `RATE_LIMIT_WINDOW_MS` | `120` / `60000` | Per-IP limit on `/api/*`. |
+| `HTTPS_ENABLED` | `false` | Enable HTTPS support. |
+| `SSL_KEY_FILE` / `SSL_CRT_FILE` | *(optional)* | Paths to SSL key and certificate files (required if `HTTPS_ENABLED` is `true`). |
 | `SERVE_STATIC` / `STATIC_DIR` | `false` / `./client/dist` | Serve a built SPA alongside the API in production. |
 
-## Project layout
+### HTTPS and SSL
 
+To enable HTTPS, set `HTTPS_ENABLED=true` in your `.env` file and provide paths to your SSL certificate and key.
+
+For local development, you can generate self-signed certificates using the following command:
+
+```bash
+npm run generate-certs
 ```
-src/
-  config.ts        env validation
-  logger.ts         pino logger
-  types.ts           AppError + shared types
-  app.ts               express app assembly
-  server.ts           bootstrap + graceful shutdown
-  middleware/       auth, request id, error handling
-  routes/                health, sync, songs
-  services/             fileService (songs on disk), serviceStore (services.json)
-  utils/                  path safety helpers
+
+This will create `certs/server.key` and `certs/server.crt`. You can then configure them in your `.env`:
+
+```env
+HTTPS_ENABLED=true
+SSL_KEY_FILE=./certs/server.key
+SSL_CRT_FILE=./certs/server.crt
 ```

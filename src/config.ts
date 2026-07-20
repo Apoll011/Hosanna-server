@@ -30,6 +30,10 @@ const envSchema = z.object({
   SERVE_STATIC: boolFromString,
   STATIC_DIR: z.string().default("./client/dist"),
 
+  HTTPS_ENABLED: boolFromString,
+  SSL_KEY_FILE: z.string().optional(),
+  SSL_CRT_FILE: z.string().optional(),
+
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .default("info"),
@@ -89,6 +93,10 @@ export const config = {
 
   serveStatic: env.SERVE_STATIC,
   staticDir: path.resolve(process.cwd(), env.STATIC_DIR),
+
+  httpsEnabled: env.HTTPS_ENABLED,
+  sslKeyFile: env.SSL_KEY_FILE ? path.resolve(process.cwd(), env.SSL_KEY_FILE) : undefined,
+  sslCrtFile: env.SSL_CRT_FILE ? path.resolve(process.cwd(), env.SSL_CRT_FILE) : undefined,
 
   logLevel: env.LOG_LEVEL,
 } as const;

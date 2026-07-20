@@ -18,7 +18,6 @@ COPY package.json package-lock.json* ./
 RUN npm install --omit=dev --omit=optional && npm cache clean --force
 
 COPY --from=build /app/dist ./dist
-
 RUN addgroup -S appuser && adduser -S appuser -G appuser \
     && mkdir -p /app/data/songs \
     && chown -R appuser:appuser /app

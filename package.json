@@ -13,6 +13,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
+    "generate-certs": "bash scripts/generate-certs.sh",
     "test": "vitest run"
   },
   "dependencies": {

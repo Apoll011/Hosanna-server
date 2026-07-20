@@ -1,4 +1,6 @@
-import { createServer } from "node:http";
+import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
+import { readFileSync } from "node:fs";
 import { config } from "./config.js";
 import { logger } from "./logger.js";
 import { initDataDirs } from "./services/fileService.js";
@@ -11,12 +13,32 @@ async function main(): Promise<void> {
   await attachStaticFrontend(app);
   attachErrorHandlers(app);
 
-  const server = createServer(app);
+  let server;
+  if (config.httpsEnabled) {
+    if (!config.sslKeyFile || !config.sslCrtFile) {
+      logger.fatal("HTTPS is enabled but SSL_KEY_FILE or SSL_CRT_FILE is not set");
+      process.exit(1);
+    }
 
+    try {
+      const options = {
+        key: readFileSync(config.sslKeyFile),
+        cert: readFileSync(config.sslCrtFile),
+      };
+      server = createHttpsServer(options, app);
+    } catch (err) {
+      logger.fatal({ err }, "Failed to load SSL certificates");
+      process.exit(1);
+    }
+  } else {
+    server = createHttpServer(app);
+  }
+
+  const protocol = config.httpsEnabled ? "https" : "http";
   server.listen(config.port, config.host, () => {
     logger.info(
-      { port: config.port, host: config.host, env: config.nodeEnv },
-      `Server listening on http://${config.host}:${config.port}`
+      { port: config.port, host: config.host, env: config.nodeEnv, protocol },
+      `Server listening on ${protocol}://${config.host}:${config.port}`
     );
   });
 
