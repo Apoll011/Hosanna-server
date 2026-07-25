@@ -1,32 +1,28 @@
-# --- Build stage ---
-FROM node:20-alpine AS build
+# --- Build stage -------------------------------------------------------
+FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
+COPY prisma ./prisma
 RUN npm install
 
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-# --- Production stage ---
-FROM node:20-alpine AS production
+# --- Runtime stage -------------------------------------------------------
+FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
 COPY package.json package-lock.json* ./
-RUN npm install --omit=dev --omit=optional && npm cache clean --force
+COPY prisma ./prisma
+RUN npm install --omit=dev && npx prisma generate
 
-COPY --from=build /app/dist ./dist
-RUN addgroup -S appuser && adduser -S appuser -G appuser \
-    && mkdir -p /app/data/songs \
-    && chown -R appuser:appuser /app
+COPY --from=builder /app/dist ./dist
 
-USER appuser
-VOLUME ["/app/data"]
-EXPOSE 3001
+EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://localhost:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-
-CMD ["node", "dist/server.js"]
+# Applies pending migrations then boots the API. Safe to run on every
+# container start: `migrate deploy` is a no-op if the schema is current.
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
