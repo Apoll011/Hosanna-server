@@ -57,7 +57,7 @@ export const authenticateMusician = asyncHandler(async (req, _res, next) => {
       id: record.id,
       name: record.name,
       allowedServiceIds:
-        record.allowedServices.length > 0 ? record.allowedServices.map((s) => s.serviceId) : null,
+        record.allowedServices.length > 0 ? record.allowedServices.map((s: any) => s.serviceId) : null,
     },
   };
   next();

@@ -32,7 +32,7 @@ authRouter.get(
   '/me',
   authenticateAdmin,
   asyncHandler(async (req, res) => {
-    const result = await authService.me(req.actor!.type === 'admin' ? req.actor.admin.id : '');
+    const result = await authService.me(req.actor && req.actor.type === 'admin' ? req.actor.admin.id : '');
     res.json(result);
   }),
 );

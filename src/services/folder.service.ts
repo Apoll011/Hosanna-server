@@ -69,7 +69,7 @@ export const folderService = {
   async deleteMovingSongsToRoot(id: string) {
     await this.getById(id);
     const songs = await songRepository.findManyByFolder(id);
-    await Promise.all(songs.map((s) => songRepository.update(s.id, { folderId: null, path: `${s.title}.pro` })));
+    await Promise.all(songs.map((s) => songRepository.update(s.id, { folder: { disconnect: true }, path: `${s.title}.pro` })));
     await folderRepository.delete(id);
     return { movedSongs: songs.length };
   },
