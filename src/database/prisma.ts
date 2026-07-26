@@ -1,20 +1,13 @@
 import { PrismaClient } from '@prisma/client';
-import { env } from '../config/env';
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
 
-// Reuse a single PrismaClient instance (important with `tsx watch` / hot
-// reload in development, where re-creating the client on every reload would
-// exhaust Postgres connections).
-declare global {
-  // eslint-disable-next-line no-var
-  var __prisma: PrismaClient | undefined;
-}
+const pool = new Pool({
+  connectionString: process.env.HOSANA_DB_PRISMA_DATABASE_URL,
+});
 
-export const prisma =
-  global.__prisma ??
-  new PrismaClient({
-    log: env.nodeEnv === 'development' ? ['warn', 'error'] : ['error'],
-  });
+const adapter = new PrismaPg(pool);
 
-if (env.nodeEnv !== 'production') {
-  global.__prisma = prisma;
-}
+const prisma = new PrismaClient({
+  adapter,
+});
