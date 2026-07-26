@@ -29,7 +29,7 @@ songRouter.get(
 // POST /api/songs/batch — admin only. Registered before /:id routes.
 songRouter.post(
   '/batch',
-  authenticateAdmin,
+  authenticateAny,
   validate({ body: batchCreateSongsSchema }),
   asyncHandler(async (req, res) => {
     res.status(201).json(await songService.batchCreate(req.body.songs));
@@ -39,7 +39,7 @@ songRouter.post(
 // PUT /api/songs/batch-tags — admin only.
 songRouter.put(
   '/batch-tags',
-  authenticateAdmin,
+  authenticateAny,
   validate({ body: batchTagsSchema }),
   asyncHandler(async (req, res) => {
     res.json(await songService.batchUpdateTags(req.body.songIds, req.body.tags, req.body.mode));
@@ -70,10 +70,10 @@ songRouter.get(
   }),
 );
 
-// POST /api/songs — admin only
+// POST /api/songs — admin or musician.
 songRouter.post(
   '/',
-  authenticateAdmin,
+  authenticateAny,
   validate({ body: createSongSchema }),
   asyncHandler(async (req, res) => {
     res.status(201).json(await songService.create(req.body));
@@ -83,7 +83,7 @@ songRouter.post(
 // PUT /api/songs/:id — admin only, optimistic concurrency
 songRouter.put(
   '/:id',
-  authenticateAdmin,
+  authenticateAny,
   validate({ params: idParamSchema, body: updateSongSchema }),
   asyncHandler(async (req, res) => {
     const { updatedAt, ...patch } = req.body;
@@ -94,7 +94,7 @@ songRouter.put(
 // DELETE /api/songs/:id — admin only
 songRouter.delete(
   '/:id',
-  authenticateAdmin,
+  authenticateAny,
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
     await songService.delete(req.params.id);
@@ -105,7 +105,7 @@ songRouter.delete(
 // PUT /api/songs/:id/rename — admin only, optimistic concurrency
 songRouter.put(
   '/:id/rename',
-  authenticateAdmin,
+  authenticateAny,
   validate({ params: idParamSchema, body: renameSongSchema }),
   asyncHandler(async (req, res) => {
     const { updatedAt, newTitle, newPath } = req.body;
@@ -116,7 +116,7 @@ songRouter.put(
 // PUT /api/songs/:id/move — admin only, optimistic concurrency
 songRouter.put(
   '/:id/move',
-  authenticateAdmin,
+  authenticateAny,
   validate({ params: idParamSchema, body: moveSongSchema }),
   asyncHandler(async (req, res) => {
     const { updatedAt, folderId, newPath } = req.body;
