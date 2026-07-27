@@ -23,5 +23,5 @@ export const concurrencySchema = z.object({
 
 export const paginationQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(200).default(50),
+  limit: z.coerce.number().int().min(1).default(1000), //TODO: when on folder view on dashboard send all the songs, just the metadata
 });
