@@ -15,7 +15,9 @@ export const songRepository = {
   },
 
   createMany(data: Prisma.SongCreateManyInput[]) {
-    return prisma.$transaction(data.map((song) => prisma.song.create({ data: song as any })));
+    return prisma.song.createMany({
+      data,
+    });
   },
 
   update(id: string, data: Prisma.SongUpdateInput) {
