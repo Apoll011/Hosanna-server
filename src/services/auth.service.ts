@@ -42,7 +42,7 @@ export class AuthService {
     }
 
     if (!resolvedTenantId) {
-      throw AppError.badRequest('Must provide either tenantId or tenantSlug to register an admin.');
+      throw AppError.badRequest('Must provide either tenantId or tenantSlug to register.');
     }
 
     const tenant = await prisma.tenant.findUnique({ where: { id: resolvedTenantId } });
@@ -59,28 +59,32 @@ export class AuthService {
         passwordHash,
         name: input.name,
         role: 'admin',
+        isApproved: false, // Requires approval from an approved tenant admin before login
       },
     });
 
-    const payload: AdminJwtPayload = {
-      id: admin.id,
-      tenantId: admin.tenantId,
-      email: admin.email,
-      name: admin.name,
-      role: 'admin',
+    return {
+      message: 'Registration successful. Your account is pending approval by a tenant administrator.',
+      isApproved: false,
+      user: {
+        id: admin.id,
+        tenantId: admin.tenantId,
+        email: admin.email,
+        name: admin.name,
+        role: admin.role,
+        isApproved: false,
+      },
     };
-
-    const accessToken = signAccessToken(payload);
-    const refreshToken = signRefreshToken(admin.id);
-    await this.refreshTokenRepo.create(admin.id, hashRefreshToken(refreshToken), refreshExpiryDate());
-
-    return { user: payload, token: accessToken, accessToken, refreshToken };
   }
 
   async login(email: string, password: string) {
     const admin = await prisma.admin.findUnique({ where: { email } });
     if (!admin || !(await verifyPassword(password, admin.passwordHash))) {
       throw AppError.unauthorized('Invalid credentials.');
+    }
+
+    if (!admin.isApproved) {
+      throw new AppError(403, 'ACCOUNT_NOT_APPROVED', 'Your account is pending approval by a tenant administrator.');
     }
 
     const payload: AdminJwtPayload = {
@@ -114,6 +118,10 @@ export class AuthService {
     const admin = await prisma.admin.findUnique({ where: { id: decoded.id } });
     if (!admin) throw AppError.unauthorized('Account no longer exists.');
 
+    if (!admin.isApproved) {
+      throw new AppError(403, 'ACCOUNT_NOT_APPROVED', 'Your account is pending approval by a tenant administrator.');
+    }
+
     await this.refreshTokenRepo.revoke(stored.id);
     const newRefreshToken = signRefreshToken(admin.id);
     await this.refreshTokenRepo.create(admin.id, hashRefreshToken(newRefreshToken), refreshExpiryDate());
@@ -141,6 +149,9 @@ export class AuthService {
   async me(adminId: string) {
     const admin = await prisma.admin.findUnique({ where: { id: adminId } });
     if (!admin) throw AppError.notFound('ADMIN_NOT_FOUND', 'Administrator account not found.');
+    if (!admin.isApproved) {
+      throw new AppError(403, 'ACCOUNT_NOT_APPROVED', 'Your account is pending approval by a tenant administrator.');
+    }
     return {
       user: {
         id: admin.id,
@@ -148,6 +159,7 @@ export class AuthService {
         email: admin.email,
         name: admin.name,
         role: 'admin' as const,
+        isApproved: admin.isApproved,
       },
     };
   }

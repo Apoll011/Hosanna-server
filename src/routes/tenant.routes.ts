@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { TenantService } from '../services/tenant.service';
+import { AdminRepository } from '../repositories/admin.repository';
 import { authenticateAdmin, requireAdmin } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
 import { createAdminUserSchema } from '../validators/auth.validators';
+import { idParamSchema } from '../validators/common.validators';
 import { prisma } from '../database/prisma';
 import { hashPassword } from '../utils/password';
 import { AppError } from '../utils/errors';
@@ -20,7 +22,29 @@ tenantRouter.post(
   }),
 );
 
-// POST /api/tenants/admins — admin only: register/add a new admin user into the current tenant context
+// GET /api/tenants/admins — admin only: list all admins in the current tenant
+tenantRouter.get(
+  '/admins',
+  authenticateAdmin,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const repo = new AdminRepository(req.db!);
+    res.json(await repo.findAll());
+  }),
+);
+
+// GET /api/tenants/admins/pending — admin only: list all pending admins in the current tenant
+tenantRouter.get(
+  '/admins/pending',
+  authenticateAdmin,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const repo = new AdminRepository(req.db!);
+    res.json(await repo.findPending());
+  }),
+);
+
+// POST /api/tenants/admins — admin only: register/add a new approved admin user into current tenant context
 tenantRouter.post(
   '/admins',
   authenticateAdmin,
@@ -38,6 +62,7 @@ tenantRouter.post(
         passwordHash,
         name,
         role: role ?? 'admin',
+        isApproved: true,
       } as any,
     });
 
@@ -47,7 +72,44 @@ tenantRouter.post(
       email: admin.email,
       name: admin.name,
       role: admin.role,
+      isApproved: admin.isApproved,
       createdAt: admin.createdAt,
     });
+  }),
+);
+
+// PUT /api/tenants/admins/:id/approve — admin only: approve a pending admin user
+tenantRouter.put(
+  '/admins/:id/approve',
+  authenticateAdmin,
+  requireAdmin,
+  validate({ params: idParamSchema }),
+  asyncHandler(async (req, res) => {
+    const repo = new AdminRepository(req.db!);
+    const target = await repo.findById(req.params.id);
+    if (!target) throw AppError.notFound('ADMIN_NOT_FOUND', 'Admin account not found in this tenant.');
+
+    const approved = await repo.approve(req.params.id);
+    res.json({ message: 'Admin account approved successfully.', user: approved });
+  }),
+);
+
+// DELETE /api/tenants/admins/:id — admin only: reject or remove an admin user from tenant
+tenantRouter.delete(
+  '/admins/:id',
+  authenticateAdmin,
+  requireAdmin,
+  validate({ params: idParamSchema }),
+  asyncHandler(async (req, res) => {
+    const repo = new AdminRepository(req.db!);
+    const target = await repo.findById(req.params.id);
+    if (!target) throw AppError.notFound('ADMIN_NOT_FOUND', 'Admin account not found in this tenant.');
+
+    if (req.actor?.type === 'admin' && req.actor.admin.id === req.params.id) {
+      throw AppError.badRequest('You cannot delete your own admin account.');
+    }
+
+    await repo.delete(req.params.id);
+    res.json({ message: 'Admin account removed successfully.' });
   }),
 );

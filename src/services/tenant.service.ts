@@ -28,6 +28,7 @@ export class TenantService {
             passwordHash: await hashPassword(input.adminPassword),
             name: input.adminName,
             role: 'admin',
+            isApproved: true,
           },
         });
         return tenant;
