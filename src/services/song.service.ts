@@ -139,7 +139,7 @@ export const songService = {
       })),
     );
     const created = await songRepository.createMany(prepared);
-    return { created, count: created.length };
+    return { created, count: created.count };
   },
 
   async batchUpdateTags(songIds: string[], tags: string[], mode: 'append' | 'replace' | 'remove') {
