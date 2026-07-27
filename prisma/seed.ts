@@ -1,46 +1,28 @@
-import { PrismaClient } from '@prisma/client';
 import { v4 as uuid } from 'uuid';
 import bcrypt from 'bcrypt';
 import 'dotenv/config';
 
-const prisma = new PrismaClient();
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
 
+const pool = new Pool({
+  connectionString: process.env.HOSANA_DB_PRISMA_DATABASE_URL,
+});
+
+const adapter = new PrismaPg(pool);
+
+const prisma = new PrismaClient({
+  adapter,
+});
 async function main() {
-  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? 'leader@church.org';
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? 'ibav';
-  const adminName = process.env.SEED_ADMIN_NAME ?? 'Tiago';
-
-  const passwordHash = await bcrypt.hash(adminPassword, 12);
-  await prisma.admin.upsert({
-    where: { email: adminEmail },
-    update: {},
-    create: { id: uuid(), email: adminEmail, passwordHash, name: adminName, role: 'admin' },
-  });
-  console.log(`✔ Admin ready: ${adminEmail}`);
-
-  await prisma.settings.upsert({
-    where: { id: 'settings' },
-    update: {},
-    create: { id: 'settings' },
-  });
-  console.log('✔ Settings row ready');
-
-  const existingFolders = await prisma.folder.count();
-  if (existingFolders > 0) {
-    console.log('… Sample content already present, skipping demo data seed.');
-    return;
-  }
-
-  const hymns = await prisma.folder.create({ data: { id: uuid(), name: 'Hymns' } });
-  const contemporary = await prisma.folder.create({ data: { id: uuid(), name: 'Contemporary' } });
-  const worship = await prisma.folder.create({ data: { id: uuid(), name: 'Worship' } });
 
   const amazingGrace = await prisma.song.create({
     data: {
       id: uuid(),
       title: 'Amazing Grace',
       artist: 'John Newton',
-      folderId: hymns.id,
+      folderId: null,
       path: 'Hymns/Amazing Grace.pro',
       tags: ['Hymn', 'Classic', 'Grace'],
       content:
@@ -56,7 +38,7 @@ async function main() {
       id: uuid(),
       title: 'How Great Is Our God',
       artist: 'Chris Tomlin',
-      folderId: contemporary.id,
+      folderId: null,
       path: 'Contemporary/How Great Is Our God.pro',
       tags: ['Contemporary', 'Worship', 'Praise'],
       content:
@@ -71,7 +53,7 @@ async function main() {
       id: uuid(),
       title: 'Way Maker',
       artist: 'Sinach',
-      folderId: worship.id,
+      folderId: null,
       path: 'Worship/Way Maker.pro',
       tags: ['Worship', 'Global'],
       content:
