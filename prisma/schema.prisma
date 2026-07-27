@@ -6,11 +6,28 @@ datasource db {
   provider = "postgresql"
 }
 
-// ---------------------------------------------------------------------------
-// Admin (dashboard) users — JWT authentication
-// ---------------------------------------------------------------------------
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  admins         Admin[]
+  folders        Folder[]
+  songs          Song[]
+  services       Service[]
+  musicianTokens MusicianToken[]
+  settings       Settings?
+
+  @@map("tenants")
+}
+
 model Admin {
   id           String   @id @default(uuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   email        String   @unique
   passwordHash String
   name         String
@@ -20,12 +37,10 @@ model Admin {
 
   refreshTokens RefreshToken[]
 
+  @@index([tenantId])
   @@map("admins")
 }
 
-// Refresh tokens are stored hashed so they can be individually revoked
-// (logout, rotation, "log out everywhere") instead of relying purely on
-// a stateless JWT that cannot be invalidated before it expires.
 model RefreshToken {
   id        String    @id @default(uuid())
   adminId   String
@@ -39,15 +54,13 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
-// ---------------------------------------------------------------------------
-// Folders
-// ---------------------------------------------------------------------------
 model Folder {
-  id        String   @id @default(uuid())
-  name      String
-  // Self-relation for nested folders. NULL = top level folder.
-  // NOTE: the application-level "root" (folderId === null on a Song) is an
-  // *implicit* concept and never materialized as a Folder row.
+  id       String @id @default(uuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name String
+
   parentId  String?
   parent    Folder?  @relation("FolderChildren", fields: [parentId], references: [id], onDelete: SetNull)
   children  Folder[] @relation("FolderChildren")
@@ -55,18 +68,19 @@ model Folder {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([tenantId])
   @@index([parentId])
   @@map("folders")
 }
 
-// ---------------------------------------------------------------------------
-// Songs
-// ---------------------------------------------------------------------------
 model Song {
-  id        String   @id @default(uuid())
-  title     String
-  artist    String   @default("Unknown Artist")
-  // Raw ChordPro source, stored directly in Postgres.
+  id       String @id @default(uuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  title  String
+  artist String @default("Unknown Artist")
+
   content   String   @db.Text
   folderId  String?
   folder    Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
@@ -77,19 +91,20 @@ model Song {
 
   serviceSongs ServiceSong[]
 
+  @@unique([tenantId, path])
+  @@index([tenantId])
   @@index([folderId])
-  @@index([title])
+  @@index([tenantId, title])
   @@map("songs")
 }
 
-// ---------------------------------------------------------------------------
-// Services (worship services / setlists)
-// ---------------------------------------------------------------------------
 model Service {
-  id        String   @id @default(uuid())
-  name      String
-  // Kept as a plain string (e.g. "2026-07-26") to stay wire-compatible with
-  // the reference implementation, which never treats it as a real Date.
+  id       String @id @default(uuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name String
+
   date      String
   notes     String?  @db.Text
   createdAt DateTime @default(now())
@@ -98,13 +113,10 @@ model Service {
   songs         ServiceSong[]
   allowedTokens MusicianTokenService[]
 
+  @@index([tenantId])
   @@map("services")
 }
 
-// Join table between Service <-> Song that also carries per-song notes and
-// ordering, replacing the old { songIds: string[], songNotes: {} } shape
-// with a normalized structure while the API layer still serializes it back
-// into the legacy shape for backward compatibility.
 model ServiceSong {
   id        String   @id @default(uuid())
   serviceId String
@@ -120,33 +132,28 @@ model ServiceSong {
   @@map("service_songs")
 }
 
-// ---------------------------------------------------------------------------
-// Musician access tokens (QR-code distributed)
-// ---------------------------------------------------------------------------
 model MusicianToken {
-  id         String    @id @default(uuid())
-  name       String
-  // SHA-256 hex digest of the raw token. Lookups are O(1) equality checks;
-  // the raw value is never persisted and is only returned once, at
-  // creation/regeneration time, to the admin who can then re-share the QR.
-  tokenHash  String    @unique
-  // Last 4 characters of the raw token, kept only for display purposes
-  // ("...a91f") so admins can recognize a token without exposing it.
+  id       String @id @default(uuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name String
+
+  tokenHash String @unique
+
   tokenPreview String
-  expiresAt  DateTime
-  revokedAt  DateTime?
-  lastUsedAt DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  lastUsedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   allowedServices MusicianTokenService[]
 
+  @@index([tenantId])
   @@map("musician_tokens")
 }
 
-// Join table for the optional "allowedServices" scoping of a musician token.
-// An empty set means "all services" (matches reference implementation,
-// where allowedServices: [] effectively granted unrestricted access).
 model MusicianTokenService {
   musicianTokenId String
   musicianToken   MusicianToken @relation(fields: [musicianTokenId], references: [id], onDelete: Cascade)
@@ -157,11 +164,10 @@ model MusicianTokenService {
   @@map("musician_token_services")
 }
 
-// ---------------------------------------------------------------------------
-// Settings (singleton row)
-// ---------------------------------------------------------------------------
 model Settings {
-  id                  String   @id @default("settings")
+  tenantId String @id
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   serverName          String   @default("ChordPro Studio Server")
   defaultKey          String   @default("G")
   syncIntervalSeconds Int      @default(30)

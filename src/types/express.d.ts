@@ -14,6 +14,8 @@ export type AuthenticatedActor =
 declare global {
   namespace Express {
     interface Request {
+      tenantId?: string;
+      db?: TenantPrisma;
       actor?: AuthenticatedActor;
     }
   }

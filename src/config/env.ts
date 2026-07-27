@@ -25,10 +25,4 @@ export const env = {
     defaultDays: parseInt(process.env.MUSICIAN_TOKEN_DEFAULT_DAYS ?? '30', 10),
     publicAppUrl: process.env.PUBLIC_APP_URL ?? 'http://localhost:5173',
   },
-
-  seedAdmin: {
-    email: process.env.SEED_ADMIN_EMAIL ?? 'leader@church.org',
-    password: process.env.SEED_ADMIN_PASSWORD ?? 'change_me_immediately',
-    name: process.env.SEED_ADMIN_NAME ?? 'Worship Director',
-  },
 };

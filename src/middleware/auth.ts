@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import { prisma } from '../database/prisma';
+import { forTenant } from '../database/prisma';
 import { AppError } from '../utils/errors';
 import { asyncHandler } from '../utils/asyncHandler';
 import { hashToken, verifyAccessToken } from '../utils/tokens';
@@ -12,7 +13,6 @@ function extractBearerToken(req: Request): string | null {
   return token;
 }
 
-/** Requires a valid administrator JWT. Rejects musician tokens outright. */
 export function authenticateAdmin(req: Request, _res: Response, next: NextFunction) {
   const token = extractBearerToken(req);
   if (!token) return next(AppError.unauthorized('Missing bearer token.'));
@@ -20,21 +20,20 @@ export function authenticateAdmin(req: Request, _res: Response, next: NextFuncti
   try {
     const payload = verifyAccessToken(token);
     req.actor = { type: 'admin', admin: payload };
+    req.tenantId = payload.tenantId;
+    req.db = forTenant(payload.tenantId);
     next();
   } catch {
     next(AppError.unauthorized('Invalid or expired token.'));
   }
 }
 
-/**
- * Requires a valid, non-expired, non-revoked musician access token.
- * Looks the hashed token up in the database on every request (cheap
- * indexed equality lookup) so revocation takes effect immediately.
- */
 export const authenticateMusician = asyncHandler(async (req, _res, next) => {
   const token = extractBearerToken(req);
   if (!token) throw AppError.unauthorized('Missing bearer token.');
 
+  // Deliberately unscoped: tokenHash is globally unique and this lookup is
+  // what establishes which tenant the request belongs to.
   const record = await prisma.musicianToken.findUnique({
     where: { tokenHash: hashToken(token) },
     include: { allowedServices: { select: { serviceId: true } } },
@@ -46,7 +45,6 @@ export const authenticateMusician = asyncHandler(async (req, _res, next) => {
     throw new AppError(401, 'MUSICIAN_TOKEN_EXPIRED', 'This access token has expired.');
   }
 
-  // Fire-and-forget last-used tracking; does not block the request.
   prisma.musicianToken
     .update({ where: { id: record.id }, data: { lastUsedAt: new Date() } })
     .catch(() => undefined);
@@ -60,14 +58,11 @@ export const authenticateMusician = asyncHandler(async (req, _res, next) => {
         record.allowedServices.length > 0 ? record.allowedServices.map((s: any) => s.serviceId) : null,
     },
   };
+  req.tenantId = record.tenantId;
+  req.db = forTenant(record.tenantId);
   next();
 });
 
-/**
- * Accepts EITHER a valid admin JWT OR a valid musician token. Used for the
- * read-oriented endpoints both roles share (viewing songs/folders/services).
- * Tries admin first (fast, no DB round-trip); falls back to musician.
- */
 export const authenticateAny = asyncHandler(async (req, res, next) => {
   const token = extractBearerToken(req);
   if (!token) return next(AppError.unauthorized('Missing bearer token.'));
@@ -75,6 +70,8 @@ export const authenticateAny = asyncHandler(async (req, res, next) => {
   try {
     const payload = verifyAccessToken(token);
     req.actor = { type: 'admin', admin: payload };
+    req.tenantId = payload.tenantId;
+    req.db = forTenant(payload.tenantId);
     return next();
   } catch {
     // Not a valid admin JWT — fall through and try musician token.
@@ -83,7 +80,6 @@ export const authenticateAny = asyncHandler(async (req, res, next) => {
   return authenticateMusician(req, res, next);
 });
 
-/** Route guard ensuring the resolved actor is an administrator. */
 export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
   if (req.actor?.type !== 'admin') {
     return next(AppError.forbidden('This action requires administrator privileges.'));
@@ -91,11 +87,6 @@ export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
   next();
 }
 
-/**
- * Ensures a musician actor is allowed to touch the given service (based on
- * the token's allowedServices scoping). Admins always pass. Attach after
- * authenticateAny on service-scoped routes that musicians may write to.
- */
 export function requireServiceAccess(getServiceId: (req: Request) => string) {
   return (req: Request, _res: Response, next: NextFunction) => {
     if (req.actor?.type === 'admin') return next();

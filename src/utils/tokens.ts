@@ -5,6 +5,7 @@ import { env } from '../config/env';
 export interface AdminJwtPayload {
   id: string;
   email: string;
+  tenantId: string;
   name: string;
   role: 'admin';
 }
