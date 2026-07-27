@@ -3,9 +3,20 @@ import { AuthService } from '../services/auth.service';
 import { authenticateAdmin } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
-import { loginSchema, refreshSchema } from '../validators/auth.validators';
+import { loginSchema, refreshSchema, registerAdminSchema } from '../validators/auth.validators';
 
 export const authRouter = Router();
+
+// POST /api/auth/register — register a new admin user into an existing tenant by tenantSlug or tenantId
+authRouter.post(
+  '/register',
+  validate({ body: registerAdminSchema }),
+  asyncHandler(async (req, res) => {
+    const authService = new AuthService();
+    const result = await authService.registerAdmin(req.body);
+    res.status(201).json(result);
+  }),
+);
 
 // POST /api/auth/login
 authRouter.post(

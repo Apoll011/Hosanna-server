@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { prisma } from '../database/prisma';
 import { RefreshTokenRepository } from '../repositories/refreshToken.repository';
 import { AppError } from '../utils/errors';
-import { verifyPassword } from '../utils/password';
+import { hashPassword, verifyPassword } from '../utils/password';
 import {
   AdminJwtPayload,
   signAccessToken,
@@ -25,6 +25,57 @@ function hashRefreshToken(token: string): string {
 
 export class AuthService {
   private refreshTokenRepo = new RefreshTokenRepository(prisma);
+
+  async registerAdmin(input: {
+    email: string;
+    password: string;
+    name: string;
+    tenantSlug?: string;
+    tenantId?: string;
+  }) {
+    let resolvedTenantId = input.tenantId;
+
+    if (!resolvedTenantId && input.tenantSlug) {
+      const tenant = await prisma.tenant.findUnique({ where: { slug: input.tenantSlug } });
+      if (!tenant) throw AppError.badRequest('Tenant with provided slug does not exist.');
+      resolvedTenantId = tenant.id;
+    }
+
+    if (!resolvedTenantId) {
+      throw AppError.badRequest('Must provide either tenantId or tenantSlug to register an admin.');
+    }
+
+    const tenant = await prisma.tenant.findUnique({ where: { id: resolvedTenantId } });
+    if (!tenant) throw AppError.badRequest('Tenant does not exist.');
+
+    const existing = await prisma.admin.findUnique({ where: { email: input.email } });
+    if (existing) throw AppError.badRequest('An account with this email already exists.');
+
+    const passwordHash = await hashPassword(input.password);
+    const admin = await prisma.admin.create({
+      data: {
+        tenantId: resolvedTenantId,
+        email: input.email,
+        passwordHash,
+        name: input.name,
+        role: 'admin',
+      },
+    });
+
+    const payload: AdminJwtPayload = {
+      id: admin.id,
+      tenantId: admin.tenantId,
+      email: admin.email,
+      name: admin.name,
+      role: 'admin',
+    };
+
+    const accessToken = signAccessToken(payload);
+    const refreshToken = signRefreshToken(admin.id);
+    await this.refreshTokenRepo.create(admin.id, hashRefreshToken(refreshToken), refreshExpiryDate());
+
+    return { user: payload, token: accessToken, accessToken, refreshToken };
+  }
 
   async login(email: string, password: string) {
     const admin = await prisma.admin.findUnique({ where: { email } });
