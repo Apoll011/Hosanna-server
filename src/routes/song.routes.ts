@@ -87,7 +87,7 @@ songRouter.put(
   validate({ params: idParamSchema, body: updateSongSchema }),
   asyncHandler(async (req, res) => {
     const { updatedAt, ...patch } = req.body;
-    res.json(await songService.update(req.params.id, updatedAt, patch));
+    res.json(await songService.update(req.params.id, updatedAt ?? new Date().toISOString(), patch));
   }),
 );
 
@@ -109,7 +109,7 @@ songRouter.put(
   validate({ params: idParamSchema, body: renameSongSchema }),
   asyncHandler(async (req, res) => {
     const { updatedAt, newTitle, newPath } = req.body;
-    res.json(await songService.rename(req.params.id, updatedAt, newTitle, newPath));
+    res.json(await songService.rename(req.params.id, updatedAt ?? new Date().toISOString(), newTitle, newPath));
   }),
 );
 
@@ -120,6 +120,6 @@ songRouter.put(
   validate({ params: idParamSchema, body: moveSongSchema }),
   asyncHandler(async (req, res) => {
     const { updatedAt, folderId, newPath } = req.body;
-    res.json(await songService.move(req.params.id, updatedAt, folderId, newPath));
+    res.json(await songService.move(req.params.id, updatedAt ?? new Date().toISOString(), folderId, newPath));
   }),
 );
