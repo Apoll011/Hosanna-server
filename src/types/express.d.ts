@@ -1,3 +1,4 @@
+import { TenantPrisma } from '../database/prisma';
 import { AdminJwtPayload } from '../utils/tokens';
 
 export type AuthenticatedActor =

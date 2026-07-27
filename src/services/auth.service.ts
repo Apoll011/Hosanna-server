@@ -1,6 +1,6 @@
 import crypto from 'crypto';
-import { adminRepository } from '../repositories/admin.repository';
-import { refreshTokenRepository } from '../repositories/refreshToken.repository';
+import { prisma } from '../database/prisma';
+import { RefreshTokenRepository } from '../repositories/refreshToken.repository';
 import { AppError } from '../utils/errors';
 import { verifyPassword } from '../utils/password';
 import {
@@ -11,14 +11,7 @@ import {
 } from '../utils/tokens';
 import { env } from '../config/env';
 
-function toPayload(admin: { id: string; email: string; name: string }): AdminJwtPayload {
-  return { id: admin.id, email: admin.email, name: admin.name, role: 'admin' };
-}
-
 function refreshExpiryDate(): Date {
-  // JWT_REFRESH_EXPIRES_IN is a zeit/ms-style string (e.g. "7d"); we only
-  // need an approximate DB expiry for cleanup/reporting, the JWT itself is
-  // the source of truth for actual expiration.
   const match = /^(\d+)([smhd])$/.exec(env.jwt.refreshExpiresIn);
   const amount = match ? parseInt(match[1], 10) : 7;
   const unit = match ? match[2] : 'd';
@@ -30,60 +23,81 @@ function hashRefreshToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-export const authService = {
+export class AuthService {
+  private refreshTokenRepo = new RefreshTokenRepository(prisma);
+
   async login(email: string, password: string) {
-    const admin = await adminRepository.findByEmail(email);
-    if (!admin) throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password.');
+    const admin = await prisma.admin.findUnique({ where: { email } });
+    if (!admin || !(await verifyPassword(password, admin.passwordHash))) {
+      throw AppError.unauthorized('Invalid credentials.');
+    }
 
-    const valid = await verifyPassword(password, admin.passwordHash);
-    if (!valid) throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password.');
+    const payload: AdminJwtPayload = {
+      id: admin.id,
+      tenantId: admin.tenantId,
+      email: admin.email,
+      name: admin.name,
+      role: 'admin',
+    };
 
-    const user = toPayload(admin);
-    const accessToken = signAccessToken(user);
+    const accessToken = signAccessToken(payload);
     const refreshToken = signRefreshToken(admin.id);
-    await refreshTokenRepository.create(admin.id, hashRefreshToken(refreshToken), refreshExpiryDate());
+    await this.refreshTokenRepo.create(admin.id, hashRefreshToken(refreshToken), refreshExpiryDate());
 
-    // `token` is kept alongside `accessToken` for backward compatibility
-    // with the reference dashboard, which reads either field.
-    return { user, token: accessToken, accessToken, refreshToken };
-  },
+    return { user: payload, token: accessToken, accessToken, refreshToken };
+  }
 
   async refresh(refreshToken: string) {
     let decoded: { id: string };
     try {
       decoded = verifyRefreshToken(refreshToken);
     } catch {
-      throw new AppError(401, 'INVALID_REFRESH_TOKEN', 'Invalid or expired refresh token.');
+      throw AppError.unauthorized('Invalid or expired refresh token.');
     }
 
-    const stored = await refreshTokenRepository.findByHash(hashRefreshToken(refreshToken));
+    const stored = await this.refreshTokenRepo.findByHash(hashRefreshToken(refreshToken));
     if (!stored || stored.revokedAt || stored.expiresAt.getTime() < Date.now()) {
-      throw new AppError(401, 'INVALID_REFRESH_TOKEN', 'Refresh token has been revoked or expired.');
+      throw AppError.unauthorized('Refresh token has been revoked or expired.');
     }
 
-    const admin = await adminRepository.findById(decoded.id);
-    if (!admin) throw new AppError(401, 'INVALID_REFRESH_TOKEN', 'Account no longer exists.');
+    const admin = await prisma.admin.findUnique({ where: { id: decoded.id } });
+    if (!admin) throw AppError.unauthorized('Account no longer exists.');
 
-    // Rotate: revoke the used refresh token and issue a new one.
-    await refreshTokenRepository.revoke(stored.id);
+    await this.refreshTokenRepo.revoke(stored.id);
     const newRefreshToken = signRefreshToken(admin.id);
-    await refreshTokenRepository.create(admin.id, hashRefreshToken(newRefreshToken), refreshExpiryDate());
+    await this.refreshTokenRepo.create(admin.id, hashRefreshToken(newRefreshToken), refreshExpiryDate());
 
-    const accessToken = signAccessToken(toPayload(admin));
+    const payload: AdminJwtPayload = {
+      id: admin.id,
+      tenantId: admin.tenantId,
+      email: admin.email,
+      name: admin.name,
+      role: 'admin',
+    };
+
+    const accessToken = signAccessToken(payload);
     return { accessToken, refreshToken: newRefreshToken };
-  },
+  }
 
   async logout(refreshToken?: string) {
     if (!refreshToken) return;
-    const stored = await refreshTokenRepository.findByHash(hashRefreshToken(refreshToken));
+    const stored = await this.refreshTokenRepo.findByHash(hashRefreshToken(refreshToken));
     if (stored && !stored.revokedAt) {
-      await refreshTokenRepository.revoke(stored.id);
+      await this.refreshTokenRepo.revoke(stored.id);
     }
-  },
+  }
 
   async me(adminId: string) {
-    const admin = await adminRepository.findById(adminId);
-    if (!admin) throw new AppError(404, 'ADMIN_NOT_FOUND', 'Administrator account not found.');
-    return { user: toPayload(admin) };
-  },
-};
+    const admin = await prisma.admin.findUnique({ where: { id: adminId } });
+    if (!admin) throw AppError.notFound('ADMIN_NOT_FOUND', 'Administrator account not found.');
+    return {
+      user: {
+        id: admin.id,
+        tenantId: admin.tenantId,
+        email: admin.email,
+        name: admin.name,
+        role: 'admin' as const,
+      },
+    };
+  }
+}

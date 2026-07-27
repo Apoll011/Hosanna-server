@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { serviceService } from '../services/service.service';
+import { ServiceService } from '../services/service.service';
 import { authenticateAny, authenticateAdmin, requireServiceAccess } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
@@ -17,14 +17,13 @@ import {
 export const serviceRouter = Router();
 const byId = requireServiceAccess((req) => req.params.id);
 
-// GET /api/services — admin or musician (scoped to allowedServices, filtered client-side by dashboard;
-// the list itself is not filtered server-side to preserve the reference behavior of returning everything,
-// since a musician's allowedServices only restrict write actions, not visibility of the schedule).
+// GET /api/services — admin or musician
 serviceRouter.get(
   '/',
   authenticateAny,
-  asyncHandler(async (_req, res) => {
-    res.json(await serviceService.list());
+  asyncHandler(async (req, res) => {
+    const service = new ServiceService(req.db!);
+    res.json(await service.list());
   }),
 );
 
@@ -35,7 +34,8 @@ serviceRouter.get(
   validate({ params: idParamSchema }),
   byId,
   asyncHandler(async (req, res) => {
-    res.json(await serviceService.getByIdSerialized(req.params.id));
+    const service = new ServiceService(req.db!);
+    res.json(await service.getByIdSerialized(req.params.id));
   }),
 );
 
@@ -45,7 +45,8 @@ serviceRouter.post(
   authenticateAdmin,
   validate({ body: createServiceSchema }),
   asyncHandler(async (req, res) => {
-    res.status(201).json(await serviceService.create(req.body));
+    const service = new ServiceService(req.db!);
+    res.status(201).json(await service.create(req.body));
   }),
 );
 
@@ -55,8 +56,9 @@ serviceRouter.put(
   authenticateAdmin,
   validate({ params: idParamSchema, body: updateServiceSchema }),
   asyncHandler(async (req, res) => {
+    const service = new ServiceService(req.db!);
     const { updatedAt, ...patch } = req.body;
-    res.json(await serviceService.update(req.params.id, updatedAt, patch));
+    res.json(await service.update(req.params.id, updatedAt, patch));
   }),
 );
 
@@ -66,7 +68,8 @@ serviceRouter.delete(
   authenticateAdmin,
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
-    await serviceService.delete(req.params.id);
+    const service = new ServiceService(req.db!);
+    await service.delete(req.params.id);
     res.status(204).send();
   }),
 );
@@ -77,8 +80,9 @@ serviceRouter.post(
   authenticateAdmin,
   validate({ params: idParamSchema, body: addSongToServiceSchema }),
   asyncHandler(async (req, res) => {
+    const service = new ServiceService(req.db!);
     const { updatedAt, songId, notes, position } = req.body;
-    res.status(201).json(await serviceService.addSong(req.params.id, updatedAt, songId, notes, position));
+    res.status(201).json(await service.addSong(req.params.id, updatedAt, songId, notes, position));
   }),
 );
 
@@ -88,7 +92,8 @@ serviceRouter.delete(
   authenticateAdmin,
   validate({ params: twoIdParamSchema, body: updateServiceSchema.pick({ updatedAt: true }) }),
   asyncHandler(async (req, res) => {
-    res.json(await serviceService.removeSong(req.params.id, req.body.updatedAt, req.params.songId));
+    const service = new ServiceService(req.db!);
+    res.json(await service.removeSong(req.params.id, req.body.updatedAt, req.params.songId));
   }),
 );
 
@@ -98,8 +103,9 @@ serviceRouter.put(
   authenticateAdmin,
   validate({ params: idParamSchema, body: reorderServiceSongsSchema }),
   asyncHandler(async (req, res) => {
+    const service = new ServiceService(req.db!);
     const { updatedAt, orderedSongIds } = req.body;
-    res.json(await serviceService.reorder(req.params.id, updatedAt, orderedSongIds));
+    res.json(await service.reorder(req.params.id, updatedAt, orderedSongIds));
   }),
 );
 
@@ -109,8 +115,9 @@ serviceRouter.put(
   authenticateAdmin,
   validate({ params: twoIdParamSchema, body: moveServiceSongSchema }),
   asyncHandler(async (req, res) => {
+    const service = new ServiceService(req.db!);
     const { updatedAt, targetIndex } = req.body;
-    res.json(await serviceService.moveSong(req.params.id, updatedAt, req.params.songId, targetIndex));
+    res.json(await service.moveSong(req.params.id, updatedAt, req.params.songId, targetIndex));
   }),
 );
 
@@ -121,8 +128,9 @@ serviceRouter.put(
   validate({ params: idParamSchema, body: updateServiceNotesSchema }),
   byId,
   asyncHandler(async (req, res) => {
+    const service = new ServiceService(req.db!);
     const { updatedAt, notes } = req.body;
-    res.json(await serviceService.updateNotes(req.params.id, updatedAt, notes));
+    res.json(await service.updateNotes(req.params.id, updatedAt, notes));
   }),
 );
 
@@ -133,7 +141,8 @@ serviceRouter.put(
   validate({ params: twoIdParamSchema, body: updateServiceSongNotesSchema }),
   requireServiceAccess((req) => req.params.id),
   asyncHandler(async (req, res) => {
+    const service = new ServiceService(req.db!);
     const { updatedAt, notes } = req.body;
-    res.json(await serviceService.updateSongNotes(req.params.id, updatedAt, req.params.songId, notes));
+    res.json(await service.updateSongNotes(req.params.id, updatedAt, req.params.songId, notes));
   }),
 );

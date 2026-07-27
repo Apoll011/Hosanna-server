@@ -1,6 +1,7 @@
 import { v4 as uuid } from 'uuid';
-import { serviceRepository, ServiceWithSongs } from '../repositories/service.repository';
-import { songRepository } from '../repositories/song.repository';
+import { ServiceRepository, ServiceWithSongs } from '../repositories/service.repository';
+import { SongRepository } from '../repositories/song.repository';
+import type { TenantPrisma } from '../database/prisma';
 import { AppError } from '../utils/errors';
 
 function assertUnchanged(current: { updatedAt: Date }, clientUpdatedAt: Date) {
@@ -9,12 +10,6 @@ function assertUnchanged(current: { updatedAt: Date }, clientUpdatedAt: Date) {
   }
 }
 
-/**
- * Serializes the normalized ServiceSong rows back into the shape the
- * reference dashboard expects (`songs: [{songId, notes}]` + a derived
- * `songNotes` map + a plain `songIds` array), so existing UI code keeps
- * working unmodified.
- */
 function serialize(service: NonNullable<ServiceWithSongs>) {
   const orderedSongs = service.songs;
   return {
@@ -32,49 +27,57 @@ function serialize(service: NonNullable<ServiceWithSongs>) {
 
 type SongsInput = { songId: string; notes?: string }[] | undefined;
 
-async function normalizeSongsInput(
-  songs: SongsInput,
-  songIds: string[] | undefined,
-  songNotes: Record<string, string> | undefined,
-) {
-  let list: { songId: string; notes?: string }[] = [];
-  if (songs && songs.length > 0) {
-    list = songs;
-  } else if (songIds && songIds.length > 0) {
-    list = songIds.map((songId) => ({ songId }));
-  }
-  if (songNotes) {
-    list = list.map((s) => ({ songId: s.songId, notes: songNotes[s.songId] ?? s.notes }));
+export class ServiceService {
+  private serviceRepo: ServiceRepository;
+  private songRepo: SongRepository;
+
+  constructor(private readonly db: TenantPrisma) {
+    this.serviceRepo = new ServiceRepository(db);
+    this.songRepo = new SongRepository(db);
   }
 
-  // Validate every referenced song actually exists.
-  const ids = list.map((s) => s.songId);
-  if (ids.length > 0) {
-    const found = await songRepository.findMany({ id: { in: ids } }, {});
-    const missing = ids.filter((id) => !found.some((s) => s.id === id));
-    if (missing.length > 0) {
-      throw AppError.badRequest(`Unknown song id(s): ${missing.join(', ')}`);
+  private async normalizeSongsInput(
+    songs: SongsInput,
+    songIds: string[] | undefined,
+    songNotes: Record<string, string> | undefined,
+  ) {
+    let list: { songId: string; notes?: string }[] = [];
+    if (songs && songs.length > 0) {
+      list = songs;
+    } else if (songIds && songIds.length > 0) {
+      list = songIds.map((songId) => ({ songId }));
     }
+    if (songNotes) {
+      list = list.map((s) => ({ songId: s.songId, notes: songNotes[s.songId] ?? s.notes }));
+    }
+
+    // Validate every referenced song actually exists within this tenant.
+    const ids = list.map((s) => s.songId);
+    if (ids.length > 0) {
+      const found = await this.songRepo.findMany({ id: { in: ids } }, {});
+      const missing = ids.filter((id) => !found.some((s) => s.id === id));
+      if (missing.length > 0) {
+        throw AppError.badRequest(`Unknown song id(s): ${missing.join(', ')}`);
+      }
+    }
+
+    return list.map((s, index) => ({ songId: s.songId, position: index, notes: s.notes ?? null }));
   }
 
-  return list.map((s, index) => ({ songId: s.songId, position: index, notes: s.notes ?? null }));
-}
-
-export const serviceService = {
   async list() {
-    const services = await serviceRepository.findAll();
+    const services = await this.serviceRepo.findAll();
     return services.map(serialize);
-  },
+  }
 
   async getById(id: string) {
-    const service = await serviceRepository.findById(id);
+    const service = await this.serviceRepo.findById(id);
     if (!service) throw AppError.notFound('SERVICE_NOT_FOUND', 'Service does not exist.');
     return service;
-  },
+  }
 
   async getByIdSerialized(id: string) {
     return serialize(await this.getById(id));
-  },
+  }
 
   async create(input: {
     name: string;
@@ -84,8 +87,8 @@ export const serviceService = {
     songIds?: string[];
     songNotes?: Record<string, string>;
   }) {
-    const normalized = await normalizeSongsInput(input.songs, input.songIds, input.songNotes);
-    const created = await serviceRepository.create({
+    const normalized = await this.normalizeSongsInput(input.songs, input.songIds, input.songNotes);
+    const created = await this.serviceRepo.create({
       id: uuid(),
       name: input.name,
       date: input.date,
@@ -93,7 +96,7 @@ export const serviceService = {
       songs: { create: normalized },
     });
     return serialize(created!);
-  },
+  }
 
   async update(
     id: string,
@@ -110,50 +113,50 @@ export const serviceService = {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
 
-    await serviceRepository.update(id, {
+    await this.serviceRepo.update(id, {
       name: patch.name ?? undefined,
       date: patch.date ?? undefined,
       notes: patch.notes ?? undefined,
     });
 
     if (patch.songs || patch.songIds || patch.songNotes) {
-      const normalized = await normalizeSongsInput(patch.songs, patch.songIds, patch.songNotes);
-      await serviceRepository.replaceSongs(id, normalized);
+      const normalized = await this.normalizeSongsInput(patch.songs, patch.songIds, patch.songNotes);
+      await this.serviceRepo.replaceSongs(id, normalized);
     }
 
     return serialize((await this.getById(id))!);
-  },
+  }
 
   async delete(id: string) {
     await this.getById(id);
-    await serviceRepository.delete(id);
-  },
+    await this.serviceRepo.delete(id);
+  }
 
   async addSong(id: string, updatedAt: Date, songId: string, notes?: string, position?: number) {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
 
-    const song = await songRepository.findById(songId);
+    const song = await this.songRepo.findById(songId);
     if (!song) throw AppError.notFound('SONG_NOT_FOUND', 'Song does not exist.');
 
-    const existing = await serviceRepository.findServiceSong(id, songId);
+    const existing = await this.serviceRepo.findServiceSong(id, songId);
     if (existing) throw AppError.badRequest('This song is already part of the service.');
 
-    const pos = position ?? (await serviceRepository.nextPosition(id));
-    await serviceRepository.addSong(id, songId, pos, notes);
+    const pos = position ?? (await this.serviceRepo.nextPosition(id));
+    await this.serviceRepo.addSong(id, songId, pos, notes);
     return serialize((await this.getById(id))!);
-  },
+  }
 
   async removeSong(id: string, updatedAt: Date, songId: string) {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
 
-    const existing = await serviceRepository.findServiceSong(id, songId);
+    const existing = await this.serviceRepo.findServiceSong(id, songId);
     if (!existing) throw AppError.notFound('SONG_IN_SERVICE_NOT_FOUND', 'This song is not part of the service.');
 
-    await serviceRepository.removeSong(id, songId);
+    await this.serviceRepo.removeSong(id, songId);
     return serialize((await this.getById(id))!);
-  },
+  }
 
   async reorder(id: string, updatedAt: Date, orderedSongIds: string[]) {
     const current = await this.getById(id);
@@ -170,9 +173,9 @@ export const serviceService = {
       position: index,
       notes: notesById.get(songId) ?? null,
     }));
-    await serviceRepository.replaceSongs(id, normalized);
+    await this.serviceRepo.replaceSongs(id, normalized);
     return serialize((await this.getById(id))!);
-  },
+  }
 
   async moveSong(id: string, updatedAt: Date, songId: string, targetIndex: number) {
     const current = await this.getById(id);
@@ -187,25 +190,25 @@ export const serviceService = {
 
     const notesById = new Map(current.songs.map((s) => [s.songId, s.notes]));
     const normalized = ids.map((sid, index) => ({ songId: sid, position: index, notes: notesById.get(sid) ?? null }));
-    await serviceRepository.replaceSongs(id, normalized);
+    await this.serviceRepo.replaceSongs(id, normalized);
     return serialize((await this.getById(id))!);
-  },
+  }
 
   async updateNotes(id: string, updatedAt: Date, notes: string) {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
-    const updated = await serviceRepository.update(id, { notes });
+    const updated = await this.serviceRepo.update(id, { notes });
     return serialize(updated!);
-  },
+  }
 
   async updateSongNotes(id: string, updatedAt: Date, songId: string, notes: string) {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
 
-    const existing = await serviceRepository.findServiceSong(id, songId);
+    const existing = await this.serviceRepo.findServiceSong(id, songId);
     if (!existing) throw AppError.notFound('SONG_IN_SERVICE_NOT_FOUND', 'This song is not part of the service.');
 
-    await serviceRepository.updateSongNotes(id, songId, notes);
+    await this.serviceRepo.updateSongNotes(id, songId, notes);
     return serialize((await this.getById(id))!);
-  },
-};
+  }
+}

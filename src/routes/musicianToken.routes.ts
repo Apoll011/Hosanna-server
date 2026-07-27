@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { musicianTokenService } from '../services/musicianToken.service';
+import { MusicianTokenService } from '../services/musicianToken.service';
 import { authenticateAdmin } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
@@ -12,8 +12,9 @@ export const musicianTokenRouter = Router();
 musicianTokenRouter.get(
   '/',
   authenticateAdmin,
-  asyncHandler(async (_req, res) => {
-    res.json(await musicianTokenService.list());
+  asyncHandler(async (req, res) => {
+    const service = new MusicianTokenService(req.db!);
+    res.json(await service.list());
   }),
 );
 
@@ -23,7 +24,8 @@ musicianTokenRouter.get(
   authenticateAdmin,
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
-    res.json(await musicianTokenService.getByIdSerialized(req.params.id));
+    const service = new MusicianTokenService(req.db!);
+    res.json(await service.getByIdSerialized(req.params.id));
   }),
 );
 
@@ -34,8 +36,9 @@ musicianTokenRouter.post(
   authenticateAdmin,
   validate({ body: createMusicianTokenSchema }),
   asyncHandler(async (req, res) => {
+    const service = new MusicianTokenService(req.db!);
     const { name, expiresAt, allowedServices } = req.body;
-    res.status(201).json(await musicianTokenService.create(name, expiresAt, allowedServices));
+    res.status(201).json(await service.create(name, expiresAt, allowedServices));
   }),
 );
 
@@ -45,8 +48,9 @@ musicianTokenRouter.put(
   authenticateAdmin,
   validate({ params: idParamSchema, body: updateMusicianTokenSchema }),
   asyncHandler(async (req, res) => {
+    const service = new MusicianTokenService(req.db!);
     const { updatedAt, ...patch } = req.body;
-    res.json(await musicianTokenService.update(req.params.id, updatedAt, patch));
+    res.json(await service.update(req.params.id, updatedAt, patch));
   }),
 );
 
@@ -57,30 +61,31 @@ musicianTokenRouter.post(
   authenticateAdmin,
   validate({ params: idParamSchema, body: concurrencySchema }),
   asyncHandler(async (req, res) => {
-    res.status(201).json(await musicianTokenService.regenerate(req.params.id, req.body.updatedAt));
+    const service = new MusicianTokenService(req.db!);
+    res.status(201).json(await service.regenerate(req.params.id, req.body.updatedAt));
   }),
 );
 
 // DELETE /api/musicians/tokens/:id — admin only.
-// Soft-revokes the token (kept for audit history) rather than hard-deleting it,
-// so admins can see who had access to what, and when it was cut off.
-// The raw request body carries `updatedAt` for optimistic concurrency.
+// Soft-revokes the token (kept for audit history) rather than hard-deleting it
 musicianTokenRouter.delete(
   '/:id',
   authenticateAdmin,
   validate({ params: idParamSchema, body: concurrencySchema }),
   asyncHandler(async (req, res) => {
-    res.json(await musicianTokenService.revoke(req.params.id, req.body.updatedAt));
+    const service = new MusicianTokenService(req.db!);
+    res.json(await service.revoke(req.params.id, req.body.updatedAt));
   }),
 );
 
-// DELETE /api/musicians/tokens/:id/permanent — admin only. Hard delete, e.g. for data-retention/GDPR requests.
+// DELETE /api/musicians/tokens/:id/permanent — admin only. Hard delete
 musicianTokenRouter.delete(
   '/:id/permanent',
   authenticateAdmin,
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
-    await musicianTokenService.permanentlyDelete(req.params.id);
+    const service = new MusicianTokenService(req.db!);
+    await service.permanentlyDelete(req.params.id);
     res.status(204).send();
   }),
 );

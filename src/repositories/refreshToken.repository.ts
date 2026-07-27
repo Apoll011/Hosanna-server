@@ -1,22 +1,24 @@
-import { prisma } from '../database/prisma';
+import { PrismaClient } from '@prisma/client';
 
-export const refreshTokenRepository = {
+export class RefreshTokenRepository {
+  constructor(private readonly rawDb: PrismaClient) {}
+
   create(adminId: string, tokenHash: string, expiresAt: Date) {
-    return prisma.refreshToken.create({ data: { adminId, tokenHash, expiresAt } });
-  },
+    return this.rawDb.refreshToken.create({ data: { adminId, tokenHash, expiresAt } });
+  }
 
   findByHash(tokenHash: string) {
-    return prisma.refreshToken.findUnique({ where: { tokenHash } });
-  },
+    return this.rawDb.refreshToken.findUnique({ where: { tokenHash } });
+  }
 
   revoke(id: string) {
-    return prisma.refreshToken.update({ where: { id }, data: { revokedAt: new Date() } });
-  },
+    return this.rawDb.refreshToken.update({ where: { id }, data: { revokedAt: new Date() } });
+  }
 
   revokeAllForAdmin(adminId: string) {
-    return prisma.refreshToken.updateMany({
+    return this.rawDb.refreshToken.updateMany({
       where: { adminId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
-  },
-};
+  }
+}

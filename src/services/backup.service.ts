@@ -1,16 +1,18 @@
-import { prisma } from '../database/prisma';
+import type { TenantPrisma } from '../database/prisma';
 import { AppError } from '../utils/errors';
 
 const BACKUP_VERSION = '2.0';
 
-export const backupService = {
+export class BackupService {
+  constructor(private readonly db: TenantPrisma, private readonly tenantId: string) {}
+
   async export() {
     const [folders, songs, services, musicianTokens, settings] = await Promise.all([
-      prisma.folder.findMany(),
-      prisma.song.findMany(),
-      prisma.service.findMany({ include: { songs: true } }),
-      prisma.musicianToken.findMany({ include: { allowedServices: true } }),
-      prisma.settings.findMany(),
+      this.db.folder.findMany(),
+      this.db.song.findMany(),
+      this.db.service.findMany({ include: { songs: true } }),
+      this.db.musicianToken.findMany({ include: { allowedServices: true } }),
+      this.db.settings.findUnique({ where: { tenantId: this.tenantId } }),
     ]);
 
     return {
@@ -20,16 +22,13 @@ export const backupService = {
       songs,
       services,
       musicianTokens,
-      settings: settings[0] ?? null,
+      settings: settings ?? null,
     };
-  },
+  }
 
   /**
-   * Fully replaces the database contents with the supplied backup, inside a
-   * single transaction (all-or-nothing). Restoring musician tokens keeps
-   * their existing (hashed) credentials intact, so previously distributed
-   * QR codes keep working after a restore — the raw token value is never
-   * part of the backup because it is never stored server-side to begin with.
+   * Fully replaces the tenant database contents with the supplied backup, inside a
+   * single transaction (all-or-nothing).
    */
   async restore(backup: any) {
     if (!backup || typeof backup !== 'object') {
@@ -40,10 +39,19 @@ export const backupService = {
       throw new AppError(400, 'INVALID_BACKUP_FILE', 'Backup file is missing expected arrays.');
     }
 
-    await prisma.$transaction(async (tx) => {
-      // Delete in FK-safe order.
-      await tx.serviceSong.deleteMany();
-      await tx.musicianTokenService.deleteMany();
+    await this.db.$transaction(async (tx) => {
+      // Delete existing data for this tenant
+      // ServiceSong and MusicianTokenService cascade via service/song/musicianToken
+      const serviceIds = (await tx.service.findMany({ select: { id: true } })).map((s) => s.id);
+      if (serviceIds.length > 0) {
+        await tx.serviceSong.deleteMany({ where: { serviceId: { in: serviceIds } } });
+      }
+
+      const tokenIds = (await tx.musicianToken.findMany({ select: { id: true } })).map((t) => t.id);
+      if (tokenIds.length > 0) {
+        await tx.musicianTokenService.deleteMany({ where: { musicianTokenId: { in: tokenIds } } });
+      }
+
       await tx.musicianToken.deleteMany();
       await tx.service.deleteMany();
       await tx.song.deleteMany();
@@ -51,7 +59,7 @@ export const backupService = {
 
       for (const f of folders) {
         await tx.folder.create({
-          data: { id: f.id, name: f.name, parentId: f.parentId ?? null, createdAt: f.createdAt, updatedAt: f.updatedAt },
+          data: { id: f.id, name: f.name, parentId: f.parentId ?? null, createdAt: f.createdAt, updatedAt: f.updatedAt } as any,
         });
       }
       for (const s of songs) {
@@ -66,7 +74,7 @@ export const backupService = {
             tags: s.tags ?? [],
             createdAt: s.createdAt,
             updatedAt: s.updatedAt,
-          },
+          } as any,
         });
       }
       for (const svc of services) {
@@ -78,7 +86,7 @@ export const backupService = {
             notes: svc.notes ?? '',
             createdAt: svc.createdAt,
             updatedAt: svc.updatedAt,
-          },
+          } as any,
         });
         const svcSongs = svc.songs ?? [];
         for (let i = 0; i < svcSongs.length; i++) {
@@ -106,7 +114,7 @@ export const backupService = {
             lastUsedAt: t.lastUsedAt ?? null,
             createdAt: t.createdAt,
             updatedAt: t.updatedAt,
-          },
+          } as any,
         });
         for (const link of t.allowedServices ?? []) {
           await tx.musicianTokenService.create({
@@ -116,9 +124,9 @@ export const backupService = {
       }
       if (settings) {
         await tx.settings.upsert({
-          where: { id: 'settings' },
+          where: { tenantId: this.tenantId },
           update: settings,
-          create: { ...settings, id: 'settings' },
+          create: { ...settings, tenantId: this.tenantId },
         });
       }
     });
@@ -131,5 +139,5 @@ export const backupService = {
         musicianTokens: musicianTokens.length,
       },
     };
-  },
-};
+  }
+}

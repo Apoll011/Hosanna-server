@@ -7,11 +7,13 @@ import { musicianTokenRouter } from './musicianToken.routes';
 import { settingsRouter } from './settings.routes';
 import { backupRouter } from './backup.routes';
 import { healthRouter } from './health.routes';
+import { tenantRouter } from './tenant.routes';
 
 export const apiRouter = Router();
 
 apiRouter.use('/health', healthRouter);
 apiRouter.use('/auth', authRouter);
+apiRouter.use('/tenants', tenantRouter);
 apiRouter.use('/songs', songRouter);
 apiRouter.use('/folders', folderRouter);
 apiRouter.use('/services', serviceRouter);

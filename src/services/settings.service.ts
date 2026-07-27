@@ -1,18 +1,22 @@
-import { settingsRepository } from '../repositories/settings.repository';
+import { SettingsRepository } from '../repositories/settings.repository';
+import type { TenantPrisma } from '../database/prisma';
+import { Prisma } from '@prisma/client';
+import { AppError } from '../utils/errors';
 
-export const settingsService = {
-  get() {
-    return settingsRepository.get();
-  },
+export class SettingsService {
+  private repo: SettingsRepository;
 
-  update(patch: Partial<{
-    serverName: string;
-    defaultKey: string;
-    syncIntervalSeconds: number;
-    allowPublicRead: boolean;
-    autoBackupEnabled: boolean;
-    maxUploadMB: number;
-  }>) {
-    return settingsRepository.update(patch);
-  },
-};
+  constructor(db: TenantPrisma, tenantId: string) {
+    this.repo = new SettingsRepository(db, tenantId);
+  }
+
+  async get() {
+    const settings = await this.repo.get();
+    if (!settings) throw AppError.notFound('SETTINGS_NOT_FOUND', 'Settings not initialized for this tenant.');
+    return settings;
+  }
+
+  update(patch: Prisma.SettingsUpdateInput) {
+    return this.repo.upsert(patch);
+  }
+}

@@ -1,5 +1,7 @@
 import { v4 as uuid } from 'uuid';
-import { musicianTokenRepository } from '../repositories/musicianToken.repository';
+import { MusicianTokenRepository } from '../repositories/musicianToken.repository';
+import { ServiceRepository } from '../repositories/service.repository';
+import type { TenantPrisma } from '../database/prisma';
 import { AppError } from '../utils/errors';
 import { generateMusicianToken, hashToken, tokenPreview } from '../utils/tokens';
 import { buildMusicianAccessUrl, generateQrCodeDataUrl } from '../utils/qrcode';
@@ -17,7 +19,7 @@ function status(t: { revokedAt: Date | null; expiresAt: Date }): 'active' | 'rev
   return 'active';
 }
 
-function serialize(t: Awaited<ReturnType<typeof musicianTokenRepository.findAll>>[number]) {
+function serialize(t: any) {
   return {
     id: t.id,
     name: t.name,
@@ -26,7 +28,7 @@ function serialize(t: Awaited<ReturnType<typeof musicianTokenRepository.findAll>
     expiresAt: t.expiresAt,
     revokedAt: t.revokedAt,
     lastUsedAt: t.lastUsedAt,
-    allowedServices: t.allowedServices.map((s) => s.serviceId),
+    allowedServices: t.allowedServices ? t.allowedServices.map((s: any) => s.serviceId) : [],
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
   };
@@ -36,25 +38,40 @@ function defaultExpiry(): Date {
   return new Date(Date.now() + env.musicianToken.defaultDays * 86_400_000);
 }
 
-export const musicianTokenService = {
+export class MusicianTokenService {
+  private tokenRepo: MusicianTokenRepository;
+  private serviceRepo: ServiceRepository;
+
+  constructor(private readonly db: TenantPrisma) {
+    this.tokenRepo = new MusicianTokenRepository(db);
+    this.serviceRepo = new ServiceRepository(db);
+  }
+
   async list() {
-    return (await musicianTokenRepository.findAll()).map(serialize);
-  },
+    return (await this.tokenRepo.findAll()).map(serialize);
+  }
 
   async getById(id: string) {
-    const token = await musicianTokenRepository.findById(id);
+    const token = await this.tokenRepo.findById(id);
     if (!token) throw AppError.notFound('MUSICIAN_TOKEN_NOT_FOUND', 'Musician access token does not exist.');
     return token;
-  },
+  }
 
   async getByIdSerialized(id: string) {
     return serialize(await this.getById(id));
-  },
+  }
 
   /** Creates a token and returns it together with the ONE-TIME raw value + QR code. */
   async create(name: string, expiresAt: Date | undefined, allowedServices: string[] | undefined) {
+    if (allowedServices?.length) {
+      const count = await this.serviceRepo.countByIds(allowedServices);
+      if (count !== allowedServices.length) {
+        throw AppError.badRequest('One or more services do not belong to this tenant.');
+      }
+    }
+
     const raw = generateMusicianToken();
-    const created = await musicianTokenRepository.create({
+    const created = await this.tokenRepo.create({
       id: uuid(),
       name,
       tokenHash: hashToken(raw),
@@ -69,7 +86,7 @@ export const musicianTokenService = {
     const qrCode = await generateQrCodeDataUrl(accessUrl);
 
     return { ...serialize(created), token: raw, accessUrl, qrCode };
-  },
+  }
 
   async update(
     id: string,
@@ -79,24 +96,31 @@ export const musicianTokenService = {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
 
-    await musicianTokenRepository.update(id, {
+    if (patch.allowedServices?.length) {
+      const count = await this.serviceRepo.countByIds(patch.allowedServices);
+      if (count !== patch.allowedServices.length) {
+        throw AppError.badRequest('One or more services do not belong to this tenant.');
+      }
+    }
+
+    await this.tokenRepo.update(id, {
       name: patch.name ?? undefined,
       expiresAt: patch.expiresAt ?? undefined,
     });
 
     if (patch.allowedServices) {
-      await musicianTokenRepository.replaceAllowedServices(id, patch.allowedServices);
+      await this.tokenRepo.replaceAllowedServices(id, patch.allowedServices);
     }
 
     return serialize(await this.getById(id));
-  },
+  }
 
   /** Soft-revoke: the token stops working immediately but the record (and audit trail) is kept. */
   async revoke(id: string, updatedAt: Date) {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
-    return serialize(await musicianTokenRepository.revoke(id));
-  },
+    return serialize(await this.tokenRepo.revoke(id));
+  }
 
   /** Issues a brand new raw token value for the same record, invalidating the previous one. */
   async regenerate(id: string, updatedAt: Date) {
@@ -104,7 +128,7 @@ export const musicianTokenService = {
     assertUnchanged(current, updatedAt);
 
     const raw = generateMusicianToken();
-    const updated = await musicianTokenRepository.update(id, {
+    await this.tokenRepo.update(id, {
       tokenHash: hashToken(raw),
       tokenPreview: tokenPreview(raw),
       revokedAt: null,
@@ -113,10 +137,10 @@ export const musicianTokenService = {
     const accessUrl = buildMusicianAccessUrl(raw);
     const qrCode = await generateQrCodeDataUrl(accessUrl);
     return { ...serialize(await this.getById(id)), token: raw, accessUrl, qrCode };
-  },
+  }
 
   async permanentlyDelete(id: string) {
     await this.getById(id);
-    await musicianTokenRepository.delete(id);
-  },
-};
+    await this.tokenRepo.delete(id);
+  }
+}

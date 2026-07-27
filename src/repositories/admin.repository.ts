@@ -1,11 +1,13 @@
-import { prisma } from '../database/prisma';
+import type { TenantPrisma } from '../database/prisma';
 
-export const adminRepository = {
+export class AdminRepository {
+  constructor(private readonly db: TenantPrisma) {}
+
   findByEmail(email: string) {
-    return prisma.admin.findUnique({ where: { email } });
-  },
+    return this.db.admin.findUnique({ where: { email } });
+  }
 
   findById(id: string) {
-    return prisma.admin.findUnique({ where: { id } });
-  },
-};
+    return this.db.admin.findUnique({ where: { id } });
+  }
+}

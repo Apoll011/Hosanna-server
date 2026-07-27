@@ -1,50 +1,52 @@
 import { Prisma } from '@prisma/client';
-import { prisma } from '../database/prisma';
+import type { TenantPrisma } from '../database/prisma';
 
-export const songRepository = {
+export class SongRepository {
+  constructor(private readonly db: TenantPrisma) {}
+
   findById(id: string) {
-    return prisma.song.findUnique({ where: { id } });
-  },
+    return this.db.song.findUnique({ where: { id } });
+  }
 
-  findMany(where: Prisma.SongWhereInput, orderBy: Prisma.SongOrderByWithRelationInput) {
-    return prisma.song.findMany({ where, orderBy });
-  },
+  findMany(where?: Prisma.SongWhereInput, orderBy?: Prisma.SongOrderByWithRelationInput) {
+    return this.db.song.findMany({ where, orderBy });
+  }
 
-  create(data: Prisma.SongCreateInput) {
-    return prisma.song.create({ data });
-  },
+  create(data: Omit<Prisma.SongUncheckedCreateInput, 'tenantId'> | Omit<Prisma.SongCreateInput, 'tenant' | 'tenantId'>) {
+    return this.db.song.create({ data: data as any });
+  }
 
-  createMany(data: Prisma.SongCreateManyInput[]) {
-    return prisma.song.createMany({
-      data,
+  createMany(data: Omit<Prisma.SongCreateManyInput, 'tenantId'>[]) {
+    return this.db.song.createMany({
+      data: data as any,
     });
-  },
+  }
 
   update(id: string, data: Prisma.SongUpdateInput) {
-    return prisma.song.update({ where: { id }, data });
-  },
+    return this.db.song.update({ where: { id }, data });
+  }
 
   updateMany(ids: string[], data: Prisma.SongUpdateManyMutationInput) {
-    return prisma.song.updateMany({ where: { id: { in: ids } }, data });
-  },
+    return this.db.song.updateMany({ where: { id: { in: ids } }, data });
+  }
 
   delete(id: string) {
-    return prisma.song.delete({ where: { id } });
-  },
+    return this.db.song.delete({ where: { id } });
+  }
 
   countByFolder(folderId: string | null) {
-    return prisma.song.count({ where: { folderId } });
-  },
+    return this.db.song.count({ where: { folderId } });
+  }
 
   findManyByFolder(folderId: string) {
-    return prisma.song.findMany({ where: { folderId } });
-  },
+    return this.db.song.findMany({ where: { folderId } });
+  }
 
   deleteManyByFolder(folderId: string) {
-    return prisma.song.deleteMany({ where: { folderId } });
-  },
+    return this.db.song.deleteMany({ where: { folderId } });
+  }
 
   moveManyToRoot(folderId: string) {
-    return prisma.song.updateMany({ where: { folderId }, data: { folderId: null } });
-  },
-};
+    return this.db.song.updateMany({ where: { folderId }, data: { folderId: null } });
+  }
+}

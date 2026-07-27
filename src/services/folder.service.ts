@@ -1,6 +1,7 @@
 import { v4 as uuid } from 'uuid';
-import { folderRepository } from '../repositories/folder.repository';
-import { songRepository } from '../repositories/song.repository';
+import { FolderRepository } from '../repositories/folder.repository';
+import { SongRepository } from '../repositories/song.repository';
+import type { TenantPrisma } from '../database/prisma';
 import { AppError } from '../utils/errors';
 
 function assertUnchanged(current: { updatedAt: Date }, clientUpdatedAt: Date) {
@@ -9,77 +10,76 @@ function assertUnchanged(current: { updatedAt: Date }, clientUpdatedAt: Date) {
   }
 }
 
-export const folderService = {
+export class FolderService {
+  private folderRepo: FolderRepository;
+  private songRepo: SongRepository;
+
+  constructor(private readonly db: TenantPrisma) {
+    this.folderRepo = new FolderRepository(db);
+    this.songRepo = new SongRepository(db);
+  }
+
   async listWithCounts() {
     const [folders, rootSongsCount] = await Promise.all([
-      folderRepository.findAll(),
-      songRepository.countByFolder(null),
+      this.folderRepo.findAll(),
+      this.songRepo.countByFolder(null),
     ]);
     const withCounts = await Promise.all(
-      folders.map(async (f) => ({ ...f, songCount: await songRepository.countByFolder(f.id) })),
+      folders.map(async (f) => ({ ...f, songCount: await this.songRepo.countByFolder(f.id) })),
     );
     return { folders: withCounts, rootSongsCount };
-  },
+  }
 
-  /**
-   * All real folder records, flat, with no song counts attached. There is no
-   * "root" Folder row to exclude — root is the implicit `folderId === null`
-   * state on a Song — so this is simply the plain folder list, provided as
-   * a lightweight endpoint for populating pickers/dropdowns.
-   */
   async listFlat() {
-    return folderRepository.findAll();
-  },
+    return this.folderRepo.findAll();
+  }
 
   async getById(id: string) {
-    const folder = await folderRepository.findById(id);
+    const folder = await this.folderRepo.findById(id);
     if (!folder) throw AppError.notFound('FOLDER_NOT_FOUND', 'Folder does not exist.');
     return folder;
-  },
+  }
 
   async create(name: string, parentId?: string | null) {
-    return folderRepository.create({
+    return this.folderRepo.create({
       id: uuid(),
       name: name.trim(),
       parent: parentId ? { connect: { id: parentId } } : undefined,
     });
-  },
+  }
 
   async update(id: string, updatedAt: Date, name?: string, parentId?: string | null) {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
 
-    const updated = await folderRepository.update(id, {
+    const updated = await this.folderRepo.update(id, {
       name: name ?? undefined,
       parent: parentId !== undefined ? (parentId ? { connect: { id: parentId } } : { disconnect: true }) : undefined,
     });
 
-    // Keep song.path in sync with the folder name, matching reference behavior.
     if (name && name !== current.name) {
-      const songs = await songRepository.findManyByFolder(id);
+      const songs = await this.songRepo.findManyByFolder(id);
       await Promise.all(
-        songs.map((s) => songRepository.update(s.id, { path: `${updated.name}/${s.title}.pro` })),
+        songs.map((s) => this.songRepo.update(s.id, { path: `${updated.name}/${s.title}.pro` })),
       );
     }
 
     return updated;
-  },
+  }
 
-  /** Moves every song inside the folder to root (folderId = null), then deletes the folder. */
   async deleteMovingSongsToRoot(id: string) {
     await this.getById(id);
-    const songs = await songRepository.findManyByFolder(id);
-    await Promise.all(songs.map((s) => songRepository.update(s.id, { folder: { disconnect: true }, path: `${s.title}.pro` })));
-    await folderRepository.delete(id);
+    const songs = await this.songRepo.findManyByFolder(id);
+    await Promise.all(songs.map((s) => this.songRepo.update(s.id, { folder: { disconnect: true }, path: `${s.title}.pro` })));
+    await this.folderRepo.delete(id);
     return { movedSongs: songs.length };
-  },
+  }
 
-  /** Deletes the folder and every song inside it (services referencing them cascade). */
   async deleteWithSongs(id: string) {
     await this.getById(id);
-    const songs = await songRepository.findManyByFolder(id);
-    await songRepository.deleteManyByFolder(id);
-    await folderRepository.delete(id);
+    const songs = await this.songRepo.findManyByFolder(id);
+    await this.songRepo.deleteManyByFolder(id);
+    await this.folderRepo.delete(id);
     return { deletedSongs: songs.length };
-  },
-};
+  }
+}

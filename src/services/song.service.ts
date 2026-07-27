@@ -1,7 +1,8 @@
 import { Prisma, Song } from '@prisma/client';
 import { v4 as uuid } from 'uuid';
-import { songRepository } from '../repositories/song.repository';
-import { folderRepository } from '../repositories/folder.repository';
+import { SongRepository } from '../repositories/song.repository';
+import { FolderRepository } from '../repositories/folder.repository';
+import type { TenantPrisma } from '../database/prisma';
 import { AppError } from '../utils/errors';
 import { z } from 'zod';
 import {
@@ -14,16 +15,7 @@ type CreateInput = z.infer<typeof createSongSchema>;
 
 const KEY_DIRECTIVE = /\{key:\s*([^}]+)\}/i;
 
-async function computePath(title: string, folderId: string | null | undefined, explicitPath?: string) {
-  if (explicitPath) return explicitPath;
-  if (!folderId) return `${title}.pro`;
-  const folder = await folderRepository.findById(folderId);
-  return folder ? `${folder.name}/${title}.pro` : `${title}.pro`;
-}
-
 function assertUnchanged(current: { updatedAt: Date }, clientUpdatedAt: Date) {
-  // Millisecond-precision equality; Postgres timestamptz round-trips exactly
-  // through Prisma's Date <-> ISO conversion so this is safe.
   if (current.updatedAt.getTime() !== clientUpdatedAt.getTime()) {
     throw AppError.conflict('This song was modified by someone else since you last loaded it.');
   }
@@ -33,7 +25,22 @@ function defaultContent(title: string, artist?: string) {
   return `{title: ${title}}\n{artist: ${artist || 'Unknown'}}\n{key: G}\n\n[G]Add chords and lyrics here...`;
 }
 
-export const songService = {
+export class SongService {
+  private songRepo: SongRepository;
+  private folderRepo: FolderRepository;
+
+  constructor(private readonly db: TenantPrisma) {
+    this.songRepo = new SongRepository(db);
+    this.folderRepo = new FolderRepository(db);
+  }
+
+  private async computePath(title: string, folderId: string | null | undefined, explicitPath?: string) {
+    if (explicitPath) return explicitPath;
+    if (!folderId) return `${title}.pro`;
+    const folder = await this.folderRepo.findById(folderId);
+    return folder ? `${folder.name}/${title}.pro` : `${title}.pro`;
+  }
+
   async list(query: ListQuery) {
     const where: Prisma.SongWhereInput = {};
 
@@ -49,7 +56,7 @@ export const songService = {
       try {
         fields = { ...fields, ...JSON.parse(query.searchFields) };
       } catch {
-        // ignore malformed filter, fall back to defaults
+        // ignore malformed filter
       }
     }
 
@@ -59,18 +66,15 @@ export const songService = {
       if (fields.title) or.push({ title: { contains: q, mode: 'insensitive' } });
       if (fields.artist) or.push({ artist: { contains: q, mode: 'insensitive' } });
       if (fields.content) or.push({ content: { contains: q, mode: 'insensitive' } });
-      // `hasSome` only matches exact tag values; combined with the in-memory
-      // pass below (which catches partial/case-insensitive tag matches, like
-      // the reference implementation's `tags.some(t => t.includes(q))`).
       if (fields.tags) or.push({ tags: { hasSome: [q] } });
       if (or.length > 0) where.OR = or;
     }
 
-    let result = await songRepository.findMany(where, {});
+    let result = await this.songRepo.findMany(where, {});
 
     if (query.search && fields.tags) {
       const q = query.search.toLowerCase();
-      const allSongs = await songRepository.findMany(query.folder ? { folderId: where.folderId } : {}, {});
+      const allSongs = await this.songRepo.findMany(query.folder ? { folderId: where.folderId } : {}, {});
       const extraMatches = allSongs.filter(
         (s) => s.tags.some((t) => t.toLowerCase().includes(q)) && !result.some((r) => r.id === s.id),
       );
@@ -105,17 +109,17 @@ export const songService = {
       page: query.page,
       totalPages: Math.ceil(total / query.limit) || 1,
     };
-  },
+  }
 
   async getById(id: string): Promise<Song> {
-    const song = await songRepository.findById(id);
+    const song = await this.songRepo.findById(id);
     if (!song) throw AppError.notFound('SONG_NOT_FOUND', 'Song does not exist.');
     return song;
-  },
+  }
 
   async create(input: CreateInput) {
-    const path = await computePath(input.title, input.folderId, input.path);
-    return songRepository.create({
+    const path = await this.computePath(input.title, input.folderId, input.path);
+    return this.songRepo.create({
       id: uuid(),
       title: input.title,
       artist: input.artist || 'Unknown Artist',
@@ -124,7 +128,7 @@ export const songService = {
       path,
       tags: input.tags ?? [],
     });
-  },
+  }
 
   async batchCreate(items: CreateInput[]) {
     const prepared = await Promise.all(
@@ -134,16 +138,16 @@ export const songService = {
         artist: item.artist || 'Vários',
         content: item.content || `{title: ${item.title}}\n{artist: ${item.artist || 'Vários'}}\n\n`,
         folderId: item.folderId ?? null,
-        path: await computePath(item.title, item.folderId, item.path),
+        path: await this.computePath(item.title, item.folderId, item.path),
         tags: item.tags ?? [],
       })),
     );
-    const created = await songRepository.createMany(prepared);
+    const created = await this.songRepo.createMany(prepared);
     return { created, count: created.count };
-  },
+  }
 
   async batchUpdateTags(songIds: string[], tags: string[], mode: 'append' | 'replace' | 'remove') {
-    const existing = await songRepository.findMany({ id: { in: songIds } }, {});
+    const existing = await this.songRepo.findMany({ id: { in: songIds } }, {});
     let updatedCount = 0;
     for (const song of existing) {
       let newTags = [...song.tags];
@@ -151,11 +155,11 @@ export const songService = {
       else if (mode === 'remove') newTags = newTags.filter((t) => !tags.includes(t));
       else tags.forEach((t) => { if (!newTags.includes(t)) newTags.push(t); });
 
-      await songRepository.update(song.id, { tags: newTags });
+      await this.songRepo.update(song.id, { tags: newTags });
       updatedCount++;
     }
     return { success: true, count: updatedCount };
-  },
+  }
 
   async update(id: string, updatedAt: Date, patch: Partial<CreateInput>) {
     const current = await this.getById(id);
@@ -170,30 +174,29 @@ export const songService = {
     if (patch.folderId !== undefined) {
       data.folder = patch.folderId ? { connect: { id: patch.folderId } } : { disconnect: true };
     }
-    return songRepository.update(id, data);
-  },
+    return this.songRepo.update(id, data);
+  }
 
   async delete(id: string) {
     await this.getById(id);
-    // ServiceSong rows cascade-delete automatically (see schema.prisma).
-    await songRepository.delete(id);
-  },
+    await this.songRepo.delete(id);
+  }
 
   async rename(id: string, updatedAt: Date, newTitle?: string, newPath?: string) {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
-    return songRepository.update(id, {
+    return this.songRepo.update(id, {
       title: newTitle ?? current.title,
       path: newPath ?? current.path,
     });
-  },
+  }
 
   async move(id: string, updatedAt: Date, folderId: string | null, newPath?: string) {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
-    return songRepository.update(id, {
+    return this.songRepo.update(id, {
       folder: folderId ? { connect: { id: folderId } } : { disconnect: true },
       path: newPath ?? current.path,
     });
-  },
-};
+  }
+}

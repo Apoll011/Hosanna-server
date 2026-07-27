@@ -1,20 +1,18 @@
 import { Prisma } from '@prisma/client';
-import { prisma } from '../database/prisma';
+import type { TenantPrisma } from '../database/prisma';
 
-const SETTINGS_ID = 'settings';
+export class SettingsRepository {
+  constructor(private readonly db: TenantPrisma, private readonly tenantId: string) {}
 
-export const settingsRepository = {
-  async get() {
-    const existing = await prisma.settings.findUnique({ where: { id: SETTINGS_ID } });
-    if (existing) return existing;
-    return prisma.settings.create({ data: { id: SETTINGS_ID } });
-  },
+  get() {
+    return this.db.settings.findUnique({ where: { tenantId: this.tenantId } });
+  }
 
-  update(data: Prisma.SettingsUpdateInput) {
-    return prisma.settings.upsert({
-      where: { id: SETTINGS_ID },
+  upsert(data: Prisma.SettingsUpdateInput) {
+    return this.db.settings.upsert({
+      where: { tenantId: this.tenantId },
+      create: { ...data, tenantId: this.tenantId } as Prisma.SettingsUncheckedCreateInput,
       update: data,
-      create: { id: SETTINGS_ID, ...(data as Prisma.SettingsCreateInput) },
     });
-  },
-};
+  }
+}

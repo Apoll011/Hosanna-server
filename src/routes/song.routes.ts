@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { songService } from '../services/song.service';
+import { SongService } from '../services/song.service';
 import { authenticateAny, authenticateAdmin } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
@@ -22,7 +22,8 @@ songRouter.get(
   authenticateAny,
   validate({ query: listSongsQuerySchema }),
   asyncHandler(async (req, res) => {
-    res.json(await songService.list(req.query as any));
+    const service = new SongService(req.db!);
+    res.json(await service.list(req.query as any));
   }),
 );
 
@@ -32,7 +33,8 @@ songRouter.post(
   authenticateAny,
   validate({ body: batchCreateSongsSchema }),
   asyncHandler(async (req, res) => {
-    res.status(201).json(await songService.batchCreate(req.body.songs));
+    const service = new SongService(req.db!);
+    res.status(201).json(await service.batchCreate(req.body.songs));
   }),
 );
 
@@ -42,7 +44,8 @@ songRouter.put(
   authenticateAny,
   validate({ body: batchTagsSchema }),
   asyncHandler(async (req, res) => {
-    res.json(await songService.batchUpdateTags(req.body.songIds, req.body.tags, req.body.mode));
+    const service = new SongService(req.db!);
+    res.json(await service.batchUpdateTags(req.body.songIds, req.body.tags, req.body.mode));
   }),
 );
 
@@ -52,7 +55,8 @@ songRouter.get(
   authenticateAny,
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
-    res.json(await songService.getById(req.params.id));
+    const service = new SongService(req.db!);
+    res.json(await service.getById(req.params.id));
   }),
 );
 
@@ -62,7 +66,8 @@ songRouter.get(
   authenticateAny,
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
-    const song = await songService.getById(req.params.id);
+    const service = new SongService(req.db!);
+    const song = await service.getById(req.params.id);
     const filename = song.path?.split('/').pop() || `${song.title}.pro`;
     res.setHeader('Content-Type', 'text/vnd.chordpro; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
@@ -76,7 +81,8 @@ songRouter.post(
   authenticateAny,
   validate({ body: createSongSchema }),
   asyncHandler(async (req, res) => {
-    res.status(201).json(await songService.create(req.body));
+    const service = new SongService(req.db!);
+    res.status(201).json(await service.create(req.body));
   }),
 );
 
@@ -86,8 +92,9 @@ songRouter.put(
   authenticateAny,
   validate({ params: idParamSchema, body: updateSongSchema }),
   asyncHandler(async (req, res) => {
+    const service = new SongService(req.db!);
     const { updatedAt, ...patch } = req.body;
-    res.json(await songService.update(req.params.id, updatedAt ?? new Date().toISOString(), patch));
+    res.json(await service.update(req.params.id, updatedAt ?? new Date().toISOString(), patch));
   }),
 );
 
@@ -97,7 +104,8 @@ songRouter.delete(
   authenticateAny,
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
-    await songService.delete(req.params.id);
+    const service = new SongService(req.db!);
+    await service.delete(req.params.id);
     res.status(204).send();
   }),
 );
@@ -108,8 +116,9 @@ songRouter.put(
   authenticateAny,
   validate({ params: idParamSchema, body: renameSongSchema }),
   asyncHandler(async (req, res) => {
+    const service = new SongService(req.db!);
     const { updatedAt, newTitle, newPath } = req.body;
-    res.json(await songService.rename(req.params.id, updatedAt ?? new Date().toISOString(), newTitle, newPath));
+    res.json(await service.rename(req.params.id, updatedAt ?? new Date().toISOString(), newTitle, newPath));
   }),
 );
 
@@ -119,7 +128,8 @@ songRouter.put(
   authenticateAny,
   validate({ params: idParamSchema, body: moveSongSchema }),
   asyncHandler(async (req, res) => {
+    const service = new SongService(req.db!);
     const { updatedAt, folderId, newPath } = req.body;
-    res.json(await songService.move(req.params.id, updatedAt ?? new Date().toISOString(), folderId, newPath));
+    res.json(await service.move(req.params.id, updatedAt ?? new Date().toISOString(), folderId, newPath));
   }),
 );

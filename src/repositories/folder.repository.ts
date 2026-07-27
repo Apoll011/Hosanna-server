@@ -1,24 +1,26 @@
 import { Prisma } from '@prisma/client';
-import { prisma } from '../database/prisma';
+import type { TenantPrisma } from '../database/prisma';
 
-export const folderRepository = {
+export class FolderRepository {
+  constructor(private readonly db: TenantPrisma) {}
+
   findAll() {
-    return prisma.folder.findMany({ orderBy: { name: 'asc' } });
-  },
+    return this.db.folder.findMany({ orderBy: { name: 'asc' } });
+  }
 
   findById(id: string) {
-    return prisma.folder.findUnique({ where: { id } });
-  },
+    return this.db.folder.findUnique({ where: { id } });
+  }
 
-  create(data: Prisma.FolderCreateInput) {
-    return prisma.folder.create({ data });
-  },
+  create(data: Omit<Prisma.FolderUncheckedCreateInput, 'tenantId'> | Omit<Prisma.FolderCreateInput, 'tenant' | 'tenantId'>) {
+    return this.db.folder.create({ data: data as any });
+  }
 
   update(id: string, data: Prisma.FolderUpdateInput) {
-    return prisma.folder.update({ where: { id }, data });
-  },
+    return this.db.folder.update({ where: { id }, data });
+  }
 
   delete(id: string) {
-    return prisma.folder.delete({ where: { id } });
-  },
-};
+    return this.db.folder.delete({ where: { id } });
+  }
+}
