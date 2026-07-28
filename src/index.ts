@@ -20,5 +20,5 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 app.listen(env.port, '0.0.0.0', () => {
-  console.log(`ChordPro Studio API listening on http://0.0.0.0:${env.port} (${env.nodeEnv})`);
+  console.log(`Hosanna Studio API listening on http://0.0.0.0:${env.port} (${env.nodeEnv})`);
 });

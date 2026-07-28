@@ -1,6 +1,6 @@
-# ChordPro Studio Backend
+# Hosanna Studio Backend
 
-Production REST API for ChordPro Studio: songs, folders, worship services,
+Production REST API for Hosanna Studio: songs, folders, worship services,
 musician QR-token access, and dashboard (JWT) admin auth. Backed by
 PostgreSQL via Prisma. See **API_DOCUMENTATION.md** for the full endpoint
 reference.

@@ -1,7 +1,7 @@
 {
-  "name": "chordpro-studio-backend",
+  "name": "hosanna-studio-backend",
   "version": "1.0.0",
-  "description": "Production REST API backend for ChordPro Studio (songs, folders, services, musician access)",
+  "description": "Production REST API backend for Hosanna Studio (songs, folders, services, musician access)",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
