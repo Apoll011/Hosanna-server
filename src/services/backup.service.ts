@@ -10,7 +10,7 @@ export class BackupService {
     const [folders, songs, services, musicianTokens, settings] = await Promise.all([
       this.db.folder.findMany(),
       this.db.song.findMany(),
-      this.db.service.findMany({ include: { songs: true } }),
+      this.db.service.findMany(),
       this.db.musicianToken.findMany({ include: { allowedServices: true } }),
       this.db.settings.findUnique({ where: { tenantId: this.tenantId } }),
     ]);
@@ -42,10 +42,7 @@ export class BackupService {
     await this.db.$transaction(async (tx) => {
       // Delete existing data for this tenant
       // ServiceSong and MusicianTokenService cascade via service/song/musicianToken
-      const serviceIds = (await tx.service.findMany({ select: { id: true } })).map((s) => s.id);
-      if (serviceIds.length > 0) {
-        await tx.serviceSong.deleteMany({ where: { serviceId: { in: serviceIds } } });
-      }
+
 
       const tokenIds = (await tx.musicianToken.findMany({ select: { id: true } })).map((t) => t.id);
       if (tokenIds.length > 0) {
@@ -84,23 +81,11 @@ export class BackupService {
             name: svc.name,
             date: svc.date,
             notes: svc.notes ?? '',
+            elements: svc.elements ?? [],
             createdAt: svc.createdAt,
             updatedAt: svc.updatedAt,
           } as any,
         });
-        const svcSongs = svc.songs ?? [];
-        for (let i = 0; i < svcSongs.length; i++) {
-          const ss = svcSongs[i];
-          await tx.serviceSong.create({
-            data: {
-              id: ss.id,
-              serviceId: svc.id,
-              songId: ss.songId,
-              position: ss.position ?? i,
-              notes: ss.notes ?? null,
-            },
-          });
-        }
       }
       for (const t of musicianTokens) {
         await tx.musicianToken.create({
