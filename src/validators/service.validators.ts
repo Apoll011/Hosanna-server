@@ -13,6 +13,7 @@ export const createServiceSchema = z.object({
   name: z.string().trim().min(1, 'name is required'),
   date: z.string().trim().min(1, 'date is required'),
   notes: z.string().optional(),
+  elements: z.any().optional(),
   songs: z.array(legacyServiceSongSchema).optional(),
   songIds: z.array(z.string().uuid()).optional(), // new, simpler alternative to `songs`
   songNotes: z.record(z.string()).optional(),
@@ -22,9 +23,14 @@ export const updateServiceSchema = concurrencySchema.extend({
   name: z.string().trim().min(1).optional(),
   date: z.string().trim().min(1).optional(),
   notes: z.string().optional(),
+  elements: z.any().optional(),
   songs: z.array(legacyServiceSongSchema).optional(),
   songIds: z.array(z.string().uuid()).optional(),
   songNotes: z.record(z.string()).optional(),
+});
+
+export const updateServiceElementsSchema = concurrencySchema.extend({
+  elements: z.any(),
 });
 
 export const addSongToServiceSchema = concurrencySchema.extend({

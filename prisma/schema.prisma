@@ -108,6 +108,7 @@ model Service {
 
   date      String
   notes     String?  @db.Text
+  elements  Json?    @default("[]")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

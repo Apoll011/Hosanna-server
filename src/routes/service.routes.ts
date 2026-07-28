@@ -9,6 +9,7 @@ import {
   createServiceSchema,
   moveServiceSongSchema,
   reorderServiceSongsSchema,
+  updateServiceElementsSchema,
   updateServiceNotesSchema,
   updateServiceSchema,
   updateServiceSongNotesSchema,
@@ -131,6 +132,19 @@ serviceRouter.put(
     const service = new ServiceService(req.db!);
     const { updatedAt, notes } = req.body;
     res.json(await service.updateNotes(req.params.id, updatedAt, notes));
+  }),
+);
+
+// PUT /api/services/:id/elements — admin OR musician (scoped). Updates the service-level modular elements.
+serviceRouter.put(
+  '/:id/elements',
+  authenticateAny,
+  validate({ params: idParamSchema, body: updateServiceElementsSchema }),
+  byId,
+  asyncHandler(async (req, res) => {
+    const service = new ServiceService(req.db!);
+    const { updatedAt, elements } = req.body;
+    res.json(await service.updateElements(req.params.id, updatedAt, elements));
   }),
 );
 

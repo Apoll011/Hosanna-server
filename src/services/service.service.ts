@@ -17,6 +17,7 @@ function serialize(service: NonNullable<ServiceWithSongs>) {
     name: service.name,
     date: service.date,
     notes: service.notes ?? '',
+    elements: service.elements ?? [],
     songIds: orderedSongs.map((s) => s.songId),
     songs: orderedSongs.map((s) => ({ songId: s.songId, notes: s.notes ?? '', position: s.position })),
     songNotes: Object.fromEntries(orderedSongs.map((s) => [s.songId, s.notes ?? ''])),
@@ -83,6 +84,7 @@ export class ServiceService {
     name: string;
     date: string;
     notes?: string;
+    elements?: any;
     songs?: SongsInput;
     songIds?: string[];
     songNotes?: Record<string, string>;
@@ -93,6 +95,7 @@ export class ServiceService {
       name: input.name,
       date: input.date,
       notes: input.notes ?? '',
+      elements: input.elements ?? [],
       songs: { create: normalized },
     });
     return serialize(created!);
@@ -105,6 +108,7 @@ export class ServiceService {
       name?: string;
       date?: string;
       notes?: string;
+      elements?: any;
       songs?: SongsInput;
       songIds?: string[];
       songNotes?: Record<string, string>;
@@ -117,6 +121,7 @@ export class ServiceService {
       name: patch.name ?? undefined,
       date: patch.date ?? undefined,
       notes: patch.notes ?? undefined,
+      elements: patch.elements !== undefined ? patch.elements : undefined,
     });
 
     if (patch.songs || patch.songIds || patch.songNotes) {
@@ -198,6 +203,13 @@ export class ServiceService {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
     const updated = await this.serviceRepo.update(id, { notes });
+    return serialize(updated!);
+  }
+
+  async updateElements(id: string, updatedAt: Date, elements: any) {
+    const current = await this.getById(id);
+    assertUnchanged(current, updatedAt);
+    const updated = await this.serviceRepo.update(id, { elements });
     return serialize(updated!);
   }
 
