@@ -90,7 +90,6 @@ model Song {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  serviceSongs ServiceSong[]
 
   @@unique([tenantId, path])
   @@index([tenantId])
@@ -112,27 +111,12 @@ model Service {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  songs         ServiceSong[]
   allowedTokens MusicianTokenService[]
 
   @@index([tenantId])
   @@map("services")
 }
 
-model ServiceSong {
-  id        String   @id @default(uuid())
-  serviceId String
-  service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  songId    String
-  song      Song     @relation(fields: [songId], references: [id], onDelete: Cascade)
-  position  Int
-  notes     String?  @db.Text
-  updatedAt DateTime @updatedAt
-
-  @@unique([serviceId, songId])
-  @@index([serviceId, position])
-  @@map("service_songs")
-}
 
 model MusicianToken {
   id       String @id @default(uuid())
