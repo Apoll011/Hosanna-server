@@ -50,7 +50,7 @@ export class ServiceService {
 
   async create(input: {
     name: string;
-    date: string;
+    date: Date;
     notes?: string;
     elements?: any;
   }) {
@@ -69,7 +69,7 @@ export class ServiceService {
     updatedAt: Date,
     patch: {
       name?: string;
-      date?: string;
+      date?: Date;
       notes?: string;
       elements?: any;
     },

@@ -71,10 +71,6 @@ serviceRouter.delete(
 );
 
 
-
-
-
-
 // PUT /api/services/:id/elements — admin OR musician (scoped). Updates the service-level modular elements.
 serviceRouter.put(
   '/:id/elements',
