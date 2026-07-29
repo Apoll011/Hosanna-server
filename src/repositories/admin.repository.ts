@@ -11,6 +11,16 @@ export class AdminRepository {
     return this.db.admin.findUnique({ where: { id } });
   }
 
+  tenant(id: string) {
+    return this.db.tenant.findUnique({ where: { id }, select: {
+      id: false,
+      name: true,
+      slug: true,
+      createdAt: true,
+      updatedAt: true
+    }})
+  }
+
   findAll() {
     return this.db.admin.findMany({
       select: {

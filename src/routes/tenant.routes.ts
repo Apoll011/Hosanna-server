@@ -33,6 +33,18 @@ tenantRouter.get(
   }),
 );
 
+// GET /api/tenants/me — admin only: Get tenant name and slug
+tenantRouter.get(
+  '/me',
+  authenticateAdmin,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const repo = new AdminRepository(req.db!);
+    res.json(await repo.tenant(req.tenantId!));
+  }),
+);
+
+
 // GET /api/tenants/admins/pending — admin only: list all pending admins in the current tenant
 tenantRouter.get(
   '/admins/pending',
