@@ -124,7 +124,7 @@ export class SongService {
       title: input.title,
       artist: input.artist || 'Unknown Artist',
       content: input.content || defaultContent(input.title, input.artist),
-      folder: input.folderId ? { connect: { id: input.folderId } } : undefined,
+      folderId: input.folderId,
       path,
       tags: input.tags ?? [],
     });
