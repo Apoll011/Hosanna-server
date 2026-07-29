@@ -1,10 +1,26 @@
+-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
+
+-- CreateTable
+CREATE TABLE "tenants" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "tenants_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateTable
 CREATE TABLE "admins" (
     "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "passwordHash" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "role" TEXT NOT NULL DEFAULT 'admin',
+    "isApproved" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -26,6 +42,7 @@ CREATE TABLE "refresh_tokens" (
 -- CreateTable
 CREATE TABLE "folders" (
     "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "parentId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -37,6 +54,7 @@ CREATE TABLE "folders" (
 -- CreateTable
 CREATE TABLE "songs" (
     "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "artist" TEXT NOT NULL DEFAULT 'Unknown Artist',
     "content" TEXT NOT NULL,
@@ -52,9 +70,11 @@ CREATE TABLE "songs" (
 -- CreateTable
 CREATE TABLE "services" (
     "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "date" TEXT NOT NULL,
     "notes" TEXT,
+    "elements" JSONB DEFAULT '[]',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -62,20 +82,9 @@ CREATE TABLE "services" (
 );
 
 -- CreateTable
-CREATE TABLE "service_songs" (
-    "id" TEXT NOT NULL,
-    "serviceId" TEXT NOT NULL,
-    "songId" TEXT NOT NULL,
-    "position" INTEGER NOT NULL,
-    "notes" TEXT,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "service_songs_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "musician_tokens" (
     "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "tokenHash" TEXT NOT NULL,
     "tokenPreview" TEXT NOT NULL,
@@ -98,7 +107,7 @@ CREATE TABLE "musician_token_services" (
 
 -- CreateTable
 CREATE TABLE "settings" (
-    "id" TEXT NOT NULL DEFAULT 'settings',
+    "tenantId" TEXT NOT NULL,
     "serverName" TEXT NOT NULL DEFAULT 'ChordPro Studio Server',
     "defaultKey" TEXT NOT NULL DEFAULT 'G',
     "syncIntervalSeconds" INTEGER NOT NULL DEFAULT 30,
@@ -107,11 +116,17 @@ CREATE TABLE "settings" (
     "maxUploadMB" INTEGER NOT NULL DEFAULT 10,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "settings_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "settings_pkey" PRIMARY KEY ("tenantId")
 );
 
 -- CreateIndex
+CREATE UNIQUE INDEX "tenants_slug_key" ON "tenants"("slug");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "admins_email_key" ON "admins"("email");
+
+-- CreateIndex
+CREATE INDEX "admins_tenantId_idx" ON "admins"("tenantId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "refresh_tokens_tokenHash_key" ON "refresh_tokens"("tokenHash");
@@ -120,40 +135,62 @@ CREATE UNIQUE INDEX "refresh_tokens_tokenHash_key" ON "refresh_tokens"("tokenHas
 CREATE INDEX "refresh_tokens_adminId_idx" ON "refresh_tokens"("adminId");
 
 -- CreateIndex
+CREATE INDEX "folders_tenantId_idx" ON "folders"("tenantId");
+
+-- CreateIndex
 CREATE INDEX "folders_parentId_idx" ON "folders"("parentId");
+
+-- CreateIndex
+CREATE INDEX "songs_tenantId_idx" ON "songs"("tenantId");
 
 -- CreateIndex
 CREATE INDEX "songs_folderId_idx" ON "songs"("folderId");
 
 -- CreateIndex
-CREATE INDEX "songs_title_idx" ON "songs"("title");
+CREATE INDEX "songs_tenantId_title_idx" ON "songs"("tenantId", "title");
 
 -- CreateIndex
-CREATE INDEX "service_songs_serviceId_position_idx" ON "service_songs"("serviceId", "position");
+CREATE UNIQUE INDEX "songs_tenantId_path_key" ON "songs"("tenantId", "path");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "service_songs_serviceId_songId_key" ON "service_songs"("serviceId", "songId");
+CREATE INDEX "services_tenantId_idx" ON "services"("tenantId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "musician_tokens_tokenHash_key" ON "musician_tokens"("tokenHash");
+
+-- CreateIndex
+CREATE INDEX "musician_tokens_tenantId_idx" ON "musician_tokens"("tenantId");
+
+-- AddForeignKey
+ALTER TABLE "admins" ADD CONSTRAINT "admins_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "refresh_tokens" ADD CONSTRAINT "refresh_tokens_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "admins"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "folders" ADD CONSTRAINT "folders_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "folders" ADD CONSTRAINT "folders_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "folders"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "songs" ADD CONSTRAINT "songs_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "songs" ADD CONSTRAINT "songs_folderId_fkey" FOREIGN KEY ("folderId") REFERENCES "folders"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "service_songs" ADD CONSTRAINT "service_songs_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "services"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "services" ADD CONSTRAINT "services_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "service_songs" ADD CONSTRAINT "service_songs_songId_fkey" FOREIGN KEY ("songId") REFERENCES "songs"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "musician_tokens" ADD CONSTRAINT "musician_tokens_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "musician_token_services" ADD CONSTRAINT "musician_token_services_musicianTokenId_fkey" FOREIGN KEY ("musicianTokenId") REFERENCES "musician_tokens"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "musician_token_services" ADD CONSTRAINT "musician_token_services_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "services"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "settings" ADD CONSTRAINT "settings_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+

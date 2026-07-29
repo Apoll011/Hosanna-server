@@ -105,7 +105,7 @@ model Service {
 
   name String
 
-  date      String
+  date      DateTime @default(now())
   notes     String?  @db.Text
   elements  Json?    @default("[]")
   createdAt DateTime @default(now())
