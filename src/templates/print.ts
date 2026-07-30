@@ -59,7 +59,7 @@ export const templateRegistry: PrintTemplate[] = [
           .meta-badge { display: inline-block; background: #f3f4f6; padding: 4px 8px; border-radius: 4px; margin-left: 5px; font-weight: 600;}
 
           /* Hide injected title if requested */
-          {{#if settings.hideParsedTitle}} h1.title { display: none !important; } {{/if}}
+          {{#if settings.hideParsedTitle}} h1.title, h2.subtitle { display: none !important; } {{/if}}
           
           /* ChordSheetJS Standard Classes */
           .chord-sheet { column-count: {{settings.columns}}; column-gap: 40px; }
@@ -159,7 +159,7 @@ export const templateRegistry: PrintTemplate[] = [
           .compact-header h3 { margin: 0; color: #555; font-weight: normal; }
           hr { border: none; border-top: 1px solid #ccc; margin-bottom: 20px; }
 
-          {{#if settings.hideParsedTitle}} h1.title { display: none !important; } {{/if}}
+          {{#if settings.hideParsedTitle}} h1.title, h2.subtitle { display: none !important; } {{/if}}
           
           .chord-sheet { column-count: {{settings.columns}}; column-gap: 30px; }
 
@@ -238,7 +238,7 @@ export const templateRegistry: PrintTemplate[] = [
           h1.main-title { font-size: 2em; text-align: center; margin-bottom: 5px; }
           h3.main-artist { text-align: center; color: #666; margin-top: 0; margin-bottom: 40px; font-style: italic; }
           
-          {{#if settings.hideParsedTitle}} h1.title { display: none !important; } {{/if}}
+          {{#if settings.hideParsedTitle}} h1.title, h2.subtitle { display: none !important; } {{/if}}
           
           .chord-sheet { column-count: {{settings.columns}}; max-width: 800px; margin: 0 auto; }
           .chord { display: none !important; }
