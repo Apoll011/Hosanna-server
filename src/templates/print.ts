@@ -335,22 +335,55 @@ export const templateRegistry: PrintTemplate[] = [
           
           /* Chord styling within service */
           {{#if settings.hideParsedTitle}} h1.title { display: none !important; } {{/if}}
-          .chord-sheet { column-count: 1; }
-          .paragraph { margin-bottom: 1.5em; break-inside: avoid; }
-          .row { display: flex; flex-direction: column; break-inside: avoid; margin-bottom: 4px; }
-          .chord { font-family: 'Roboto Mono', monospace; font-weight: 500; color: {{settings.chordColor}}; height: 1.2em; display: block; }
-          .lyrics { display: block; height: 1.2em; }
+                    
+          /* ChordSheetJS Standard Classes */
+          .chord-sheet { column-count: {{settings.columns}}; column-gap: 40px; }
 
-          .row {
-              display: flex;
-              flex-wrap: nowrap;
-              align-items: flex-start;
+         .chord { 
+            font-family: 'Roboto Mono', monospace; 
+            font-weight: 500; 
+            color: var(--chord-color); 
+            height: 1.2em; 
+            display: {{#if settings.showChords}}block{{else}}none{{/if}}; 
+          }
+/* --- Paragraphs & Rows --- */
+          .paragraph {
+            margin-bottom: 1em;
           }
 
+          .row {
+            display: flex;
+            flex-wrap: wrap; /* Prevents long lines from cutting off the screen */
+          }
+
+/* --- Columns (The chord + lyric pairs) --- */
           .column {
-              display: flex;
-              flex-direction: column;
-              white-space: pre;
+            display: inline-flex;
+            flex-direction: column; /* Stacks the chord vertically above the lyric */
+            vertical-align: bottom;
+          }
+
+          /* --- Chords --- */
+          .chord {
+            min-height: 1.2em; /* Keeps row height uniform if a word has no chord */
+            font-weight: bold;
+          }
+
+          .chord:not(:last-child) {
+            padding-right: 10px;
+          }
+
+          .chord::after {
+            content: \'\\200b\'; /* Zero-width space to force height execution */
+          }
+
+          /* --- Lyrics --- */
+          .lyrics {
+            white-space: pre; /* Essential: Stops the browser from destroying spaces */
+          }
+
+          .lyrics::after {
+            content: \'\\200b\'; /* Zero-width space to prevent text-collapse */
           }
           @media print { .cover-page, .song-page { padding: 0; margin: 15mm; } }
         </style>
