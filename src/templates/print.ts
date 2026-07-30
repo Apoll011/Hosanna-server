@@ -99,7 +99,7 @@ export const templateRegistry: PrintTemplate[] = [
           }
 
           .chord::after {
-            content: '\200b'; /* Zero-width space to force height execution */
+            content: \'\\200b\'; /* Zero-width space to force height execution */
           }
 
           /* --- Lyrics --- */
@@ -108,7 +108,7 @@ export const templateRegistry: PrintTemplate[] = [
           }
 
           .lyrics::after {
-            content: '\200b'; /* Zero-width space to prevent text-collapse */
+            content: \'\\200b\'; /* Zero-width space to prevent text-collapse */
           }
 
           /* Print Adjustments */
@@ -190,7 +190,7 @@ export const templateRegistry: PrintTemplate[] = [
           }
 
           .chord::after {
-            content: '\200b'; /* Zero-width space to force height execution */
+            content: \'\\200b\'; /* Zero-width space to force height execution */
           }
 
           /* --- Lyrics --- */
@@ -199,7 +199,7 @@ export const templateRegistry: PrintTemplate[] = [
           }
 
           .lyrics::after {
-            content: '\200b'; /* Zero-width space to prevent text-collapse */
+            content: \'\\200b\'; /* Zero-width space to prevent text-collapse */
           }
 
 
@@ -270,7 +270,7 @@ export const templateRegistry: PrintTemplate[] = [
           }
 
           .chord::after {
-            content: '\200b'; /* Zero-width space to force height execution */
+            content: \'\\200b\'; /* Zero-width space to force height execution */
           }
 
           /* --- Lyrics --- */
@@ -279,7 +279,7 @@ export const templateRegistry: PrintTemplate[] = [
           }
 
           .lyrics::after {
-            content: '\200b'; /* Zero-width space to prevent text-collapse */
+            content: \'\\200b\'; /* Zero-width space to prevent text-collapse */
           }
 
           @media print { body { padding: 0; margin: 20mm; } }
