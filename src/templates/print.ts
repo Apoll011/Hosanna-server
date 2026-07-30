@@ -71,7 +71,6 @@ export const templateRegistry: PrintTemplate[] = [
             height: 1.2em; 
             display: {{#if settings.showChords}}block{{else}}none{{/if}}; 
           }
-          .lyrics { display: block; height: 1.2em; }
 /* --- Paragraphs & Rows --- */
           .paragraph {
             margin-bottom: 1em;
