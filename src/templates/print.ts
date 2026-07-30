@@ -73,7 +73,17 @@ export const templateRegistry: PrintTemplate[] = [
             display: {{#if settings.showChords}}block{{else}}none{{/if}}; 
           }
           .lyrics { display: block; height: 1.2em; }
-          
+          .row {
+              display: flex;
+              flex-wrap: nowrap;
+              align-items: flex-start;
+          }
+
+          .column {
+              display: flex;
+              flex-direction: column;
+              white-space: pre;
+          }
           /* Print Adjustments */
           @media print { 
             body { padding: 0; margin: 15mm; } 
@@ -127,7 +137,17 @@ export const templateRegistry: PrintTemplate[] = [
           .row { display: flex; flex-direction: column; break-inside: avoid; }
           .chord { font-weight: bold; color: #000; height: 1em; display: {{#if settings.showChords}}block{{else}}none{{/if}}; }
           .lyrics { display: block; height: 1.1em; }
-          
+          .row {
+              display: flex;
+              flex-wrap: nowrap;
+              align-items: flex-start;
+          }
+
+          .column {
+              display: flex;
+              flex-direction: column;
+              white-space: pre;
+          }
           @media print { body { padding: 0; margin: 10mm; } }
         </style>
       </head>
@@ -171,7 +191,17 @@ export const templateRegistry: PrintTemplate[] = [
           /* Absolutely hide chords */
           .chord { display: none !important; }
           .lyrics { display: block; height: auto; }
-          
+          .row {
+              display: flex;
+              flex-wrap: nowrap;
+              align-items: flex-start;
+          }
+
+          .column {
+              display: flex;
+              flex-direction: column;
+              white-space: pre;
+          }
           @media print { body { padding: 0; margin: 20mm; } }
         </style>
       </head>
@@ -231,6 +261,17 @@ export const templateRegistry: PrintTemplate[] = [
           .chord { font-family: 'Roboto Mono', monospace; font-weight: 500; color: {{settings.chordColor}}; height: 1.2em; display: block; }
           .lyrics { display: block; height: 1.2em; }
 
+          .row {
+              display: flex;
+              flex-wrap: nowrap;
+              align-items: flex-start;
+          }
+
+          .column {
+              display: flex;
+              flex-direction: column;
+              white-space: pre;
+          }
           @media print { .cover-page, .song-page { padding: 0; margin: 15mm; } }
         </style>
       </head>
