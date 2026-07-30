@@ -10,6 +10,7 @@ import { healthRouter } from './health.routes';
 import { tenantRouter } from './tenant.routes';
 
 import { syncRouter } from './sync.routes';
+import { printRouter } from './print.routes';
 
 export const apiRouter = Router();
 
@@ -23,3 +24,4 @@ apiRouter.use('/services', serviceRouter);
 apiRouter.use('/musicians/tokens', musicianTokenRouter);
 apiRouter.use('/settings', settingsRouter);
 apiRouter.use('/backup', backupRouter);
+apiRouter.use('/print', printRouter);
