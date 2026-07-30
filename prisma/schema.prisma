@@ -160,6 +160,16 @@ model Settings {
   allowPublicRead     Boolean  @default(false)
   autoBackupEnabled   Boolean  @default(true)
   maxUploadMB         Int      @default(10)
+
+  serviceTemplateId     String   @default("service-default")
+  serviceTemplateConfig Json     @default("{}")
+
+  folderTemplateId      String   @default("folder-default")
+  folderTemplateConfig  Json     @default("{}")
+
+  songTemplateId        String   @default("song-default")
+  songTemplateConfig    Json     @default("{}")
+
   updatedAt           DateTime @updatedAt
 
   @@map("settings")
