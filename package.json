@@ -1,6 +1,6 @@
 {
-  "name": "hosanna-studio-backend",
-  "version": "1.0.0",
+  "name": "hosanna-backend",
+  "version": "1.3.0",
   "description": "Production REST API backend for Hosanna Studio (songs, folders, services, musician access)",
   "main": "dist/index.js",
   "scripts": {
@@ -11,7 +11,8 @@
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.0",
