@@ -1,5 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "@prisma/client";
 import { Pool } from "pg";
 
 const pool = new Pool({
@@ -13,17 +13,19 @@ const prisma = new PrismaClient({
 });
 
 const TENANT_SCOPED_MODELS = new Set([
-  'Admin',
-  'Folder',
-  'Song',
-  'Service',
-  'MusicianToken',
-  'Settings',
+  "Admin",
+  "Folder",
+  "Song",
+  "Service",
+  "MusicianToken",
+  "Settings",
 ]);
 
-
-export function forTenant(tenantId: string) {
-  return prisma.$extends({
+export function forTenant<T extends { $extends: typeof prisma.$extends }>(
+  tenantId: string,
+  db: T = prisma as unknown as T,
+) {
+  return db.$extends({
     name: `tenant-scope`,
     query: {
       $allModels: {
@@ -33,38 +35,41 @@ export function forTenant(tenantId: string) {
           }
 
           switch (operation) {
-            case 'findUnique':
-            case 'findUniqueOrThrow':
-            case 'findFirst':
-            case 'findFirstOrThrow':
-            case 'findMany':
-            case 'updateMany':
-            case 'deleteMany':
-            case 'count':
-            case 'aggregate':
-            case 'groupBy': {
-              (args as any).where = { ...((args as any).where ?? {}), tenantId };
+            case "findUnique":
+            case "findUniqueOrThrow":
+            case "findFirst":
+            case "findFirstOrThrow":
+            case "findMany":
+            case "updateMany":
+            case "deleteMany":
+            case "count":
+            case "aggregate":
+            case "groupBy": {
+              (args as any).where = {
+                ...((args as any).where ?? {}),
+                tenantId,
+              };
               return query(args);
             }
 
-            case 'update':
-            case 'delete': {
+            case "update":
+            case "delete": {
               (args as any).where = { ...(args as any).where, tenantId };
               return query(args);
             }
 
-            case 'upsert': {
+            case "upsert": {
               (args as any).where = { ...(args as any).where, tenantId };
               (args as any).create = { ...(args as any).create, tenantId };
               return query(args);
             }
 
-            case 'create': {
+            case "create": {
               (args as any).data = { ...(args as any).data, tenantId };
               return query(args);
             }
 
-            case 'createMany': {
+            case "createMany": {
               const data = (args as any).data;
               (args as any).data = Array.isArray(data)
                 ? data.map((d: any) => ({ ...d, tenantId }))

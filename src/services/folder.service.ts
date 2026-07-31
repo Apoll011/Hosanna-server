@@ -1,3 +1,9 @@
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Prisma } from "@prisma/client";
+import {
+  DynamicClientExtensionThis,
+  InternalArgs,
+} from "@prisma/client/runtime/client";
 import { v4 as uuid } from "uuid";
 import type { TenantPrisma } from "../database/prisma";
 import { FolderRepository } from "../repositories/folder.repository";
@@ -103,11 +109,61 @@ export class FolderService {
     return { movedSongs: songs.length };
   }
 
-  async deleteWithSongs(id: string) {
-    await this.getById(id);
-    const songs = await this.songRepo.findManyByFolder(id);
-    await this.songRepo.deleteManyByFolder(id);
-    await this.folderRepo.delete(id);
-    return { deletedSongs: songs.length };
+  async deleteWithContent(id: string) {
+    return this.db.$transaction(async (tx) => {
+      return this.deleteRecursive(id, tx);
+    });
+  }
+
+  private async deleteRecursive(
+    id: string,
+    tx: Omit<
+      DynamicClientExtensionThis<
+        Prisma.TypeMap<
+          InternalArgs & {
+            result: {};
+            model: {};
+            query: {};
+            client: {};
+          },
+          {}
+        >,
+        Prisma.TypeMapCb<{
+          adapter: PrismaPg;
+        }>,
+        {
+          result: {};
+          model: {};
+          query: {};
+          client: {};
+        }
+      >,
+      "$connect" | "$disconnect" | "$extends" | "$on" | "$use"
+    >,
+  ) {
+    const folder = await tx.folder.findUnique({ where: { id } });
+    if (!folder)
+      throw AppError.notFound("FOLDER_NOT_FOUND", "Folder does not exist.");
+
+    const songs = await tx.song.findMany({ where: { folderId: id } });
+    const folders = await tx.folder.findMany({ where: { parentId: id } });
+
+    let deletedSongs = songs.length;
+    let deletedFolders = folders.length;
+
+    await tx.song.deleteMany({ where: { folderId: id } });
+
+    for (const folder of folders) {
+      const result = await this.deleteRecursive(folder.id, tx);
+      deletedSongs += result.deletedSongs;
+      deletedFolders += result.deletedFolders;
+    }
+
+    await tx.folder.delete({ where: { id } });
+
+    return {
+      deletedSongs,
+      deletedFolders,
+    };
   }
 }

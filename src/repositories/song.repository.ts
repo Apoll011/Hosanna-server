@@ -1,5 +1,6 @@
-import { Prisma } from '@prisma/client';
-import type { TenantPrisma } from '../database/prisma';
+import { Prisma } from "@prisma/client";
+import type { TenantPrisma } from "../database/prisma";
+import { PrismaTransactionalClient } from "../types";
 
 export class SongRepository {
   constructor(private readonly db: TenantPrisma) {}
@@ -8,15 +9,22 @@ export class SongRepository {
     return this.db.song.findUnique({ where: { id } });
   }
 
-  findMany(where?: Prisma.SongWhereInput, orderBy?: Prisma.SongOrderByWithRelationInput) {
+  findMany(
+    where?: Prisma.SongWhereInput,
+    orderBy?: Prisma.SongOrderByWithRelationInput,
+  ) {
     return this.db.song.findMany({ where, orderBy });
   }
 
-  create(data: Omit<Prisma.SongUncheckedCreateInput, 'tenantId'> | Omit<Prisma.SongCreateInput, 'tenant' | 'tenantId'>) {
+  create(
+    data:
+      | Omit<Prisma.SongUncheckedCreateInput, "tenantId">
+      | Omit<Prisma.SongCreateInput, "tenant" | "tenantId">,
+  ) {
     return this.db.song.create({ data: data as any });
   }
 
-  createMany(data: Omit<Prisma.SongCreateManyInput, 'tenantId'>[]) {
+  createMany(data: Omit<Prisma.SongCreateManyInput, "tenantId">[]) {
     return this.db.song.createMany({
       data: data as any,
     });
@@ -38,15 +46,27 @@ export class SongRepository {
     return this.db.song.count({ where: { folderId } });
   }
 
-  findManyByFolder(folderId: string) {
+  findManyByFolder(
+    folderId: string,
+    db: TenantPrisma | PrismaTransactionalClient = this.db,
+  ) {
     return this.db.song.findMany({ where: { folderId } });
   }
 
-  deleteManyByFolder(folderId: string) {
-    return this.db.song.deleteMany({ where: { folderId } });
+  deleteManyByFolder(
+    folderId: string,
+    db: TenantPrisma | PrismaTransactionalClient = this.db,
+  ) {
+    return db.song.deleteMany({ where: { folderId } });
   }
 
-  moveManyToRoot(folderId: string) {
-    return this.db.song.updateMany({ where: { folderId }, data: { folderId: null } });
+  moveManyToRoot(
+    folderId: string,
+    db: TenantPrisma | PrismaTransactionalClient = this.db,
+  ) {
+    return db.song.updateMany({
+      where: { folderId },
+      data: { folderId: null },
+    });
   }
 }
