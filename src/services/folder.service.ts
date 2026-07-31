@@ -1,12 +1,14 @@
-import { v4 as uuid } from 'uuid';
-import { FolderRepository } from '../repositories/folder.repository';
-import { SongRepository } from '../repositories/song.repository';
-import type { TenantPrisma } from '../database/prisma';
-import { AppError } from '../utils/errors';
+import { v4 as uuid } from "uuid";
+import type { TenantPrisma } from "../database/prisma";
+import { FolderRepository } from "../repositories/folder.repository";
+import { SongRepository } from "../repositories/song.repository";
+import { AppError } from "../utils/errors";
 
 function assertUnchanged(current: { updatedAt: Date }, clientUpdatedAt: Date) {
   if (current.updatedAt.getTime() !== clientUpdatedAt.getTime()) {
-    throw AppError.conflict('This folder was modified by someone else since you last loaded it.');
+    throw AppError.conflict(
+      "This folder was modified by someone else since you last loaded it.",
+    );
   }
 }
 
@@ -25,7 +27,11 @@ export class FolderService {
       this.songRepo.countByFolder(null),
     ]);
     const withCounts = await Promise.all(
-      folders.map(async (f) => ({ ...f, songCount: await this.songRepo.countByFolder(f.id) })),
+      folders.map(async (f) => ({
+        ...f,
+        songCount: await this.songRepo.countByFolder(f.id),
+        folderCount: await this.folderRepo.countByFolder(f.id),
+      })),
     );
     return { folders: withCounts, rootSongsCount };
   }
@@ -36,7 +42,8 @@ export class FolderService {
 
   async getById(id: string) {
     const folder = await this.folderRepo.findById(id);
-    if (!folder) throw AppError.notFound('FOLDER_NOT_FOUND', 'Folder does not exist.');
+    if (!folder)
+      throw AppError.notFound("FOLDER_NOT_FOUND", "Folder does not exist.");
     return folder;
   }
 
@@ -48,19 +55,33 @@ export class FolderService {
     });
   }
 
-  async update(id: string, updatedAt: Date, name?: string, parentId?: string | null) {
+  async update(
+    id: string,
+    updatedAt: Date,
+    name?: string,
+    parentId?: string | null,
+  ) {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
 
     const updated = await this.folderRepo.update(id, {
       name: name ?? undefined,
-      parent: parentId !== undefined ? (parentId ? { connect: { id: parentId } } : { disconnect: true }) : undefined,
+      parent:
+        parentId !== undefined
+          ? parentId
+            ? { connect: { id: parentId } }
+            : { disconnect: true }
+          : undefined,
     });
 
     if (name && name !== current.name) {
       const songs = await this.songRepo.findManyByFolder(id);
       await Promise.all(
-        songs.map((s) => this.songRepo.update(s.id, { path: `${updated.name}/${s.title}.pro` })),
+        songs.map((s) =>
+          this.songRepo.update(s.id, {
+            path: `${updated.name}/${s.title}.pro`,
+          }),
+        ),
       );
     }
 
@@ -70,7 +91,14 @@ export class FolderService {
   async deleteMovingSongsToRoot(id: string) {
     await this.getById(id);
     const songs = await this.songRepo.findManyByFolder(id);
-    await Promise.all(songs.map((s) => this.songRepo.update(s.id, { folder: { disconnect: true }, path: `${s.title}.pro` })));
+    await Promise.all(
+      songs.map((s) =>
+        this.songRepo.update(s.id, {
+          folder: { disconnect: true },
+          path: `${s.title}.pro`,
+        }),
+      ),
+    );
     await this.folderRepo.delete(id);
     return { movedSongs: songs.length };
   }
