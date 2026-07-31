@@ -1,6 +1,5 @@
 import { Prisma } from "@prisma/client";
 import type { TenantPrisma } from "../database/prisma";
-import { PrismaTransactionalClient } from "../types";
 
 export class SongRepository {
   constructor(private readonly db: TenantPrisma) {}
@@ -46,25 +45,16 @@ export class SongRepository {
     return this.db.song.count({ where: { folderId } });
   }
 
-  findManyByFolder(
-    folderId: string,
-    db: TenantPrisma | PrismaTransactionalClient = this.db,
-  ) {
+  findManyByFolder(folderId: string) {
     return this.db.song.findMany({ where: { folderId } });
   }
 
-  deleteManyByFolder(
-    folderId: string,
-    db: TenantPrisma | PrismaTransactionalClient = this.db,
-  ) {
-    return db.song.deleteMany({ where: { folderId } });
+  deleteManyByFolder(folderId: string) {
+    return this.db.song.deleteMany({ where: { folderId } });
   }
 
-  moveManyToRoot(
-    folderId: string,
-    db: TenantPrisma | PrismaTransactionalClient = this.db,
-  ) {
-    return db.song.updateMany({
+  moveManyToRoot(folderId: string) {
+    return this.db.song.updateMany({
       where: { folderId },
       data: { folderId: null },
     });
