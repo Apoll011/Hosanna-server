@@ -31,4 +31,19 @@ export class FolderRepository {
   countByFolder(parentId: string | null) {
     return this.db.folder.count({ where: { parentId } });
   }
+
+  findManyByFolder(parentId: string) {
+    return this.db.folder.findMany({ where: { parentId } });
+  }
+
+  deleteManyByFolder(parentId: string) {
+    return this.db.folder.deleteMany({ where: { parentId } });
+  }
+
+  moveManyToRoot(parentId: string) {
+    return this.db.folder.updateMany({
+      where: { parentId },
+      data: { parentId: null },
+    });
+  }
 }
