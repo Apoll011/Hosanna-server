@@ -94,7 +94,7 @@ export class FolderService {
     return updated;
   }
 
-  async deleteMovingSongsToRoot(id: string) {
+  async deleteMovingContentToRoot(id: string) {
     await this.getById(id);
     const songs = await this.songRepo.findManyByFolder(id);
     await Promise.all(
