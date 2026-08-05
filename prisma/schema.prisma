@@ -24,9 +24,9 @@ model Tenant {
 }
 
 model Admin {
-  id           String   @id @default(uuid())
-  tenantId     String
-  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String @id @default(uuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   email        String   @unique
   passwordHash String
@@ -82,14 +82,14 @@ model Song {
   title  String
   artist String @default("Unknown Artist")
 
-  content   String   @db.Text
-  folderId  String?
-  folder    Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  path      String
-  tags      String[] @default([])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
+  content     String   @db.Text
+  folderId    String?
+  folder      Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  path        String
+  tags        String[] @default([])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  song_number Int?
 
   @@unique([tenantId, path])
   @@index([tenantId])
@@ -116,7 +116,6 @@ model Service {
   @@index([tenantId])
   @@map("services")
 }
-
 
 model MusicianToken {
   id       String @id @default(uuid())
@@ -154,23 +153,23 @@ model Settings {
   tenantId String @id
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  serverName          String   @default("ChordPro Studio Server")
-  defaultKey          String   @default("G")
-  syncIntervalSeconds Int      @default(30)
-  allowPublicRead     Boolean  @default(false)
-  autoBackupEnabled   Boolean  @default(true)
-  maxUploadMB         Int      @default(10)
+  serverName          String  @default("ChordPro Studio Server")
+  defaultKey          String  @default("G")
+  syncIntervalSeconds Int     @default(30)
+  allowPublicRead     Boolean @default(false)
+  autoBackupEnabled   Boolean @default(true)
+  maxUploadMB         Int     @default(10)
 
-  serviceTemplateId     String   @default("service-default")
-  serviceTemplateConfig Json     @default("{}")
+  serviceTemplateId     String @default("service-default")
+  serviceTemplateConfig Json   @default("{}")
 
-  folderTemplateId      String   @default("folder-default")
-  folderTemplateConfig  Json     @default("{}")
+  folderTemplateId     String @default("folder-default")
+  folderTemplateConfig Json   @default("{}")
 
-  songTemplateId        String   @default("song-default")
-  songTemplateConfig    Json     @default("{}")
+  songTemplateId     String @default("song-default")
+  songTemplateConfig Json   @default("{}")
 
-  updatedAt           DateTime @updatedAt
+  updatedAt DateTime @updatedAt
 
   @@map("settings")
 }

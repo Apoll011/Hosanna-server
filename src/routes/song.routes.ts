@@ -1,24 +1,23 @@
-import { Router } from 'express';
-import { SongService } from '../services/song.service';
-import { authenticateAny, authenticateAdmin } from '../middleware/auth';
-import { validate } from '../middleware/validate';
-import { asyncHandler } from '../utils/asyncHandler';
-import { idParamSchema } from '../validators/common.validators';
+import { Router } from "express";
+import { authenticateAny } from "../middleware/auth";
+import { validate } from "../middleware/validate";
+import { SongService } from "../services/song.service";
+import { asyncHandler } from "../utils/asyncHandler";
+import { idParamSchema } from "../validators/common.validators";
 import {
   batchCreateSongsSchema,
   batchTagsSchema,
   createSongSchema,
   listSongsQuerySchema,
   moveSongSchema,
-  renameSongSchema,
   updateSongSchema,
-} from '../validators/song.validators';
+} from "../validators/song.validators";
 
 export const songRouter = Router();
 
 // GET /api/songs — admin or musician
 songRouter.get(
-  '/',
+  "/",
   authenticateAny,
   validate({ query: listSongsQuerySchema }),
   asyncHandler(async (req, res) => {
@@ -29,7 +28,7 @@ songRouter.get(
 
 // POST /api/songs/batch — admin only. Registered before /:id routes.
 songRouter.post(
-  '/batch',
+  "/batch",
   authenticateAny,
   validate({ body: batchCreateSongsSchema }),
   asyncHandler(async (req, res) => {
@@ -40,18 +39,24 @@ songRouter.post(
 
 // PUT /api/songs/batch-tags — admin only.
 songRouter.put(
-  '/batch-tags',
+  "/batch-tags",
   authenticateAny,
   validate({ body: batchTagsSchema }),
   asyncHandler(async (req, res) => {
     const service = new SongService(req.db!);
-    res.json(await service.batchUpdateTags(req.body.songIds, req.body.tags, req.body.mode));
+    res.json(
+      await service.batchUpdateTags(
+        req.body.songIds,
+        req.body.tags,
+        req.body.mode,
+      ),
+    );
   }),
 );
 
 // GET /api/songs/:id — admin or musician
 songRouter.get(
-  '/:id',
+  "/:id",
   authenticateAny,
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
@@ -62,22 +67,25 @@ songRouter.get(
 
 // GET /api/songs/:id/download — admin or musician. Returns raw ChordPro content.
 songRouter.get(
-  '/:id/download',
+  "/:id/download",
   authenticateAny,
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
     const service = new SongService(req.db!);
     const song = await service.getById(req.params.id);
-    const filename = song.path?.split('/').pop() || `${song.title}.pro`;
-    res.setHeader('Content-Type', 'text/vnd.chordpro; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
+    const filename = song.path?.split("/").pop() || `${song.title}.pro`;
+    res.setHeader("Content-Type", "text/vnd.chordpro; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename.replace(/"/g, "")}"`,
+    );
     res.send(song.content);
   }),
 );
 
 // POST /api/songs — admin or musician.
 songRouter.post(
-  '/',
+  "/",
   authenticateAny,
   validate({ body: createSongSchema }),
   asyncHandler(async (req, res) => {
@@ -88,19 +96,25 @@ songRouter.post(
 
 // PUT /api/songs/:id — admin only, optimistic concurrency
 songRouter.put(
-  '/:id',
+  "/:id",
   authenticateAny,
   validate({ params: idParamSchema, body: updateSongSchema }),
   asyncHandler(async (req, res) => {
     const service = new SongService(req.db!);
     const { updatedAt, ...patch } = req.body;
-    res.json(await service.update(req.params.id, updatedAt ?? new Date().toISOString(), patch));
+    res.json(
+      await service.update(
+        req.params.id,
+        updatedAt ?? new Date().toISOString(),
+        patch,
+      ),
+    );
   }),
 );
 
 // DELETE /api/songs/:id — admin only
 songRouter.delete(
-  '/:id',
+  "/:id",
   authenticateAny,
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
@@ -110,26 +124,21 @@ songRouter.delete(
   }),
 );
 
-// PUT /api/songs/:id/rename — admin only, optimistic concurrency
-songRouter.put(
-  '/:id/rename',
-  authenticateAny,
-  validate({ params: idParamSchema, body: renameSongSchema }),
-  asyncHandler(async (req, res) => {
-    const service = new SongService(req.db!);
-    const { updatedAt, newTitle, newPath } = req.body;
-    res.json(await service.rename(req.params.id, updatedAt ?? new Date().toISOString(), newTitle, newPath));
-  }),
-);
-
 // PUT /api/songs/:id/move — admin only, optimistic concurrency
 songRouter.put(
-  '/:id/move',
+  "/:id/move",
   authenticateAny,
   validate({ params: idParamSchema, body: moveSongSchema }),
   asyncHandler(async (req, res) => {
     const service = new SongService(req.db!);
     const { updatedAt, folderId, newPath } = req.body;
-    res.json(await service.move(req.params.id, updatedAt ?? new Date().toISOString(), folderId, newPath));
+    res.json(
+      await service.move(
+        req.params.id,
+        updatedAt ?? new Date().toISOString(),
+        folderId,
+        newPath,
+      ),
+    );
   }),
 );

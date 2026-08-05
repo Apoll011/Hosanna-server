@@ -144,6 +144,7 @@ export class SongService {
       artist: input.artist || "Unknown Artist",
       content: input.content || defaultContent(input.title, input.artist),
       folderId: input.folderId,
+      song_number: input.song_number,
       path,
       tags: input.tags ?? [],
     });
@@ -159,6 +160,7 @@ export class SongService {
           item.content ||
           `{title: ${item.title}}\n{artist: ${item.artist || "Vários"}}\n\n`,
         folderId: item.folderId ?? null,
+        song_number: item.song_number ?? null,
         path: await this.computePath(item.title, item.folderId, item.path),
         tags: item.tags ?? [],
       })),
@@ -201,6 +203,7 @@ export class SongService {
     if (patch.content !== undefined) data.content = patch.content;
     if (patch.path !== undefined) data.path = patch.path;
     if (patch.tags !== undefined) data.tags = patch.tags;
+    if (patch.song_number !== undefined) data.song_number = patch.song_number;
     if (patch.folderId !== undefined) {
       data.folder = patch.folderId
         ? { connect: { id: patch.folderId } }
@@ -212,20 +215,6 @@ export class SongService {
   async delete(id: string) {
     await this.getById(id);
     await this.songRepo.delete(id);
-  }
-
-  async rename(
-    id: string,
-    updatedAt: Date,
-    newTitle?: string,
-    newPath?: string,
-  ) {
-    const current = await this.getById(id);
-    assertUnchanged(current, updatedAt);
-    return this.songRepo.update(id, {
-      title: newTitle ?? current.title,
-      path: newPath ?? current.path,
-    });
   }
 
   async move(
