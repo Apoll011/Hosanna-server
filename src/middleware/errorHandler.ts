@@ -35,7 +35,7 @@ export function errorHandler(
         error: {
           code: "NOT_FOUND",
           message: "Resource does not exist.",
-          data: err,
+          data: err.cause,
         },
       });
       return;
@@ -45,7 +45,7 @@ export function errorHandler(
         error: {
           code: "DUPLICATE",
           message: "A resource with this unique value already exists.",
-          data: err,
+          data: err.cause,
         },
       });
       return;
