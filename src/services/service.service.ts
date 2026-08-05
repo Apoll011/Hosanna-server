@@ -1,12 +1,17 @@
-import { v4 as uuid } from 'uuid';
-import { ServiceRepository, ServiceWithSongs } from '../repositories/service.repository';
-import { SongRepository } from '../repositories/song.repository';
-import type { TenantPrisma } from '../database/prisma';
-import { AppError } from '../utils/errors';
+import { v4 as uuid } from "uuid";
+import type { TenantPrisma } from "../database/prisma";
+import {
+  ServiceRepository,
+  ServiceWithSongs,
+} from "../repositories/service.repository";
+import { SongRepository } from "../repositories/song.repository";
+import { AppError } from "../utils/errors";
 
 function assertUnchanged(current: { updatedAt: Date }, clientUpdatedAt: Date) {
   if (current.updatedAt.getTime() !== clientUpdatedAt.getTime()) {
-    throw AppError.conflict('This service was modified by someone else since you last loaded it.');
+    throw AppError.conflict(
+      "This service was modified by someone else since you last loaded it.",
+    );
   }
 }
 
@@ -15,7 +20,7 @@ function serialize(service: NonNullable<ServiceWithSongs>) {
     id: service.id,
     name: service.name,
     date: service.date,
-    notes: service.notes ?? '',
+    notes: service.notes ?? "",
     elements: service.elements ?? [],
     createdAt: service.createdAt,
     updatedAt: service.updatedAt,
@@ -31,8 +36,6 @@ export class ServiceService {
     this.songRepo = new SongRepository(db);
   }
 
-
-
   async list() {
     const services = await this.serviceRepo.findAll();
     return services.map(serialize);
@@ -40,7 +43,8 @@ export class ServiceService {
 
   async getById(id: string) {
     const service = await this.serviceRepo.findById(id);
-    if (!service) throw AppError.notFound('SERVICE_NOT_FOUND', 'Service does not exist.');
+    if (!service)
+      throw AppError.notFound("SERVICE_NOT_FOUND", "Service does not exist.");
     return service;
   }
 
@@ -58,7 +62,7 @@ export class ServiceService {
       id: uuid(),
       name: input.name,
       date: input.date,
-      notes: input.notes ?? '',
+      notes: input.notes ?? "",
       elements: input.elements ?? [],
     });
     return serialize(created!);
@@ -96,6 +100,14 @@ export class ServiceService {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
     const updated = await this.serviceRepo.update(id, { elements });
+    return serialize(updated!);
+  }
+
+  async archive(id: string, updatedAt: Date, archive: boolean) {
+    const current = await this.getById(id);
+    assertUnchanged(current, updatedAt);
+
+    const updated = await this.serviceRepo.archive(id, archive);
     return serialize(updated!);
   }
 }

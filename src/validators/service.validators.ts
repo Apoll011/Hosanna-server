@@ -19,24 +19,6 @@ export const updateServiceElementsSchema = concurrencySchema.extend({
   elements: z.any(),
 });
 
-export const addSongToServiceSchema = concurrencySchema.extend({
-  songId: z.string().uuid(),
-  notes: z.string().optional(),
-  position: z.number().int().min(0).optional(),
-});
-
-export const reorderServiceSongsSchema = concurrencySchema.extend({
-  orderedSongIds: z.array(z.string().uuid()).min(1),
-});
-
-export const moveServiceSongSchema = concurrencySchema.extend({
-  targetIndex: z.number().int().min(0),
-});
-
-export const updateServiceNotesSchema = concurrencySchema.extend({
-  notes: z.string(),
-});
-
-export const updateServiceSongNotesSchema = concurrencySchema.extend({
-  notes: z.string(),
+export const archiveSchema = concurrencySchema.extend({
+  arquive: z.boolean().optional().default(false),
 });
