@@ -1,14 +1,14 @@
-import { Prisma, Song } from '@prisma/client';
-import { v4 as uuid } from 'uuid';
-import { SongRepository } from '../repositories/song.repository';
-import { FolderRepository } from '../repositories/folder.repository';
-import type { TenantPrisma } from '../database/prisma';
-import { AppError } from '../utils/errors';
-import { z } from 'zod';
+import { Prisma, Song } from "@prisma/client";
+import { v4 as uuid } from "uuid";
+import { z } from "zod";
+import type { TenantPrisma } from "../database/prisma";
+import { FolderRepository } from "../repositories/folder.repository";
+import { SongRepository } from "../repositories/song.repository";
+import { AppError } from "../utils/errors";
 import {
   createSongSchema,
   listSongsQuerySchema,
-} from '../validators/song.validators';
+} from "../validators/song.validators";
 
 type ListQuery = z.infer<typeof listSongsQuerySchema>;
 type CreateInput = z.infer<typeof createSongSchema>;
@@ -17,12 +17,14 @@ const KEY_DIRECTIVE = /\{key:\s*([^}]+)\}/i;
 
 function assertUnchanged(current: { updatedAt: Date }, clientUpdatedAt: Date) {
   if (current.updatedAt.getTime() !== clientUpdatedAt.getTime()) {
-    throw AppError.conflict('This song was modified by someone else since you last loaded it.');
+    throw AppError.conflict(
+      "This song was modified by someone else since you last loaded it.",
+    );
   }
 }
 
 function defaultContent(title: string, artist?: string) {
-  return `{title: ${title}}\n{artist: ${artist || 'Unknown'}}\n{key: G}\n\n[G]Add chords and lyrics here...`;
+  return `{title: ${title}}\n{artist: ${artist || "Unknown"}}\n{key: G}\n\n[G]Add chords and lyrics here...`;
 }
 
 export class SongService {
@@ -34,7 +36,11 @@ export class SongService {
     this.folderRepo = new FolderRepository(db);
   }
 
-  private async computePath(title: string, folderId: string | null | undefined, explicitPath?: string) {
+  private async computePath(
+    title: string,
+    folderId: string | null | undefined,
+    explicitPath?: string,
+  ) {
     if (explicitPath) return explicitPath;
     if (!folderId) return `${title}.pro`;
     const folder = await this.folderRepo.findById(folderId);
@@ -45,7 +51,7 @@ export class SongService {
     const where: Prisma.SongWhereInput = {};
 
     if (query.folder) {
-      where.folderId = query.folder === 'root' ? null : query.folder;
+      where.folderId = query.folder === "root" ? null : query.folder;
     }
     if (query.tag) {
       where.tags = { has: query.tag };
@@ -63,9 +69,12 @@ export class SongService {
     if (query.search) {
       const q = query.search;
       const or: Prisma.SongWhereInput[] = [];
-      if (fields.title) or.push({ title: { contains: q, mode: 'insensitive' } });
-      if (fields.artist) or.push({ artist: { contains: q, mode: 'insensitive' } });
-      if (fields.content) or.push({ content: { contains: q, mode: 'insensitive' } });
+      if (fields.title)
+        or.push({ title: { contains: q, mode: "insensitive" } });
+      if (fields.artist)
+        or.push({ artist: { contains: q, mode: "insensitive" } });
+      if (fields.content)
+        or.push({ content: { contains: q, mode: "insensitive" } });
       if (fields.tags) or.push({ tags: { hasSome: [q] } });
       if (or.length > 0) where.OR = or;
     }
@@ -74,9 +83,14 @@ export class SongService {
 
     if (query.search && fields.tags) {
       const q = query.search.toLowerCase();
-      const allSongs = await this.songRepo.findMany(query.folder ? { folderId: where.folderId } : {}, {});
+      const allSongs = await this.songRepo.findMany(
+        query.folder ? { folderId: where.folderId } : {},
+        {},
+      );
       const extraMatches = allSongs.filter(
-        (s) => s.tags.some((t) => t.toLowerCase().includes(q)) && !result.some((r) => r.id === s.id),
+        (s) =>
+          s.tags.some((t) => t.toLowerCase().includes(q)) &&
+          !result.some((r) => r.id === s.id),
       );
       result = [...result, ...extraMatches];
     }
@@ -92,10 +106,10 @@ export class SongService {
     result.sort((a, b) => {
       const valA = (a as any)[query.sortBy];
       const valB = (b as any)[query.sortBy];
-      const normA = typeof valA === 'string' ? valA.toLowerCase() : valA;
-      const normB = typeof valB === 'string' ? valB.toLowerCase() : valB;
-      if (normA < normB) return query.sortOrder === 'asc' ? -1 : 1;
-      if (normA > normB) return query.sortOrder === 'asc' ? 1 : -1;
+      const normA = typeof valA === "string" ? valA.toLowerCase() : valA;
+      const normB = typeof valB === "string" ? valB.toLowerCase() : valB;
+      if (normA < normB) return query.sortOrder === "asc" ? -1 : 1;
+      if (normA > normB) return query.sortOrder === "asc" ? 1 : -1;
       return 0;
     });
 
@@ -113,16 +127,21 @@ export class SongService {
 
   async getById(id: string): Promise<Song> {
     const song = await this.songRepo.findById(id);
-    if (!song) throw AppError.notFound('SONG_NOT_FOUND', 'Song does not exist.');
+    if (!song)
+      throw AppError.notFound("SONG_NOT_FOUND", "Song does not exist.");
     return song;
   }
 
   async create(input: CreateInput) {
-    const path = await this.computePath(input.title, input.folderId, input.path);
+    const path = await this.computePath(
+      input.title,
+      input.folderId,
+      input.path,
+    );
     return this.songRepo.create({
       id: uuid(),
       title: input.title,
-      artist: input.artist || 'Unknown Artist',
+      artist: input.artist || "Unknown Artist",
       content: input.content || defaultContent(input.title, input.artist),
       folderId: input.folderId,
       path,
@@ -135,25 +154,36 @@ export class SongService {
       items.map(async (item) => ({
         id: uuid(),
         title: item.title,
-        artist: item.artist || 'Vários',
-        content: item.content || `{title: ${item.title}}\n{artist: ${item.artist || 'Vários'}}\n\n`,
+        artist: item.artist || "Vários",
+        content:
+          item.content ||
+          `{title: ${item.title}}\n{artist: ${item.artist || "Vários"}}\n\n`,
         folderId: item.folderId ?? null,
         path: await this.computePath(item.title, item.folderId, item.path),
         tags: item.tags ?? [],
       })),
     );
+    console.log(prepared.map((v) => v.path));
     const created = await this.songRepo.createMany(prepared);
     return { created, count: created.count };
   }
 
-  async batchUpdateTags(songIds: string[], tags: string[], mode: 'append' | 'replace' | 'remove') {
+  async batchUpdateTags(
+    songIds: string[],
+    tags: string[],
+    mode: "append" | "replace" | "remove",
+  ) {
     const existing = await this.songRepo.findMany({ id: { in: songIds } }, {});
     let updatedCount = 0;
     for (const song of existing) {
       let newTags = [...song.tags];
-      if (mode === 'replace') newTags = [...new Set(tags)];
-      else if (mode === 'remove') newTags = newTags.filter((t) => !tags.includes(t));
-      else tags.forEach((t) => { if (!newTags.includes(t)) newTags.push(t); });
+      if (mode === "replace") newTags = [...new Set(tags)];
+      else if (mode === "remove")
+        newTags = newTags.filter((t) => !tags.includes(t));
+      else
+        tags.forEach((t) => {
+          if (!newTags.includes(t)) newTags.push(t);
+        });
 
       await this.songRepo.update(song.id, { tags: newTags });
       updatedCount++;
@@ -172,7 +202,9 @@ export class SongService {
     if (patch.path !== undefined) data.path = patch.path;
     if (patch.tags !== undefined) data.tags = patch.tags;
     if (patch.folderId !== undefined) {
-      data.folder = patch.folderId ? { connect: { id: patch.folderId } } : { disconnect: true };
+      data.folder = patch.folderId
+        ? { connect: { id: patch.folderId } }
+        : { disconnect: true };
     }
     return this.songRepo.update(id, data);
   }
@@ -182,7 +214,12 @@ export class SongService {
     await this.songRepo.delete(id);
   }
 
-  async rename(id: string, updatedAt: Date, newTitle?: string, newPath?: string) {
+  async rename(
+    id: string,
+    updatedAt: Date,
+    newTitle?: string,
+    newPath?: string,
+  ) {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
     return this.songRepo.update(id, {
@@ -191,7 +228,12 @@ export class SongService {
     });
   }
 
-  async move(id: string, updatedAt: Date, folderId: string | null, newPath?: string) {
+  async move(
+    id: string,
+    updatedAt: Date,
+    folderId: string | null,
+    newPath?: string,
+  ) {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
     return this.songRepo.update(id, {
