@@ -23,10 +23,10 @@ const byId = requireServiceAccess((req) => req.params.id);
 serviceRouter.get(
   "/",
   authenticateAny,
-  validate({ body: serviceListSchema }),
+  validate({ query: serviceListSchema }),
   asyncHandler(async (req, res) => {
     const service = new ServiceService(req.db!);
-    res.json(await service.list(req.body));
+    res.json(await service.list(req.query as any));
   }),
 );
 
