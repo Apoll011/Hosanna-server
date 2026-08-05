@@ -4,8 +4,11 @@ import type { TenantPrisma } from "../database/prisma";
 export class ServiceRepository {
   constructor(private readonly db: TenantPrisma) {}
 
-  findAll() {
-    return this.db.service.findMany({ orderBy: { date: "asc" } });
+  findAll(archived: boolean) {
+    return this.db.service.findMany({
+      where: { archived },
+      orderBy: { date: "asc" },
+    });
   }
 
   findById(id: string) {

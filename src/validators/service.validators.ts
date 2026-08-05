@@ -22,3 +22,7 @@ export const updateServiceElementsSchema = concurrencySchema.extend({
 export const archiveSchema = concurrencySchema.extend({
   arquive: z.boolean().optional().default(false),
 });
+
+export const serviceListSchema = concurrencySchema.extend({
+  archived: z.boolean().optional().default(false),
+});
