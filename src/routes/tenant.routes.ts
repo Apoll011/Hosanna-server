@@ -121,7 +121,7 @@ tenantRouter.put(
   requireAdmin,
   validate({ body: editTenantSchema }),
   asyncHandler(async (req, res) => {
-    const updated = req.db!.tenant.update({
+    const updated = prisma.tenant.update({
       where: {
         id: req.tenantId!,
       },
