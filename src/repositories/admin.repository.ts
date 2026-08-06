@@ -1,4 +1,4 @@
-import type { TenantPrisma } from '../database/prisma';
+import type { TenantPrisma } from "../database/prisma";
 
 export class AdminRepository {
   constructor(private readonly db: TenantPrisma) {}
@@ -12,13 +12,9 @@ export class AdminRepository {
   }
 
   tenant(id: string) {
-    return this.db.tenant.findUnique({ where: { id }, select: {
-      id: false,
-      name: true,
-      slug: true,
-      createdAt: true,
-      updatedAt: true
-    }})
+    return this.db.tenant.findUnique({
+      where: { id },
+    });
   }
 
   findAll() {
@@ -33,7 +29,7 @@ export class AdminRepository {
         createdAt: true,
         updatedAt: true,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
   }
 
@@ -50,7 +46,7 @@ export class AdminRepository {
         createdAt: true,
         updatedAt: true,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
   }
 

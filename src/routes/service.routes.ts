@@ -11,6 +11,7 @@ import { idParamSchema } from "../validators/common.validators";
 import {
   archiveSchema,
   createServiceSchema,
+  serviceListSchema,
   updateServiceElementsSchema,
   updateServiceSchema,
 } from "../validators/service.validators";
@@ -22,9 +23,10 @@ const byId = requireServiceAccess((req) => req.params.id);
 serviceRouter.get(
   "/",
   authenticateAny,
+  validate({ query: serviceListSchema }),
   asyncHandler(async (req, res) => {
     const service = new ServiceService(req.db!);
-    res.json(await service.list());
+    res.json(await service.list(req.query as any));
   }),
 );
 

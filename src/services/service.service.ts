@@ -36,8 +36,8 @@ export class ServiceService {
     this.songRepo = new SongRepository(db);
   }
 
-  async list() {
-    const services = await this.serviceRepo.findAll();
+  async list(body: { archived: boolean }) {
+    const services = await this.serviceRepo.findAll(body.archived);
     return services.map(serialize);
   }
 
