@@ -23,6 +23,12 @@ export const archiveSchema = concurrencySchema.extend({
   archive: z.boolean().optional().default(false),
 });
 
-export const serviceListSchema = concurrencySchema.extend({
-  archived: z.boolean().optional().default(false),
+export const serviceListSchema = z.object({
+  archived: z
+    .union([z.string(), z.boolean(), z.undefined()])
+    .transform((val) => {
+      if (val === "true" || val === true) return true;
+      return false;
+    })
+    .pipe(z.boolean()),
 });
