@@ -8,6 +8,26 @@ import { apiRouter } from "./routes";
 
 const app = express();
 
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://hosana.vercel.app",
+];
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  }),
+);
+
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 1000,
@@ -35,8 +55,6 @@ app.use(
   }),
 );
 
-if (env.nodeEnv === "production")
-  app.use(cors({ origin: env.corsOrigin, credentials: true }));
 app.use(express.json({ limit: "5mb" }));
 
 app.use((req, res, next) => {
