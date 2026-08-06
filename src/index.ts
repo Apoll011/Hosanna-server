@@ -8,6 +8,11 @@ import { apiRouter } from "./routes";
 
 const app = express();
 
+app.use((req, _, next) => {
+  console.log(req.method, req.url, req.headers.origin);
+  next();
+});
+
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
