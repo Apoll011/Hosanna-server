@@ -35,7 +35,8 @@ app.use(
   }),
 );
 
-app.use(cors({ origin: env.corsOrigin, credentials: true }));
+if (env.nodeEnv === "production")
+  app.use(cors({ origin: env.corsOrigin, credentials: true }));
 app.use(express.json({ limit: "5mb" }));
 
 app.use((req, res, next) => {
