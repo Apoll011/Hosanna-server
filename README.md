@@ -1,17 +1,19 @@
 # Hosanna Studio Backend
 
 Production REST API for Hosanna Studio: songs, folders, worship services,
-musician QR-token access, and dashboard (JWT) admin auth. Backed by
+musician QR-token access, and studio (JWT) admin auth. Backed by
 PostgreSQL via Prisma. See **API_DOCUMENTATION.md** for the full endpoint
 reference.
 
-This project is API-only — no frontend assets are served. The dashboard is
+This project is API-only — no frontend assets are served. The studio is
 a separate project that talks to this server over HTTP.
 
 ## Stack
+
 Node.js, TypeScript, Express, Prisma ORM, PostgreSQL, Zod, JWT, bcrypt, `qrcode`.
 
 ## Project layout
+
 ```
 src/
   auth/            (JWT + musician token verification lives in middleware/utils)
@@ -43,6 +45,7 @@ This starts Postgres + the API on `http://localhost:3000`. The container's
 entrypoint runs `prisma migrate deploy` automatically before booting.
 
 Seed the bootstrap admin + demo data once the stack is up:
+
 ```bash
 docker compose exec api npx prisma db seed
 ```
@@ -68,9 +71,11 @@ Prisma's CLI downloads its query-engine binary from), so `prisma generate`
 
 **Before your first real deploy**, run once in an environment with normal
 internet access:
+
 ```bash
 npx prisma migrate dev --name init
 ```
+
 This will validate the schema against a live Postgres and let Prisma
 regenerate the migration if anything doesn't match (it should match exactly,
 but Prisma-generated migrations are the canonical source of truth going
@@ -80,11 +85,13 @@ committed migration — it's plain SQL and will apply as-is.
 ## Environment variables
 
 See `.env.example` for the full list. At minimum, set:
+
 - `DATABASE_URL`
 - `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` (e.g. `openssl rand -hex 64`)
 - `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` before running the seed script
 
 ## Scripts
+
 - `npm run dev` — watch mode (tsx)
 - `npm run build` / `npm start` — compile to `dist/` and run
 - `npm run prisma:migrate:dev` — create/apply a migration in development
