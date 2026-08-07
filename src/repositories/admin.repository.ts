@@ -11,6 +11,15 @@ export class AdminRepository {
     return this.db.admin.findUnique({ where: { id } });
   }
 
+  findUserById(id: string) {
+    return this.db.admin.findUnique({
+      where: { id },
+      select: {
+        passwordHash: false,
+      },
+    });
+  }
+
   tenant(id: string) {
     return this.db.tenant.findUnique({
       where: { id },
@@ -25,6 +34,7 @@ export class AdminRepository {
         email: true,
         name: true,
         role: true,
+        logo: true,
         isApproved: true,
         createdAt: true,
         updatedAt: true,
@@ -42,6 +52,7 @@ export class AdminRepository {
         email: true,
         name: true,
         role: true,
+        logo: true,
         isApproved: true,
         createdAt: true,
         updatedAt: true,
@@ -60,6 +71,7 @@ export class AdminRepository {
         email: true,
         name: true,
         role: true,
+        logo: true,
         isApproved: true,
         createdAt: true,
         updatedAt: true,
