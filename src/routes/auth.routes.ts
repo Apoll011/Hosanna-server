@@ -8,6 +8,7 @@ import {
   refreshSchema,
   registerAdminSchema,
 } from "../validators/auth.validators";
+import { idParamSchema } from "../validators/common.validators";
 
 export const authRouter = Router();
 
@@ -52,6 +53,19 @@ authRouter.get(
     const authService = new AuthService();
     const result = await authService.me(
       req.actor && req.actor.type === "admin" ? req.actor.admin.id : "",
+    );
+    res.json(result);
+  }),
+);
+
+authRouter.get(
+  "/user/:id",
+  authenticateAdmin,
+  validate({ params: idParamSchema }),
+  asyncHandler(async (req, res) => {
+    const authService = new AuthService();
+    const result = await authService.me(
+      req.actor && req.actor.type === "admin" ? req.params.id : "",
     );
     res.json(result);
   }),

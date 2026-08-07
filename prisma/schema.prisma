@@ -33,6 +33,7 @@ model Admin {
   email        String   @unique
   passwordHash String
   name         String
+  logo         String?
   role         String   @default("admin")
   isApproved   Boolean  @default(true)
   createdAt    DateTime @default(now())
