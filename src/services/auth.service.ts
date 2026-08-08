@@ -1,7 +1,6 @@
 import crypto from "crypto";
 import { env } from "../config/env";
 import { prisma } from "../database/prisma";
-import { syncCache } from "./syncCache.service";
 import { RefreshTokenRepository } from "../repositories/refreshToken.repository";
 import { AppError } from "../utils/errors";
 import { hashPassword, verifyPassword } from "../utils/password";
@@ -11,6 +10,7 @@ import {
   signRefreshToken,
   verifyRefreshToken,
 } from "../utils/tokens";
+import { syncCache } from "./syncCache.service";
 
 /** Maximum consecutive failed login attempts before lockout. */
 const MAX_FAILED_ATTEMPTS = 3;
@@ -262,7 +262,8 @@ export class AuthService {
         email: admin.email,
         logo: admin.logo,
         name: admin.name,
-        role: "admin" as const,
+        role: admin.role,
+        createdAt: admin.createdAt,
         isApproved: admin.isApproved,
       },
     };
@@ -285,15 +286,23 @@ export class AuthService {
   ) {
     const admin = await prisma.admin.findUnique({ where: { id: adminId } });
     if (!admin)
-      throw AppError.notFound("ADMIN_NOT_FOUND", "Administrator account not found.");
+      throw AppError.notFound(
+        "ADMIN_NOT_FOUND",
+        "Administrator account not found.",
+      );
 
     // ── Password change ────────────────────────────────────────────────────
     let passwordHash: string | undefined;
     if (input.newPassword) {
       if (!input.currentPassword) {
-        throw AppError.badRequest("currentPassword is required to change your password.");
+        throw AppError.badRequest(
+          "currentPassword is required to change your password.",
+        );
       }
-      const valid = await verifyPassword(input.currentPassword, admin.passwordHash);
+      const valid = await verifyPassword(
+        input.currentPassword,
+        admin.passwordHash,
+      );
       if (!valid) {
         throw AppError.unauthorized("Current password is incorrect.");
       }
