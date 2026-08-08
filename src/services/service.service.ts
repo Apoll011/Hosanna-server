@@ -85,6 +85,7 @@ export class ServiceService {
       date?: Date;
       notes?: string;
       elements?: any;
+      archived?: boolean;
     },
   ) {
     const current = await this.getById(id);
@@ -94,6 +95,7 @@ export class ServiceService {
       name: patch.name ?? undefined,
       date: patch.date ?? undefined,
       notes: patch.notes ?? undefined,
+      archived: patch.archived ?? undefined,
       elements: patch.elements !== undefined ? patch.elements : undefined,
     });
 
@@ -112,16 +114,6 @@ export class ServiceService {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
     const updated = await this.serviceRepo.update(id, { elements });
-    this.invalidateCache();
-
-    return serialize(updated!);
-  }
-
-  async archive(id: string, updatedAt: Date, archive: boolean) {
-    const current = await this.getById(id);
-    assertUnchanged(current, updatedAt);
-
-    const updated = await this.serviceRepo.archive(id, archive);
     this.invalidateCache();
 
     return serialize(updated!);

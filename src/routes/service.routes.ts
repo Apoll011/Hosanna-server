@@ -9,7 +9,6 @@ import { ServiceService } from "../services/service.service";
 import { asyncHandler } from "../utils/asyncHandler";
 import { idParamSchema } from "../validators/common.validators";
 import {
-  archiveSchema,
   createServiceSchema,
   serviceListSchema,
   updateServiceElementsSchema,
@@ -62,17 +61,6 @@ serviceRouter.put(
     const service = new ServiceService(req.db!, req.tenantId!);
     const { updatedAt, ...patch } = req.body;
     res.json(await service.update(req.params.id, updatedAt, patch));
-  }),
-);
-
-serviceRouter.put(
-  "/:id/archive",
-  authenticateAdmin,
-  validate({ params: idParamSchema, body: archiveSchema }),
-  asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!, req.tenantId!);
-    const { updatedAt, archive } = req.body;
-    res.json(await service.archive(req.params.id, updatedAt, archive));
   }),
 );
 
