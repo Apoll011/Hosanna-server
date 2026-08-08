@@ -39,15 +39,6 @@ export class ServiceRepository {
   delete(id: string) {
     return this.db.service.delete({ where: { id } });
   }
-
-  archive(id: string, archive: boolean) {
-    return this.db.service.update({
-      where: { id },
-      data: {
-        archived: archive,
-      },
-    });
-  }
 }
 
 export type ServiceWithSongs = Prisma.PromiseReturnType<
