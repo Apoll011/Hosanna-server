@@ -25,7 +25,7 @@ serviceRouter.get(
   authenticateAny,
   validate({ query: serviceListSchema }),
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!);
+    const service = new ServiceService(req.db!, req.tenantId!);
     res.json(await service.list(req.query as any));
   }),
 );
@@ -37,7 +37,7 @@ serviceRouter.get(
   validate({ params: idParamSchema }),
   byId,
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!);
+    const service = new ServiceService(req.db!, req.tenantId!);
     res.json(await service.getByIdSerialized(req.params.id));
   }),
 );
@@ -48,7 +48,7 @@ serviceRouter.post(
   authenticateAdmin,
   validate({ body: createServiceSchema }),
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!);
+    const service = new ServiceService(req.db!, req.tenantId!);
     res.status(201).json(await service.create(req.body));
   }),
 );
@@ -59,7 +59,7 @@ serviceRouter.put(
   authenticateAdmin,
   validate({ params: idParamSchema, body: updateServiceSchema }),
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!);
+    const service = new ServiceService(req.db!, req.tenantId!);
     const { updatedAt, ...patch } = req.body;
     res.json(await service.update(req.params.id, updatedAt, patch));
   }),
@@ -70,7 +70,7 @@ serviceRouter.put(
   authenticateAdmin,
   validate({ params: idParamSchema, body: archiveSchema }),
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!);
+    const service = new ServiceService(req.db!, req.tenantId!);
     const { updatedAt, archive } = req.body;
     res.json(await service.archive(req.params.id, updatedAt, archive));
   }),
@@ -82,7 +82,7 @@ serviceRouter.delete(
   authenticateAdmin,
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!);
+    const service = new ServiceService(req.db!, req.tenantId!);
     await service.delete(req.params.id);
     res.status(204).send();
   }),
@@ -95,7 +95,7 @@ serviceRouter.put(
   validate({ params: idParamSchema, body: updateServiceElementsSchema }),
   byId,
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!);
+    const service = new ServiceService(req.db!, req.tenantId!);
     const { updatedAt, elements } = req.body;
     res.json(await service.updateElements(req.params.id, updatedAt, elements));
   }),

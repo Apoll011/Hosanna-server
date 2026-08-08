@@ -30,14 +30,16 @@ model Admin {
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  email        String   @unique
-  passwordHash String
-  name         String
-  logo         String?
-  role         String   @default("admin")
-  isApproved   Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  email              String    @unique
+  passwordHash       String
+  name               String
+  logo               String?
+  role               String    @default("admin")
+  isApproved         Boolean   @default(true)
+  loginFailedCount   Int       @default(0)
+  loginLockedUntil   DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   refreshTokens RefreshToken[]
 

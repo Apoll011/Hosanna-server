@@ -9,6 +9,7 @@ import type { TenantPrisma } from "../database/prisma";
 import { FolderRepository } from "../repositories/folder.repository";
 import { SongRepository } from "../repositories/song.repository";
 import { AppError } from "../utils/errors";
+import { syncCache } from "./syncCache.service";
 
 function assertUnchanged(current: { updatedAt: Date }, clientUpdatedAt: Date) {
   if (current.updatedAt.getTime() !== clientUpdatedAt.getTime()) {
@@ -22,9 +23,16 @@ export class FolderService {
   private folderRepo: FolderRepository;
   private songRepo: SongRepository;
 
-  constructor(private readonly db: TenantPrisma) {
+  constructor(
+    private readonly db: TenantPrisma,
+    private readonly tenantId: string,
+  ) {
     this.folderRepo = new FolderRepository(db);
     this.songRepo = new SongRepository(db);
+  }
+
+  invalidateCache() {
+    syncCache.invalidate(this.tenantId);
   }
 
   async listWithCounts() {
@@ -54,6 +62,7 @@ export class FolderService {
   }
 
   async create(name: string, parentId?: string | null) {
+    this.invalidateCache();
     return this.folderRepo.create({
       id: uuid(),
       name: name.trim(),
@@ -90,7 +99,7 @@ export class FolderService {
         ),
       );
     }
-
+    this.invalidateCache();
     return updated;
   }
 
@@ -106,10 +115,13 @@ export class FolderService {
       ),
     );
     await this.folderRepo.delete(id);
+
+    this.invalidateCache();
     return { movedSongs: songs.length };
   }
 
   async deleteWithContent(id: string) {
+    this.invalidateCache();
     return this.db.$transaction(async (tx) => {
       return this.deleteRecursive(id, tx);
     });

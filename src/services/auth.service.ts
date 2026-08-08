@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { env } from "../config/env";
 import { prisma } from "../database/prisma";
+import { syncCache } from "./syncCache.service";
 import { RefreshTokenRepository } from "../repositories/refreshToken.repository";
 import { AppError } from "../utils/errors";
 import { hashPassword, verifyPassword } from "../utils/password";
@@ -10,6 +11,11 @@ import {
   signRefreshToken,
   verifyRefreshToken,
 } from "../utils/tokens";
+
+/** Maximum consecutive failed login attempts before lockout. */
+const MAX_FAILED_ATTEMPTS = 3;
+/** Lockout duration in milliseconds (1 hour). */
+const LOCKOUT_DURATION_MS = 60 * 60 * 1000;
 
 function refreshExpiryDate(): Date {
   const match = /^(\d+)([smhd])$/.exec(env.jwt.refreshExpiresIn);
@@ -91,7 +97,52 @@ export class AuthService {
 
   async login(email: string, password: string) {
     const admin = await prisma.admin.findUnique({ where: { email } });
-    if (!admin || !(await verifyPassword(password, admin.passwordHash))) {
+
+    // Use a timing-safe generic message for both "not found" and "wrong password"
+    // to prevent user enumeration — but we still need the record to check lockout.
+    if (!admin) {
+      throw AppError.unauthorized("Invalid credentials.");
+    }
+
+    // ── Lockout check ──────────────────────────────────────────────────────
+    if (
+      admin.loginLockedUntil &&
+      admin.loginLockedUntil.getTime() > Date.now()
+    ) {
+      const remainingMs = admin.loginLockedUntil.getTime() - Date.now();
+      const remainingMins = Math.ceil(remainingMs / 60_000);
+      throw new AppError(
+        429,
+        "UNAUTHORIZED",
+        `Account is temporarily locked due to too many failed login attempts. ` +
+          `Please try again in ${remainingMins} minute${remainingMins !== 1 ? "s" : ""}.`,
+      );
+    }
+
+    const passwordValid = await verifyPassword(password, admin.passwordHash);
+
+    if (!passwordValid) {
+      // Increment failed counter; lock if threshold exceeded.
+      const newCount = admin.loginFailedCount + 1;
+      const shouldLock = newCount >= MAX_FAILED_ATTEMPTS;
+      await prisma.admin.update({
+        where: { id: admin.id },
+        data: {
+          loginFailedCount: newCount,
+          loginLockedUntil: shouldLock
+            ? new Date(Date.now() + LOCKOUT_DURATION_MS)
+            : undefined,
+        },
+      });
+
+      if (shouldLock) {
+        throw new AppError(
+          429,
+          "UNAUTHORIZED",
+          "Too many failed login attempts. Your account has been locked for 1 hour.",
+        );
+      }
+
       throw AppError.unauthorized("Invalid credentials.");
     }
 
@@ -101,6 +152,14 @@ export class AuthService {
         "ACCOUNT_NOT_APPROVED",
         "Your account is pending approval by a tenant administrator.",
       );
+    }
+
+    // ── Successful login: reset failure counters ───────────────────────────
+    if (admin.loginFailedCount > 0 || admin.loginLockedUntil) {
+      await prisma.admin.update({
+        where: { id: admin.id },
+        data: { loginFailedCount: 0, loginLockedUntil: null },
+      });
     }
 
     const payload: AdminJwtPayload = {
@@ -182,17 +241,6 @@ export class AuthService {
     }
   }
 
-  async user(id: string) {
-    const user = await prisma.admin.findUnique({
-      where: { id: id },
-      select: {
-        passwordHash: false,
-      },
-    });
-    if (!user) throw AppError.notFound("ADMIN_NOT_FOUND", "Account not found.");
-    return user;
-  }
-
   async me(adminId: string) {
     const admin = await prisma.admin.findUnique({ where: { id: adminId } });
     if (!admin)
@@ -216,6 +264,75 @@ export class AuthService {
         name: admin.name,
         role: "admin" as const,
         isApproved: admin.isApproved,
+      },
+    };
+  }
+
+  /**
+   * Update the authenticated admin's own profile.
+   * Fields are all optional; only supplied fields are changed.
+   * Password change requires `currentPassword` verification.
+   */
+  async updateProfile(
+    adminId: string,
+    input: {
+      name?: string;
+      email?: string;
+      logo?: string | null;
+      currentPassword?: string;
+      newPassword?: string;
+    },
+  ) {
+    const admin = await prisma.admin.findUnique({ where: { id: adminId } });
+    if (!admin)
+      throw AppError.notFound("ADMIN_NOT_FOUND", "Administrator account not found.");
+
+    // ── Password change ────────────────────────────────────────────────────
+    let passwordHash: string | undefined;
+    if (input.newPassword) {
+      if (!input.currentPassword) {
+        throw AppError.badRequest("currentPassword is required to change your password.");
+      }
+      const valid = await verifyPassword(input.currentPassword, admin.passwordHash);
+      if (!valid) {
+        throw AppError.unauthorized("Current password is incorrect.");
+      }
+      passwordHash = await hashPassword(input.newPassword);
+    }
+
+    // ── Email uniqueness check ─────────────────────────────────────────────
+    if (input.email && input.email !== admin.email) {
+      const conflict = await prisma.admin.findUnique({
+        where: { email: input.email },
+      });
+      if (conflict) {
+        throw AppError.badRequest("An account with that email already exists.");
+      }
+    }
+
+    // ── Persist changes ────────────────────────────────────────────────────
+    const updated = await prisma.admin.update({
+      where: { id: adminId },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.email !== undefined ? { email: input.email } : {}),
+        ...(input.logo !== undefined ? { logo: input.logo } : {}),
+        ...(passwordHash ? { passwordHash } : {}),
+      },
+    });
+
+    // Invalidate sync cache so admin timestamp change propagates immediately.
+    syncCache.invalidate(updated.tenantId);
+
+    return {
+      user: {
+        id: updated.id,
+        tenantId: updated.tenantId,
+        email: updated.email,
+        logo: updated.logo,
+        name: updated.name,
+        role: "admin" as const,
+        isApproved: updated.isApproved,
       },
     };
   }

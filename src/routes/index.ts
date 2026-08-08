@@ -17,6 +17,7 @@ import {
   authLimiter,
   backupLimiter,
   healthLimiter,
+  loginLimiter,
   syncLimiter,
 } from "../middleware/rateLimit";
 
@@ -24,6 +25,9 @@ export const apiRouter = Router();
 
 apiRouter.use("/health", healthLimiter, healthRouter);
 
+// Apply the general auth limiter across all /auth routes, plus a tighter
+// loginLimiter just for the login endpoint (IP-level brute-force defence).
+apiRouter.post("/auth/login", loginLimiter);
 apiRouter.use("/auth", authLimiter, authRouter);
 
 apiRouter.use("/sync", syncLimiter, syncRouter);
