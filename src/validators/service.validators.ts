@@ -12,6 +12,7 @@ export const updateServiceSchema = concurrencySchema.extend({
   name: z.string().trim().min(1).optional(),
   date: z.string().trim().min(1).optional(),
   notes: z.string().optional(),
+  archived: z.boolean().optional(),
   elements: z.any().optional(),
 });
 
