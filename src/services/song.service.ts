@@ -9,6 +9,7 @@ import {
   createSongSchema,
   listSongsQuerySchema,
 } from "../validators/song.validators";
+import { syncCache } from "./syncCache.service";
 
 type ListQuery = z.infer<typeof listSongsQuerySchema>;
 type CreateInput = z.infer<typeof createSongSchema>;
@@ -31,9 +32,16 @@ export class SongService {
   private songRepo: SongRepository;
   private folderRepo: FolderRepository;
 
-  constructor(private readonly db: TenantPrisma) {
+  constructor(
+    private readonly db: TenantPrisma,
+    private readonly tenantId: string,
+  ) {
     this.songRepo = new SongRepository(db);
     this.folderRepo = new FolderRepository(db);
+  }
+
+  invalidateCache() {
+    syncCache.invalidate(this.tenantId);
   }
 
   private async computePath(
@@ -138,6 +146,7 @@ export class SongService {
       input.folderId,
       input.path,
     );
+    this.invalidateCache();
     return this.songRepo.create({
       id: uuid(),
       title: input.title,
@@ -165,7 +174,8 @@ export class SongService {
         tags: item.tags ?? [],
       })),
     );
-    console.log(prepared.map((v) => v.path));
+    this.invalidateCache();
+
     const created = await this.songRepo.createMany(prepared);
     return { created, count: created.count };
   }
@@ -190,6 +200,8 @@ export class SongService {
       await this.songRepo.update(song.id, { tags: newTags });
       updatedCount++;
     }
+    this.invalidateCache();
+
     return { success: true, count: updatedCount };
   }
 
@@ -209,12 +221,15 @@ export class SongService {
         ? { connect: { id: patch.folderId } }
         : { disconnect: true };
     }
+    this.invalidateCache();
+
     return this.songRepo.update(id, data);
   }
 
   async delete(id: string) {
     await this.getById(id);
     await this.songRepo.delete(id);
+    this.invalidateCache();
   }
 
   async move(
@@ -225,6 +240,8 @@ export class SongService {
   ) {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
+    this.invalidateCache();
+
     return this.songRepo.update(id, {
       folder: folderId ? { connect: { id: folderId } } : { disconnect: true },
       path: newPath ?? current.path,

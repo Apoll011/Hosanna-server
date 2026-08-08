@@ -6,6 +6,7 @@ import {
 } from "../repositories/service.repository";
 import { SongRepository } from "../repositories/song.repository";
 import { AppError } from "../utils/errors";
+import { syncCache } from "./syncCache.service";
 
 function assertUnchanged(current: { updatedAt: Date }, clientUpdatedAt: Date) {
   if (current.updatedAt.getTime() !== clientUpdatedAt.getTime()) {
@@ -31,9 +32,16 @@ export class ServiceService {
   private serviceRepo: ServiceRepository;
   private songRepo: SongRepository;
 
-  constructor(private readonly db: TenantPrisma) {
+  constructor(
+    private readonly db: TenantPrisma,
+    private readonly tenantId: string,
+  ) {
     this.serviceRepo = new ServiceRepository(db);
     this.songRepo = new SongRepository(db);
+  }
+
+  invalidateCache() {
+    syncCache.invalidate(this.tenantId);
   }
 
   async list(body: { archived: boolean }) {
@@ -65,6 +73,7 @@ export class ServiceService {
       notes: input.notes ?? "",
       elements: input.elements ?? [],
     });
+    this.invalidateCache();
     return serialize(created!);
   }
 
@@ -88,18 +97,23 @@ export class ServiceService {
       elements: patch.elements !== undefined ? patch.elements : undefined,
     });
 
+    this.invalidateCache();
+
     return serialize((await this.getById(id))!);
   }
 
   async delete(id: string) {
     await this.getById(id);
     await this.serviceRepo.delete(id);
+    this.invalidateCache();
   }
 
   async updateElements(id: string, updatedAt: Date, elements: any) {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
     const updated = await this.serviceRepo.update(id, { elements });
+    this.invalidateCache();
+
     return serialize(updated!);
   }
 
@@ -108,6 +122,8 @@ export class ServiceService {
     assertUnchanged(current, updatedAt);
 
     const updated = await this.serviceRepo.archive(id, archive);
+    this.invalidateCache();
+
     return serialize(updated!);
   }
 }

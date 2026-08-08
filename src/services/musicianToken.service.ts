@@ -1,22 +1,32 @@
-import { v4 as uuid } from 'uuid';
-import { MusicianTokenRepository } from '../repositories/musicianToken.repository';
-import { ServiceRepository } from '../repositories/service.repository';
-import type { TenantPrisma } from '../database/prisma';
-import { AppError } from '../utils/errors';
-import { generateMusicianToken, hashToken, tokenPreview } from '../utils/tokens';
-import { buildMusicianAccessUrl, generateQrCodeDataUrl } from '../utils/qrcode';
-import { env } from '../config/env';
+import { v4 as uuid } from "uuid";
+import { env } from "../config/env";
+import type { TenantPrisma } from "../database/prisma";
+import { MusicianTokenRepository } from "../repositories/musicianToken.repository";
+import { ServiceRepository } from "../repositories/service.repository";
+import { AppError } from "../utils/errors";
+import { buildMusicianAccessUrl, generateQrCodeDataUrl } from "../utils/qrcode";
+import {
+  generateMusicianToken,
+  hashToken,
+  tokenPreview,
+} from "../utils/tokens";
+import { syncCache } from "./syncCache.service";
 
 function assertUnchanged(current: { updatedAt: Date }, clientUpdatedAt: Date) {
   if (current.updatedAt.getTime() !== clientUpdatedAt.getTime()) {
-    throw AppError.conflict('This token was modified by someone else since you last loaded it.');
+    throw AppError.conflict(
+      "This token was modified by someone else since you last loaded it.",
+    );
   }
 }
 
-function status(t: { revokedAt: Date | null; expiresAt: Date }): 'active' | 'revoked' | 'expired' {
-  if (t.revokedAt) return 'revoked';
-  if (t.expiresAt.getTime() < Date.now()) return 'expired';
-  return 'active';
+function status(t: {
+  revokedAt: Date | null;
+  expiresAt: Date;
+}): "active" | "revoked" | "expired" {
+  if (t.revokedAt) return "revoked";
+  if (t.expiresAt.getTime() < Date.now()) return "expired";
+  return "active";
 }
 
 function serialize(t: any) {
@@ -28,7 +38,9 @@ function serialize(t: any) {
     expiresAt: t.expiresAt,
     revokedAt: t.revokedAt,
     lastUsedAt: t.lastUsedAt,
-    allowedServices: t.allowedServices ? t.allowedServices.map((s: any) => s.serviceId) : [],
+    allowedServices: t.allowedServices
+      ? t.allowedServices.map((s: any) => s.serviceId)
+      : [],
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
   };
@@ -42,9 +54,15 @@ export class MusicianTokenService {
   private tokenRepo: MusicianTokenRepository;
   private serviceRepo: ServiceRepository;
 
-  constructor(private readonly db: TenantPrisma) {
+  constructor(
+    private readonly db: TenantPrisma,
+    private readonly tenantId: string,
+  ) {
     this.tokenRepo = new MusicianTokenRepository(db);
     this.serviceRepo = new ServiceRepository(db);
+  }
+  invalidateCache() {
+    syncCache.invalidate(this.tenantId);
   }
 
   async list() {
@@ -53,7 +71,11 @@ export class MusicianTokenService {
 
   async getById(id: string) {
     const token = await this.tokenRepo.findById(id);
-    if (!token) throw AppError.notFound('MUSICIAN_TOKEN_NOT_FOUND', 'Musician access token does not exist.');
+    if (!token)
+      throw AppError.notFound(
+        "MUSICIAN_TOKEN_NOT_FOUND",
+        "Musician access token does not exist.",
+      );
     return token;
   }
 
@@ -62,11 +84,17 @@ export class MusicianTokenService {
   }
 
   /** Creates a token and returns it together with the ONE-TIME raw value + QR code. */
-  async create(name: string, expiresAt: Date | undefined, allowedServices: string[] | undefined) {
+  async create(
+    name: string,
+    expiresAt: Date | undefined,
+    allowedServices: string[] | undefined,
+  ) {
     if (allowedServices?.length) {
       const count = await this.serviceRepo.countByIds(allowedServices);
       if (count !== allowedServices.length) {
-        throw AppError.badRequest('One or more services do not belong to this tenant.');
+        throw AppError.badRequest(
+          "One or more services do not belong to this tenant.",
+        );
       }
     }
 
@@ -84,7 +112,7 @@ export class MusicianTokenService {
 
     const accessUrl = buildMusicianAccessUrl(raw);
     const qrCode = await generateQrCodeDataUrl(accessUrl);
-
+    this.invalidateCache();
     return { ...serialize(created), token: raw, accessUrl, qrCode };
   }
 
@@ -99,7 +127,9 @@ export class MusicianTokenService {
     if (patch.allowedServices?.length) {
       const count = await this.serviceRepo.countByIds(patch.allowedServices);
       if (count !== patch.allowedServices.length) {
-        throw AppError.badRequest('One or more services do not belong to this tenant.');
+        throw AppError.badRequest(
+          "One or more services do not belong to this tenant.",
+        );
       }
     }
 
@@ -111,6 +141,7 @@ export class MusicianTokenService {
     if (patch.allowedServices) {
       await this.tokenRepo.replaceAllowedServices(id, patch.allowedServices);
     }
+    this.invalidateCache();
 
     return serialize(await this.getById(id));
   }
@@ -119,6 +150,8 @@ export class MusicianTokenService {
   async revoke(id: string, updatedAt: Date) {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
+    this.invalidateCache();
+
     return serialize(await this.tokenRepo.revoke(id));
   }
 
@@ -136,11 +169,19 @@ export class MusicianTokenService {
 
     const accessUrl = buildMusicianAccessUrl(raw);
     const qrCode = await generateQrCodeDataUrl(accessUrl);
-    return { ...serialize(await this.getById(id)), token: raw, accessUrl, qrCode };
+    this.invalidateCache();
+
+    return {
+      ...serialize(await this.getById(id)),
+      token: raw,
+      accessUrl,
+      qrCode,
+    };
   }
 
   async permanentlyDelete(id: string) {
     await this.getById(id);
     await this.tokenRepo.delete(id);
+    this.invalidateCache();
   }
 }

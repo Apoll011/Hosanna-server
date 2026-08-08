@@ -135,6 +135,16 @@ tenantRouter.put(
   }),
 );
 
+tenantRouter.get(
+  "/admins/:id",
+  authenticateAdmin,
+  validate({ params: idParamSchema }),
+  asyncHandler(async (req, res) => {
+    const repo = new AdminRepository(req.db!);
+    res.json(repo.findUserById(req.params.id));
+  }),
+);
+
 // DELETE /api/tenants/admins/:id — admin only: reject or remove an admin user from tenant
 tenantRouter.delete(
   "/admins/:id",
