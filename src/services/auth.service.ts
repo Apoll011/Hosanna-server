@@ -340,7 +340,8 @@ export class AuthService {
         email: updated.email,
         logo: updated.logo,
         name: updated.name,
-        role: "admin" as const,
+        role: updated.role,
+        createdAt: updated.createdAt,
         isApproved: updated.isApproved,
       },
     };
