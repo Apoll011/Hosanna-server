@@ -130,9 +130,6 @@ export const auth = betterAuth({
       enabled: true,
       domain: "example.com",
     },
-    ipAddress: {
-      ipAddressHeaders: ["cf-connecting-ip"], // Cloudflare specific header example
-    },
   },
   secondaryStorage: redisStorage({
     client: redis,
@@ -148,7 +145,7 @@ export const auth = betterAuth({
     },
   },
   database: prismaAdapter(prisma, {
-    provider: "postgress",
+    provider: "postgresql",
   }),
   rateLimit: {
     enabled: true,
