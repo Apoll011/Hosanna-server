@@ -1,3 +1,4 @@
+import { passkey } from "@better-auth/passkey";
 import { redisStorage } from "@better-auth/redis-storage";
 import { stripe } from "@better-auth/stripe";
 import { betterAuth } from "better-auth";
@@ -59,6 +60,7 @@ export const auth = betterAuth({
     },
   },
   plugins: [
+    passkey(),
     inbox(), // index("notification_user_created_idx").on(table.userId, table.createdAt)
     bearer(),
     haveIBeenPwned(),
