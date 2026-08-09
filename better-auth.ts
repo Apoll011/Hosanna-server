@@ -3,10 +3,11 @@ import { stripe } from "@better-auth/stripe";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import {
-    bearer,
-    haveIBeenPwned,
-    organization,
-    twoFactor,
+  bearer,
+  captcha,
+  haveIBeenPwned,
+  organization,
+  twoFactor,
 } from "better-auth/plugins";
 import { inbox } from "better-inbox";
 import Stripe from "stripe";
@@ -61,6 +62,10 @@ export const auth = betterAuth({
     inbox(), // index("notification_user_created_idx").on(table.userId, table.createdAt)
     bearer(),
     haveIBeenPwned(),
+    captcha({
+      provider: "cloudflare-turnstile",
+      secretKey: process.env.TURNSTILE_SECRET_KEY!,
+    }),
     twoFactor({
       issuer: "Hosanna",
 
@@ -151,10 +156,6 @@ export const auth = betterAuth({
     window: 60,
     max: 100,
   },
-      captcha({
-      provider: "cloudflare-turnstile",
-      secretKey: process.env.TURNSTILE_SECRET_KEY!,
-    }),
 });
 
 //app.all("/api/auth/*", toNodeHandler(auth)); // For ExpressJS v4
