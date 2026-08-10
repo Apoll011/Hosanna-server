@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { requirePermission } from "../middleware/auth";
-import { validate } from "../middleware/validate";
-import { SongService } from "../services/song.service";
-import { asyncHandler } from "../utils/asyncHandler";
-import { idParamSchema } from "../validators/common.validators";
+import { requirePermission } from "../middleware/auth.js";
+import { validate } from "../middleware/validate.js";
+import { SongService } from "../services/song.service.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { idParamSchema } from "../validators/common.validators.js";
 import {
   batchCreateSongsSchema,
   batchTagsSchema,
@@ -11,7 +11,7 @@ import {
   listSongsQuerySchema,
   moveSongSchema,
   updateSongSchema,
-} from "../validators/song.validators";
+} from "../validators/song.validators.js";
 
 export const songRouter = Router();
 

@@ -1,4 +1,4 @@
-import { OrgScopedPrisma } from "../database/prisma";
+import { OrgScopedPrisma } from "../database/prisma.js";
 
 export interface AuthorizedUser {
   id: string;

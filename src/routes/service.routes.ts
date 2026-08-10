@@ -1,15 +1,15 @@
 import { Router } from "express";
-import { requirePermission } from "../middleware/auth";
-import { validate } from "../middleware/validate";
-import { ServiceService } from "../services/service.service";
-import { asyncHandler } from "../utils/asyncHandler";
-import { idParamSchema } from "../validators/common.validators";
+import { requirePermission } from "../middleware/auth.js";
+import { validate } from "../middleware/validate.js";
+import { ServiceService } from "../services/service.service.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { idParamSchema } from "../validators/common.validators.js";
 import {
   createServiceSchema,
   serviceListSchema,
   updateServiceElementsSchema,
   updateServiceSchema,
-} from "../validators/service.validators";
+} from "../validators/service.validators.js";
 
 export const serviceRouter = Router();
 

@@ -1,8 +1,8 @@
 import { Prisma } from "@prisma/client";
-import type { OrgScopedPrisma } from "../database/prisma";
-import { SettingsRepository } from "../repositories/settings.repository";
-import { AppError } from "../utils/errors";
-import { syncCache } from "./syncCache.service";
+import type { OrgScopedPrisma } from "../database/prisma.js";
+import { SettingsRepository } from "../repositories/settings.repository.js";
+import { AppError } from "../utils/errors.js";
+import { syncCache } from "./syncCache.service.js";
 
 export class SettingsService {
   private repo: SettingsRepository;

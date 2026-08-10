@@ -1,5 +1,5 @@
-import type { OrgScopedPrisma } from "../database/prisma";
-import { AppError } from "../utils/errors";
+import type { OrgScopedPrisma } from "../database/prisma.js";
+import { AppError } from "../utils/errors.js";
 
 const BACKUP_VERSION = "2.0";
 

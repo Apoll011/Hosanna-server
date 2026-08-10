@@ -1,15 +1,15 @@
 import { Prisma, Song } from "@prisma/client";
 import { v4 as uuid } from "uuid";
 import { z } from "zod";
-import type { OrgScopedPrisma } from "../database/prisma";
-import { FolderRepository } from "../repositories/folder.repository";
-import { SongRepository } from "../repositories/song.repository";
-import { AppError } from "../utils/errors";
+import type { OrgScopedPrisma } from "../database/prisma.js";
+import { FolderRepository } from "../repositories/folder.repository.js";
+import { SongRepository } from "../repositories/song.repository.js";
+import { AppError } from "../utils/errors.js";
 import {
   createSongSchema,
   listSongsQuerySchema,
-} from "../validators/song.validators";
-import { syncCache } from "./syncCache.service";
+} from "../validators/song.validators.js";
+import { syncCache } from "./syncCache.service.js";
 
 type ListQuery = z.infer<typeof listSongsQuerySchema>;
 type CreateInput = z.infer<typeof createSongSchema>;

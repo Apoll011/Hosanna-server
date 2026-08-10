@@ -1,14 +1,17 @@
 import { Router } from "express";
-import { requireAllPermissions, requirePermission } from "../middleware/auth";
-import { validate } from "../middleware/validate";
-import { FolderService } from "../services/folder.service";
-import { asyncHandler } from "../utils/asyncHandler";
-import { idParamSchema } from "../validators/common.validators";
+import {
+  requireAllPermissions,
+  requirePermission,
+} from "../middleware/auth.js";
+import { validate } from "../middleware/validate.js";
+import { FolderService } from "../services/folder.service.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { idParamSchema } from "../validators/common.validators.js";
 import {
   createFolderSchema,
   deleteFolderQuerySchema,
   updateFolderSchema,
-} from "../validators/folder.validators";
+} from "../validators/folder.validators.js";
 
 export const folderRouter = Router();
 

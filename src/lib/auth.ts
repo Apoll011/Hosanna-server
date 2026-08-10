@@ -2,14 +2,13 @@ import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import {
   bearer,
-  captcha,
   haveIBeenPwned,
   organization,
   twoFactor,
 } from "better-auth/plugins";
 import { inbox } from "better-inbox";
-import { prisma } from "../database/prisma";
-import { roles } from "../permissions";
+import { prisma } from "../database/prisma.js";
+import { roles } from "../permissions/index.js";
 
 /*import Stripe from "stripe";
 
@@ -113,7 +112,7 @@ export const auth = betterAuth({
     bearer(),
     haveIBeenPwned(),
     //captcha({
-      //provider: "cloudflare-turnstile",
+    //provider: "cloudflare-turnstile",
     //secretKey:process.env.TURNSTILE_SECRET_KEY!,
     //}),
     twoFactor({

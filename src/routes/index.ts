@@ -1,20 +1,20 @@
 import { Router } from "express";
 
-import { backupRouter } from "./backup.routes";
-import { folderRouter } from "./folder.routes";
-import { healthRouter } from "./health.routes";
-import { serviceRouter } from "./service.routes";
-import { settingsRouter } from "./settings.routes";
-import { songRouter } from "./song.routes";
-import { syncRouter } from "./sync.routes";
+import { backupRouter } from "./backup.routes.js";
+import { folderRouter } from "./folder.routes.js";
+import { healthRouter } from "./health.routes.js";
+import { serviceRouter } from "./service.routes.js";
+import { settingsRouter } from "./settings.routes.js";
+import { songRouter } from "./song.routes.js";
+import { syncRouter } from "./sync.routes.js";
 
-import { authenticate } from "../middleware/auth";
+import { authenticate } from "../middleware/auth.js";
 import {
   apiLimiter,
   backupLimiter,
   healthLimiter,
   syncLimiter,
-} from "../middleware/rateLimit";
+} from "../middleware/rateLimit.js";
 
 export const apiRouter = Router();
 

@@ -1,4 +1,4 @@
-import { prisma } from "./database/prisma";
+import { prisma } from "./database/prisma.js";
 
 export type PrismaTransactionalClient = Parameters<
   Parameters<typeof prisma.$transaction>[0]

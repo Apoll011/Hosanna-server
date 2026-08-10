@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { assertUser } from "../middleware/auth";
-import { syncCache } from "../services/syncCache.service";
-import { asyncHandler } from "../utils/asyncHandler";
+import { assertUser } from "../middleware/auth.js";
+import { syncCache } from "../services/syncCache.service.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 export const syncRouter = Router();
 

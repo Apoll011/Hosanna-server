@@ -1,15 +1,15 @@
 import type { NextFunction, Request, Response } from "express";
-import { forOrganization } from "../database/prisma";
-import { auth } from "../lib/auth";
+import { forOrganization } from "../database/prisma.js";
+import { auth } from "../lib/auth.js";
 import {
   AppRole,
   PermissionString,
   roles,
   toPermissionRequest,
-} from "../permissions";
-import { AuthorizedUser } from "../types/express";
-import { asyncHandler } from "../utils/asyncHandler";
-import { AppError } from "../utils/errors";
+} from "../permissions/index.js";
+import { AuthorizedUser } from "../types/express.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { AppError } from "../utils/errors.js";
 
 export interface DeniedResponse {
   status?: number;

@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { assertUser, requirePermission } from "../middleware/auth";
-import { validate } from "../middleware/validate";
-import { SettingsService } from "../services/settings.service";
-import { asyncHandler } from "../utils/asyncHandler";
-import { updateSettingsSchema } from "../validators/settings.validators";
+import { assertUser, requirePermission } from "../middleware/auth.js";
+import { validate } from "../middleware/validate.js";
+import { SettingsService } from "../services/settings.service.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { updateSettingsSchema } from "../validators/settings.validators.js";
 
 export const settingsRouter = Router();
 

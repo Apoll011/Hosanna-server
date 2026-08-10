@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { requirePermission } from "../middleware/auth";
-import { BackupService } from "../services/backup.service";
-import { asyncHandler } from "../utils/asyncHandler";
+import { requirePermission } from "../middleware/auth.js";
+import { BackupService } from "../services/backup.service.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 export const backupRouter = Router();
 

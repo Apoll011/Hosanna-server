@@ -1,10 +1,10 @@
-export { ac, statement, toPermissionRequest } from "./permission";
+export { ac, statement, toPermissionRequest } from "./permission.js";
 export type {
   ActionFor,
   PermissionRequest,
   PermissionString,
   Resource,
-} from "./permission";
+} from "./permission.js";
 
 export {
   admin,
@@ -14,5 +14,5 @@ export {
   owner,
   roles,
   teamLeader,
-} from "./roles";
-export type { AppRole } from "./roles";
+} from "./roles.js";
+export type { AppRole } from "./roles.js";

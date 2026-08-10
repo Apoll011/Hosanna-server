@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import type { OrgScopedPrisma } from "../database/prisma";
+import type { OrgScopedPrisma } from "../database/prisma.js";
 
 export class ServiceRepository {
   constructor(private readonly db: OrgScopedPrisma) {}

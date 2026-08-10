@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import { ZodError, ZodTypeAny } from "zod";
-import { AppError } from "../utils/errors";
+import { AppError } from "../utils/errors.js";
 
 interface Schemas {
   body?: ZodTypeAny;

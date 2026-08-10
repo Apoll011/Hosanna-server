@@ -4,10 +4,10 @@ import cors from "cors";
 import express from "express";
 import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
-import { env } from "./config/env";
-import { auth } from "./lib/auth";
-import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
-import { apiRouter } from "./routes";
+import { env } from "./config/env.js";
+import { auth } from "./lib/auth.js";
+import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
+import { apiRouter } from "./routes/index.js";
 
 const app = express();
 

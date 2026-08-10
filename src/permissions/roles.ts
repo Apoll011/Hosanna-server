@@ -1,5 +1,5 @@
 import { adminAc, ownerAc } from "better-auth/plugins/organization/access";
-import { ac } from "./permission";
+import { ac } from "./permission.js";
 
 export const owner = ac.newRole({
   song: ["create", "access", "update", "delete"],
