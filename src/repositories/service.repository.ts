@@ -1,8 +1,8 @@
 import { Prisma } from "@prisma/client";
-import type { TenantPrisma } from "../database/prisma";
+import type { OrgScopedPrisma } from "../database/prisma";
 
 export class ServiceRepository {
-  constructor(private readonly db: TenantPrisma) {}
+  constructor(private readonly db: OrgScopedPrisma) {}
 
   findAll(archived: boolean) {
     return this.db.service.findMany({
@@ -21,8 +21,8 @@ export class ServiceRepository {
 
   create(
     data:
-      | Omit<Prisma.ServiceUncheckedCreateInput, "tenantId">
-      | Omit<Prisma.ServiceCreateInput, "tenant" | "tenantId">,
+      | Omit<Prisma.ServiceUncheckedCreateInput, "orgId">
+      | Omit<Prisma.ServiceCreateInput, "org" | "orgId">,
   ) {
     return this.db.service.create({ data: data as any });
   }
@@ -31,7 +31,6 @@ export class ServiceRepository {
     return this.db.service.update({ where: { id }, data });
   }
 
-  /** Touches `updatedAt` without changing other fields (used after child-row mutations). */
   touch(id: string) {
     return this.db.service.update({ where: { id }, data: {} });
   }

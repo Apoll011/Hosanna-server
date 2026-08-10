@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticateAdmin, authenticateAny } from "../middleware/auth";
+import { requireAllPermissions, requirePermission } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import { FolderService } from "../services/folder.service";
 import { asyncHandler } from "../utils/asyncHandler";
@@ -12,22 +12,20 @@ import {
 
 export const folderRouter = Router();
 
-// GET /api/folders — admin or musician. Includes song counts + rootSongsCount.
 folderRouter.get(
   "/",
-  authenticateAny,
+  requirePermission("folder.access"),
   asyncHandler(async (req, res) => {
-    const service = new FolderService(req.db!, req.tenantId!);
+    const service = new FolderService(req.db!, req.orgId!);
     res.json(await service.listWithCounts());
   }),
 );
 
-// GET /api/folders/flat — admin or musician. Bare list, excludes the implicit root
 folderRouter.get(
   "/flat",
-  authenticateAny,
+  requirePermission("folder.access"),
   asyncHandler(async (req, res) => {
-    const service = new FolderService(req.db!, req.tenantId!);
+    const service = new FolderService(req.db!, req.orgId!);
     res.json(await service.listFlat());
   }),
 );
@@ -35,10 +33,10 @@ folderRouter.get(
 // POST /api/folders — admin only
 folderRouter.post(
   "/",
-  authenticateAdmin,
+  requirePermission("folder.create"),
   validate({ body: createFolderSchema }),
   asyncHandler(async (req, res) => {
-    const service = new FolderService(req.db!, req.tenantId!);
+    const service = new FolderService(req.db!, req.orgId!);
     const folder = await service.create(req.body.name, req.body.parentId);
     res.status(201).json({ ...folder, songCount: 0 });
   }),
@@ -47,10 +45,10 @@ folderRouter.post(
 // PUT /api/folders/:id — admin only, optimistic concurrency
 folderRouter.put(
   "/:id",
-  authenticateAdmin,
+  requirePermission("folder.update"),
   validate({ params: idParamSchema, body: updateFolderSchema }),
   asyncHandler(async (req, res) => {
-    const service = new FolderService(req.db!, req.tenantId!);
+    const service = new FolderService(req.db!, req.orgId!);
     const { updatedAt, name, parentId } = req.body;
     res.json(await service.update(req.params.id, updatedAt, name, parentId));
   }),
@@ -59,10 +57,10 @@ folderRouter.put(
 // DELETE /api/folders/:id?action=move_to_root|delete_songs — admin only.
 folderRouter.delete(
   "/:id",
-  authenticateAdmin,
+  requirePermission("folder.delete"),
   validate({ params: idParamSchema, query: deleteFolderQuerySchema }),
   asyncHandler(async (req, res) => {
-    const service = new FolderService(req.db!, req.tenantId!);
+    const service = new FolderService(req.db!, req.orgId!);
     const action =
       (req.query.action as string) || req.body?.action || "move_to_root";
     const result =
@@ -75,13 +73,12 @@ folderRouter.delete(
   }),
 );
 
-// DELETE /api/folders/:id/move-songs-to-root — admin only. Explicit variant.
 folderRouter.delete(
-  "/:id/move-songs-to-root",
-  authenticateAdmin,
+  "/:id/move-content-to-root",
+  requirePermission("folder.delete"),
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
-    const service = new FolderService(req.db!, req.tenantId!);
+    const service = new FolderService(req.db!, req.orgId!);
     res
       .status(200)
       .json(await service.deleteMovingContentToRoot(req.params.id));
@@ -90,11 +87,11 @@ folderRouter.delete(
 
 // DELETE /api/folders/:id/with-songs — admin only. Explicit variant.
 folderRouter.delete(
-  "/:id/with-songs",
-  authenticateAdmin,
+  "/:id/with-content",
+  requireAllPermissions(["folder.delete", "song.delete"]),
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
-    const service = new FolderService(req.db!, req.tenantId!);
+    const service = new FolderService(req.db!, req.orgId!);
     res.status(200).json(await service.deleteWithContent(req.params.id));
   }),
 );

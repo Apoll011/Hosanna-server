@@ -1,5 +1,5 @@
 import { v4 as uuid } from "uuid";
-import type { TenantPrisma } from "../database/prisma";
+import type { OrgScopedPrisma } from "../database/prisma";
 import {
   ServiceRepository,
   ServiceWithSongs,
@@ -33,7 +33,7 @@ export class ServiceService {
   private songRepo: SongRepository;
 
   constructor(
-    private readonly db: TenantPrisma,
+    private readonly db: OrgScopedPrisma,
     private readonly tenantId: string,
   ) {
     this.serviceRepo = new ServiceRepository(db);

@@ -1,8 +1,8 @@
 import { Prisma } from "@prisma/client";
-import type { TenantPrisma } from "../database/prisma";
+import type { OrgScopedPrisma } from "../database/prisma";
 
 export class FolderRepository {
-  constructor(private readonly db: TenantPrisma) {}
+  constructor(private readonly db: OrgScopedPrisma) {}
 
   findAll() {
     return this.db.folder.findMany({ orderBy: { name: "asc" } });
@@ -14,8 +14,8 @@ export class FolderRepository {
 
   create(
     data:
-      | Omit<Prisma.FolderUncheckedCreateInput, "tenantId">
-      | Omit<Prisma.FolderCreateInput, "tenant" | "tenantId">,
+      | Omit<Prisma.FolderUncheckedCreateInput, "orgId">
+      | Omit<Prisma.FolderCreateInput, "org" | "orgId">,
   ) {
     return this.db.folder.create({ data: data as any });
   }
