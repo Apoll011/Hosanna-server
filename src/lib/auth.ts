@@ -112,10 +112,10 @@ export const auth = betterAuth({
     inbox(),
     bearer(),
     haveIBeenPwned(),
-    captcha({
-      provider: "cloudflare-turnstile",
-      secretKey: process.env.TURNSTILE_SECRET_KEY!,
-    }),
+    //captcha({
+      //provider: "cloudflare-turnstile",
+    //secretKey:process.env.TURNSTILE_SECRET_KEY!,
+    //}),
     twoFactor({
       issuer: "Hosanna",
 
@@ -135,10 +135,10 @@ export const auth = betterAuth({
   ],
   advanced: {
     cookiePrefix: "hosanna",
-    crossSubDomainCookies: {
-      enabled: true,
-      domain: "example.com",
-    },
+    //crossSubDomainCookies: {
+    //  enabled: true,
+    //  domain: "example.com",
+    //},
   },
   session: {
     freshAge: 60 * 15,
