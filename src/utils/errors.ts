@@ -1,24 +1,22 @@
 export type ErrorCode =
-  | 'VALIDATION_ERROR'
-  | 'UNAUTHORIZED'
-  | 'FORBIDDEN'
-  | 'SONG_NOT_FOUND'
-  | 'FOLDER_NOT_FOUND'
-  | 'SERVICE_NOT_FOUND'
-  | 'MUSICIAN_TOKEN_NOT_FOUND'
-  | 'SETTINGS_NOT_FOUND'
-  | 'ADMIN_NOT_FOUND'
-  | 'INVALID_CREDENTIALS'
-  | 'ACCOUNT_NOT_APPROVED'
-  | 'INVALID_REFRESH_TOKEN'
-  | 'INVALID_MUSICIAN_TOKEN'
-  | 'MUSICIAN_TOKEN_EXPIRED'
-  | 'MUSICIAN_TOKEN_REVOKED'
-  | 'SONG_IN_SERVICE_NOT_FOUND'
-  | 'CONFLICT'
-  | 'DUPLICATE_EMAIL'
-  | 'INVALID_BACKUP_FILE'
-  | 'INTERNAL_ERROR';
+  | "VALIDATION_ERROR"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "SONG_NOT_FOUND"
+  | "FOLDER_NOT_FOUND"
+  | "SERVICE_NOT_FOUND"
+  | "MUSICIAN_TOKEN_NOT_FOUND"
+  | "SETTINGS_NOT_FOUND"
+  | "ADMIN_NOT_FOUND"
+  | "INVALID_CREDENTIALS"
+  | "ACCOUNT_NOT_APPROVED"
+  | "INVALID_REFRESH_TOKEN"
+  | "INVALID_MUSICIAN_TOKEN"
+  | "SONG_IN_SERVICE_NOT_FOUND"
+  | "CONFLICT"
+  | "DUPLICATE_EMAIL"
+  | "INVALID_BACKUP_FILE"
+  | "INTERNAL_ERROR";
 
 /**
  * Standard application error. Thrown from services/repositories and turned
@@ -30,9 +28,14 @@ export class AppError extends Error {
   readonly code: ErrorCode;
   readonly details?: unknown;
 
-  constructor(status: number, code: ErrorCode, message: string, details?: unknown) {
+  constructor(
+    status: number,
+    code: ErrorCode,
+    message: string,
+    details?: unknown,
+  ) {
     super(message);
-    this.name = 'AppError';
+    this.name = "AppError";
     this.status = status;
     this.code = code;
     this.details = details;
@@ -43,18 +46,22 @@ export class AppError extends Error {
   }
 
   static badRequest(message: string, details?: unknown) {
-    return new AppError(400, 'VALIDATION_ERROR', message, details);
+    return new AppError(400, "VALIDATION_ERROR", message, details);
   }
 
-  static unauthorized(message = 'Authentication required.') {
-    return new AppError(401, 'UNAUTHORIZED', message);
+  static unauthorized(message = "Authentication required.") {
+    return new AppError(401, "UNAUTHORIZED", message);
   }
 
-  static forbidden(message = 'You do not have permission to perform this action.') {
-    return new AppError(403, 'FORBIDDEN', message);
+  static forbidden(
+    message = "You do not have permission to perform this action.",
+  ) {
+    return new AppError(403, "FORBIDDEN", message);
   }
 
-  static conflict(message = 'The resource was modified by someone else. Reload and try again.') {
-    return new AppError(409, 'CONFLICT', message);
+  static conflict(
+    message = "The resource was modified by someone else. Reload and try again.",
+  ) {
+    return new AppError(409, "CONFLICT", message);
   }
 }

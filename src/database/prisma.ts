@@ -12,17 +12,10 @@ const prisma = new PrismaClient({
   adapter,
 });
 
-const TENANT_SCOPED_MODELS = new Set([
-  "Admin",
-  "Folder",
-  "Song",
-  "Service",
-  "MusicianToken",
-  "Settings",
-]);
+const ORG_SCOPED_MODELS = new Set(["Folder", "Song", "Service", "Settings"]);
 
-export function forTenant<T extends { $extends: typeof prisma.$extends }>(
-  tenantId: string,
+export function forOrganization<T extends { $extends: typeof prisma.$extends }>(
+  orgId: string,
   db: T = prisma as unknown as T,
 ) {
   return db.$extends({
@@ -30,7 +23,7 @@ export function forTenant<T extends { $extends: typeof prisma.$extends }>(
     query: {
       $allModels: {
         async $allOperations({ model, operation, args, query }) {
-          if (!model || !TENANT_SCOPED_MODELS.has(model)) {
+          if (!model || !ORG_SCOPED_MODELS.has(model)) {
             return query(args);
           }
 
@@ -47,33 +40,36 @@ export function forTenant<T extends { $extends: typeof prisma.$extends }>(
             case "groupBy": {
               (args as any).where = {
                 ...((args as any).where ?? {}),
-                tenantId,
+                orgId,
               };
               return query(args);
             }
 
             case "update":
             case "delete": {
-              (args as any).where = { ...(args as any).where, tenantId };
+              (args as any).where = { ...(args as any).where, orgId };
               return query(args);
             }
 
             case "upsert": {
-              (args as any).where = { ...(args as any).where, tenantId };
-              (args as any).create = { ...(args as any).create, tenantId };
+              (args as any).where = { ...(args as any).where, orgId };
+              (args as any).create = {
+                ...(args as any).create,
+                orgId,
+              };
               return query(args);
             }
 
             case "create": {
-              (args as any).data = { ...(args as any).data, tenantId };
+              (args as any).data = { ...(args as any).data, orgId };
               return query(args);
             }
 
             case "createMany": {
               const data = (args as any).data;
               (args as any).data = Array.isArray(data)
-                ? data.map((d: any) => ({ ...d, tenantId }))
-                : { ...data, tenantId };
+                ? data.map((d: any) => ({ ...d, orgId }))
+                : { ...data, orgId };
               return query(args);
             }
 
@@ -86,6 +82,6 @@ export function forTenant<T extends { $extends: typeof prisma.$extends }>(
   });
 }
 
-export type TenantPrisma = ReturnType<typeof forTenant>;
+export type OrgScopedPrisma = ReturnType<typeof forOrganization>;
 
 export { prisma };

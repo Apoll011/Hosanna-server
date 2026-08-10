@@ -61,7 +61,7 @@ app.use(compression());
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 
-// ── HTTPS redirect (production only) ──────────────────────────────────────
+// ── HTTPS redirect ──────────────────────────────────────
 app.use((req, res, next) => {
   if (env.nodeEnv === "production" && !req.secure) {
     return res.redirect(301, `https://${req.header("host")}${req.url}`);
@@ -70,7 +70,7 @@ app.use((req, res, next) => {
 });
 
 // ── Request timing header ──────────────────────────────────────────────────
-// Attaches X-Response-Time: <ms>ms to every response for observability.
+/* Attaches X-Response-Time: <ms>ms to every response for observability.
 app.use((req, res, next) => {
   const start = Date.now();
   res.on("finish", () => {
@@ -78,6 +78,7 @@ app.use((req, res, next) => {
   });
   next();
 });
+*/
 
 // ── API routes ─────────────────────────────────────────────────────────────
 app.use("/api", globalLimiter, apiRouter);

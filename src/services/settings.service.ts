@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import type { TenantPrisma } from "../database/prisma";
+import type { OrgScopedPrisma } from "../database/prisma";
 import { SettingsRepository } from "../repositories/settings.repository";
 import { AppError } from "../utils/errors";
 import { syncCache } from "./syncCache.service";
@@ -8,7 +8,7 @@ export class SettingsService {
   private repo: SettingsRepository;
 
   constructor(
-    db: TenantPrisma,
+    db: OrgScopedPrisma,
     private readonly tenantId: string,
   ) {
     this.repo = new SettingsRepository(db, tenantId);
