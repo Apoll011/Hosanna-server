@@ -51,7 +51,7 @@ app.use(
   }),
 );
 
-app.all("/auth/*", toNodeHandler(auth));
+app.all("/api/auth/*", toNodeHandler(auth));
 
 // ── CORS ───────────────────────────────────────────────────────────────────
 app.use(cors({ origin: env.corsOrigin, credentials: true }));
