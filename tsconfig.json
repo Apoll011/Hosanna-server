@@ -18,6 +18,6 @@
     "noImplicitAny": true,
     "strictNullChecks": true,
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "src/index.mts"],
   "exclude": ["node_modules", "dist"]
 }
