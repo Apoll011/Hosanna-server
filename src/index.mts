@@ -30,7 +30,10 @@ app.set("trust proxy", 1);
 
 app.use(
   cors({
-    origin: env.corsOrigin,
+    origin: [
+      "https://dashboard-hosanna.duckdns.org",
+      "https://hosana.vercel.app",
+    ],
     credentials: true,
   }),
 );
@@ -38,6 +41,9 @@ app.use(
 // ── Security headers ────────────────────────────────────────────────────
 app.use(
   helmet({
+    crossOriginResourcePolicy: {
+      policy: "cross-origin",
+    },
     hsts:
       env.nodeEnv === "production"
         ? {
