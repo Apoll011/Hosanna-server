@@ -8,8 +8,6 @@ import { settingsRouter } from "./settings.routes";
 import { songRouter } from "./song.routes";
 import { syncRouter } from "./sync.routes";
 
-import { toNodeHandler } from "better-auth/node";
-import { auth } from "../lib/auth";
 import { authenticate } from "../middleware/auth";
 import {
   apiLimiter,
@@ -22,7 +20,6 @@ export const apiRouter = Router();
 
 apiRouter.use("/health", healthLimiter, healthRouter);
 
-apiRouter.all("/auth/*", toNodeHandler(auth));
 apiRouter.use(authenticate);
 apiRouter.use("/sync", syncLimiter, syncRouter);
 

@@ -1,9 +1,11 @@
+import { toNodeHandler } from "better-auth/node";
 import compression from "compression";
 import cors from "cors";
 import express from "express";
 import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 import { env } from "./config/env";
+import { auth } from "./lib/auth";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { apiRouter } from "./routes";
 
@@ -48,6 +50,8 @@ app.use(
     hidePoweredBy: true,
   }),
 );
+
+app.all("/auth/*", toNodeHandler(auth));
 
 // ── CORS ───────────────────────────────────────────────────────────────────
 app.use(cors({ origin: env.corsOrigin, credentials: true }));
