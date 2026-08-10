@@ -35,10 +35,10 @@ export const auth = betterAuth({
 
     revokeSessionsOnPasswordReset: true,
 
-    minPasswordLength: 12,
+    minPasswordLength: 6,
     maxPasswordLength: 128,
 
-    autoSignIn: false,
+    autoSignIn: true,
   },
   emailVerification: {
     sendVerificationEmail: async ({ user, url, token }, request) => {
