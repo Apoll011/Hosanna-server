@@ -9,6 +9,7 @@ import {
 } from "better-auth/plugins";
 import { inbox } from "better-inbox";
 import { prisma } from "../database/prisma";
+import { roles } from "../permissions";
 
 /*import Stripe from "stripe";
 
@@ -129,6 +130,7 @@ export const auth = betterAuth({
         enabled: true,
         maximumTeams: 10,
       },
+      roles,
     }),
   ],
   advanced: {

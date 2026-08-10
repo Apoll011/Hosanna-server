@@ -51,12 +51,12 @@ export const guest = ac.newRole({
 });
 
 export const roles = {
-  OWNER: owner,
-  ADMIN: admin,
-  TEAM_LEADER: teamLeader,
-  EDITOR: editor,
-  MUSICIAN: musician,
-  GUEST: guest,
+  owner,
+  admin,
+  teamLeader,
+  editor,
+  musician,
+  guest,
 } as const;
 
 export type AppRole = keyof typeof roles;

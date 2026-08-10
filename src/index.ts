@@ -70,7 +70,7 @@ app.use((req, res, next) => {
 });
 
 // ── Request timing header ──────────────────────────────────────────────────
-// Attaches X-Response-Time: <ms>ms to every response for observability.
+/* Attaches X-Response-Time: <ms>ms to every response for observability.
 app.use((req, res, next) => {
   const start = Date.now();
   res.on("finish", () => {
@@ -78,6 +78,7 @@ app.use((req, res, next) => {
   });
   next();
 });
+*/
 
 // ── API routes ─────────────────────────────────────────────────────────────
 app.use("/api", globalLimiter, apiRouter);
