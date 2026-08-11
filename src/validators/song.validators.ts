@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { concurrencySchema, paginationQuerySchema } from "./common.validators";
+import {
+  concurrencySchema,
+  paginationQuerySchema,
+} from "./common.validators.js";
 
 export const listSongsQuerySchema = paginationQuerySchema.extend({
   search: z.string().optional(),

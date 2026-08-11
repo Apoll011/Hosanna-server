@@ -1,89 +1,76 @@
 import { Router } from "express";
-import {
-  authenticateAdmin,
-  authenticateAny,
-  requireServiceAccess,
-} from "../middleware/auth";
-import { validate } from "../middleware/validate";
-import { ServiceService } from "../services/service.service";
-import { asyncHandler } from "../utils/asyncHandler";
-import { idParamSchema } from "../validators/common.validators";
+import { requirePermission } from "../middleware/auth.js";
+import { validate } from "../middleware/validate.js";
+import { ServiceService } from "../services/service.service.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { idParamSchema } from "../validators/common.validators.js";
 import {
   createServiceSchema,
   serviceListSchema,
   updateServiceElementsSchema,
   updateServiceSchema,
-} from "../validators/service.validators";
+} from "../validators/service.validators.js";
 
 export const serviceRouter = Router();
-const byId = requireServiceAccess((req) => req.params.id);
 
-// GET /api/services — admin or musician
 serviceRouter.get(
   "/",
-  authenticateAny,
+  requirePermission("service.access"),
   validate({ query: serviceListSchema }),
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!, req.tenantId!);
+    const service = new ServiceService(req.db!, req.orgId!);
     res.json(await service.list(req.query as any));
   }),
 );
 
-// GET /api/services/:id — admin or musician
 serviceRouter.get(
   "/:id",
-  authenticateAny,
+  requirePermission("service.access"),
   validate({ params: idParamSchema }),
-  byId,
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!, req.tenantId!);
+    const service = new ServiceService(req.db!, req.orgId!);
     res.json(await service.getByIdSerialized(req.params.id));
   }),
 );
 
-// POST /api/services — admin only
 serviceRouter.post(
   "/",
-  authenticateAdmin,
+  requirePermission("service.create"),
   validate({ body: createServiceSchema }),
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!, req.tenantId!);
+    const service = new ServiceService(req.db!, req.orgId!);
     res.status(201).json(await service.create(req.body));
   }),
 );
 
-// PUT /api/services/:id — admin only, optimistic concurrency
 serviceRouter.put(
   "/:id",
-  authenticateAdmin,
+  requirePermission("service.update"),
   validate({ params: idParamSchema, body: updateServiceSchema }),
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!, req.tenantId!);
+    const service = new ServiceService(req.db!, req.orgId!);
     const { updatedAt, ...patch } = req.body;
     res.json(await service.update(req.params.id, updatedAt, patch));
   }),
 );
 
-// DELETE /api/services/:id — admin only
 serviceRouter.delete(
   "/:id",
-  authenticateAdmin,
+  requirePermission("service.delete"),
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!, req.tenantId!);
+    const service = new ServiceService(req.db!, req.orgId!);
     await service.delete(req.params.id);
     res.status(204).send();
   }),
 );
 
-// PUT /api/services/:id/elements — admin OR musician (scoped). Updates the service-level modular elements.
 serviceRouter.put(
   "/:id/elements",
-  authenticateAny,
+  requirePermission("service.update"),
   validate({ params: idParamSchema, body: updateServiceElementsSchema }),
-  byId,
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!, req.tenantId!);
+    const service = new ServiceService(req.db!, req.orgId!);
     const { updatedAt, elements } = req.body;
     res.json(await service.updateElements(req.params.id, updatedAt, elements));
   }),

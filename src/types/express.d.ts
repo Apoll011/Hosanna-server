@@ -1,23 +1,18 @@
-import { TenantPrisma } from '../database/prisma';
-import { AdminJwtPayload } from '../utils/tokens';
+import { OrgScopedPrisma } from "../database/prisma.js";
 
-export type AuthenticatedActor =
-  | { type: 'admin'; admin: AdminJwtPayload }
-  | {
-      type: 'musician';
-      musicianToken: {
-        id: string;
-        name: string;
-        allowedServiceIds: string[] | null; // null = unrestricted (all services)
-      };
-    };
+export interface AuthorizedUser {
+  id: string;
+  workspaceId: string;
+  role: AppRole;
+  teamId?: string;
+}
 
 declare global {
   namespace Express {
     interface Request {
-      tenantId?: string;
-      db?: TenantPrisma;
-      actor?: AuthenticatedActor;
+      orgId?: string; //same as workspaceId
+      db?: OrgScopedPrisma;
+      user?: AuthorizedUser;
     }
   }
 }

@@ -1,8 +1,8 @@
 import { Prisma } from "@prisma/client";
-import type { TenantPrisma } from "../database/prisma";
+import type { OrgScopedPrisma } from "../database/prisma.js";
 
 export class SongRepository {
-  constructor(private readonly db: TenantPrisma) {}
+  constructor(private readonly db: OrgScopedPrisma) {}
 
   findById(id: string) {
     return this.db.song.findUnique({ where: { id } });
@@ -17,13 +17,13 @@ export class SongRepository {
 
   create(
     data:
-      | Omit<Prisma.SongUncheckedCreateInput, "tenantId">
-      | Omit<Prisma.SongCreateInput, "tenant" | "tenantId">,
+      | Omit<Prisma.SongUncheckedCreateInput, "orgId">
+      | Omit<Prisma.SongCreateInput, "org" | "orgId">,
   ) {
     return this.db.song.create({ data: data as any });
   }
 
-  createMany(data: Omit<Prisma.SongCreateManyInput, "tenantId">[]) {
+  createMany(data: Omit<Prisma.SongCreateManyInput, "orgId">[]) {
     return this.db.song.createMany({
       data: data as any,
     });

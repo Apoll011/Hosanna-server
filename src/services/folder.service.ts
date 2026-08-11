@@ -5,11 +5,11 @@ import {
   InternalArgs,
 } from "@prisma/client/runtime/client";
 import { v4 as uuid } from "uuid";
-import type { TenantPrisma } from "../database/prisma";
-import { FolderRepository } from "../repositories/folder.repository";
-import { SongRepository } from "../repositories/song.repository";
-import { AppError } from "../utils/errors";
-import { syncCache } from "./syncCache.service";
+import type { OrgScopedPrisma } from "../database/prisma.js";
+import { FolderRepository } from "../repositories/folder.repository.js";
+import { SongRepository } from "../repositories/song.repository.js";
+import { AppError } from "../utils/errors.js";
+import { syncCache } from "./syncCache.service.js";
 
 function assertUnchanged(current: { updatedAt: Date }, clientUpdatedAt: Date) {
   if (current.updatedAt.getTime() !== clientUpdatedAt.getTime()) {
@@ -24,7 +24,7 @@ export class FolderService {
   private songRepo: SongRepository;
 
   constructor(
-    private readonly db: TenantPrisma,
+    private readonly db: OrgScopedPrisma,
     private readonly tenantId: string,
   ) {
     this.folderRepo = new FolderRepository(db);

@@ -6,64 +6,11 @@ datasource db {
   provider = "postgresql"
 }
 
-model Tenant {
-  id        String   @id @default(uuid())
-  name      String
-  logo      String?
-  active    Boolean  @default(true)
-  slug      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  admins         Admin[]
-  folders        Folder[]
-  songs          Song[]
-  services       Service[]
-  musicianTokens MusicianToken[]
-  settings       Settings?
-
-  @@map("tenants")
-}
-
-model Admin {
-  id       String @id @default(uuid())
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  email              String    @unique
-  passwordHash       String
-  name               String
-  logo               String?
-  role               String    @default("admin")
-  isApproved         Boolean   @default(true)
-  loginFailedCount   Int       @default(0)
-  loginLockedUntil   DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-
-  refreshTokens RefreshToken[]
-
-  @@index([tenantId])
-  @@map("admins")
-}
-
-model RefreshToken {
-  id        String    @id @default(uuid())
-  adminId   String
-  admin     Admin     @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  tokenHash String    @unique
-  expiresAt DateTime
-  revokedAt DateTime?
-  createdAt DateTime  @default(now())
-
-  @@index([adminId])
-  @@map("refresh_tokens")
-}
-
 model Folder {
-  id       String @id @default(uuid())
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(uuid())
+
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   name String
 
@@ -74,15 +21,16 @@ model Folder {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([parentId])
   @@map("folders")
 }
 
 model Song {
-  id       String @id @default(uuid())
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(uuid())
+
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   title  String
   artist String @default("Unknown Artist")
@@ -96,17 +44,17 @@ model Song {
   updatedAt   DateTime @updatedAt
   song_number Int?
 
-  @@unique([tenantId, path])
-  @@index([tenantId])
+  @@unique([orgId, path])
+  @@index([orgId])
   @@index([folderId])
-  @@index([tenantId, title])
   @@map("songs")
 }
 
 model Service {
-  id       String @id @default(uuid())
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(uuid())
+
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   name String
 
@@ -118,47 +66,13 @@ model Service {
 
   archived Boolean @default(false)
 
-  allowedTokens MusicianTokenService[]
-
-  @@index([tenantId])
+  @@index([orgId])
   @@map("services")
 }
 
-model MusicianToken {
-  id       String @id @default(uuid())
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  name String
-
-  tokenHash String @unique
-
-  tokenPreview String
-  expiresAt    DateTime
-  revokedAt    DateTime?
-  lastUsedAt   DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  allowedServices MusicianTokenService[]
-
-  @@index([tenantId])
-  @@map("musician_tokens")
-}
-
-model MusicianTokenService {
-  musicianTokenId String
-  musicianToken   MusicianToken @relation(fields: [musicianTokenId], references: [id], onDelete: Cascade)
-  serviceId       String
-  service         Service       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-
-  @@id([musicianTokenId, serviceId])
-  @@map("musician_token_services")
-}
-
 model Settings {
-  tenantId String @id
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orgId String       @id
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   serverName          String  @default("ChordPro Studio Server")
   defaultKey          String  @default("G")
@@ -179,4 +93,184 @@ model Settings {
   updatedAt DateTime @updatedAt
 
   @@map("settings")
+}
+
+model User {
+  id               String         @id
+  name             String
+  email            String
+  emailVerified    Boolean        @default(false)
+  image            String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  twoFactorEnabled Boolean?       @default(false)
+  sessions         Session[]
+  accounts         Account[]
+  notifications    Notification[]
+  twofactors       TwoFactor[]
+  teammembers      TeamMember[]
+  members          Member[]
+  invitations      Invitation[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id                   String   @id
+  expiresAt            DateTime
+  token                String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  ipAddress            String?
+  userAgent            String?
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeOrganizationId String?
+  activeTeamId         String?
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+model Notification {
+  id             String   @id
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String?
+  type           String
+  title          String
+  body           String?
+  href           String?
+  data           Json?
+  read           Boolean  @default(false)
+  createdAt      DateTime
+
+  @@index([userId, createdAt], map: "notification_user_created_idx")
+  @@map("notification")
+}
+
+model TwoFactor {
+  id                      String    @id
+  secret                  String
+  backupCodes             String
+  userId                  String
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verified                Boolean?  @default(true)
+  failedVerificationCount Int?      @default(0)
+  lockedUntil             DateTime?
+
+  @@index([secret])
+  @@index([userId])
+  @@map("twoFactor")
+}
+
+model Organization {
+  id          String       @id
+  name        String
+  slug        String
+  logo        String?
+  createdAt   DateTime
+  metadata    String?
+  teams       Team[]
+  members     Member[]
+  invitations Invitation[]
+  folders     Folder[]
+  songs       Song[]
+  services    Service[]
+  settings    Settings[]
+
+  @@unique([slug])
+  @@map("organization")
+}
+
+model Team {
+  id             String       @id
+  name           String
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime
+  updatedAt      DateTime?    @updatedAt
+  teammembers    TeamMember[]
+
+  @@index([organizationId])
+  @@map("team")
+}
+
+model TeamMember {
+  id        String    @id
+  teamId    String
+  team      Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime?
+
+  @@index([teamId])
+  @@index([userId])
+  @@map("teamMember")
+}
+
+model Member {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           String       @default("member")
+  createdAt      DateTime
+
+  @@index([organizationId])
+  @@index([userId])
+  @@map("member")
+}
+
+model Invitation {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String
+  role           String?
+  teamId         String?
+  status         String       @default("pending")
+  expiresAt      DateTime
+  createdAt      DateTime     @default(now())
+  inviterId      String
+  user           User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+  @@map("invitation")
 }

@@ -1,29 +1,29 @@
-import { Router } from 'express';
-import { SettingsService } from '../services/settings.service';
-import { authenticateAdmin } from '../middleware/auth';
-import { validate } from '../middleware/validate';
-import { asyncHandler } from '../utils/asyncHandler';
-import { updateSettingsSchema } from '../validators/settings.validators';
+import { Router } from "express";
+import { assertUser, requirePermission } from "../middleware/auth.js";
+import { validate } from "../middleware/validate.js";
+import { SettingsService } from "../services/settings.service.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { updateSettingsSchema } from "../validators/settings.validators.js";
 
 export const settingsRouter = Router();
 
 // GET /api/settings — admin only
 settingsRouter.get(
-  '/',
-  authenticateAdmin,
+  "/",
+  assertUser,
   asyncHandler(async (req, res) => {
-    const service = new SettingsService(req.db!, req.tenantId!);
+    const service = new SettingsService(req.db!, req.orgId!);
     res.json(await service.get());
   }),
 );
 
 // PUT /api/settings — admin only
 settingsRouter.put(
-  '/',
-  authenticateAdmin,
+  "/",
+  requirePermission("settings.manage"),
   validate({ body: updateSettingsSchema }),
   asyncHandler(async (req, res) => {
-    const service = new SettingsService(req.db!, req.tenantId!);
+    const service = new SettingsService(req.db!, req.orgId!);
     res.json(await service.update(req.body));
   }),
 );

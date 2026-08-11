@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { concurrencySchema } from "./common.validators";
+import { concurrencySchema } from "./common.validators.js";
 
 export const createServiceSchema = z.object({
   name: z.string().trim().min(1, "name is required"),
