@@ -1,12 +1,12 @@
 import type { OrgScopedPrisma } from "../database/prisma.js";
 import { AppError } from "../utils/errors.js";
 
-const BACKUP_VERSION = "2.0";
+const BACKUP_VERSION = "2.1";
 
 export class BackupService {
   constructor(
     private readonly db: OrgScopedPrisma,
-    private readonly tenantId: string,
+    private readonly orgId: string,
   ) {}
 
   async export() {
@@ -14,7 +14,7 @@ export class BackupService {
       this.db.folder.findMany(),
       this.db.song.findMany(),
       this.db.service.findMany(),
-      this.db.settings.findUnique({ where: { orgId: this.tenantId } }),
+      this.db.settings.findUnique({ where: { orgId: this.orgId } }),
     ]);
 
     return {
@@ -97,10 +97,11 @@ export class BackupService {
       }
 
       if (settings) {
+        const { tenantId, orgId, ...settingsData } = settings;
         await tx.settings.upsert({
-          where: { orgId: this.tenantId },
-          update: settings,
-          create: { ...settings, tenantId: this.tenantId },
+          where: { orgId: this.orgId },
+          update: settingsData,
+          create: settingsData,
         });
       }
     });
