@@ -148,7 +148,7 @@ export class FolderService {
         roles: ["owner", "admin"],
         type: "library.bulk_songs_deleted",
         title: `${result.deletedSongs} songs deleted at once`,
-        description: `A single operation removed ${result.deletedSongs} songs, which meets or exceeds the configured alert threshold of ${threshold}.`,
+        description: `A single operation removed ${result.deletedSongs} songs.`,
         // TODO: add href
       });
     }
