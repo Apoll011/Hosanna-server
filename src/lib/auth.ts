@@ -100,7 +100,7 @@ export const auth = betterAuth({
     revokeSessionsOnPasswordReset: true,
     minPasswordLength: 6,
     maxPasswordLength: 128,
-    autoSignIn: true,
+    autoSignIn: false,
 
     sendResetPassword: async ({ user, url, token }, request) => {
       //...
@@ -156,7 +156,10 @@ export const auth = betterAuth({
       enabled: true,
       maxAge: 15 * 60,
       version: (_session, user) => {
-        if (user?.image && (user.image.startsWith("data:") || user.image.length > 500)) {
+        if (
+          user?.image &&
+          (user.image.startsWith("data:") || user.image.length > 500)
+        ) {
           return "no-cache-" + Date.now();
         }
         return "1";
