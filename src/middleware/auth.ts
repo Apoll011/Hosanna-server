@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { forOrganization } from "../database/prisma.js";
+import { forOrganization, prisma } from "../database/prisma.js";
 import { auth } from "../lib/auth.js";
 import {
   AppRole,
@@ -42,7 +42,8 @@ export function can(
   user: Pick<AuthorizedUser, "role">,
   permission: PermissionString,
 ): boolean {
-  const role = roles[user.role as AppRole];
+  const roleName = user.role?.toLowerCase() as AppRole;
+  const role = roles[roleName];
   if (!role) return false;
   return role.authorize(toPermissionRequest(permission)).success;
 }
@@ -189,14 +190,28 @@ export const authenticate = asyncHandler(
 
     const teamId = (session as any).activeTeamId || undefined;
 
-    const userRole = (session as any).role || "member";
+    let userRole =
+      (session as any).role ||
+      (sessionData as any).member?.role ||
+      (user as any).role;
+
+    if (!userRole) {
+      const member = await prisma.member.findFirst({
+        where: {
+          organizationId: workspaceId,
+          userId: user.id,
+        },
+        select: { role: true },
+      });
+      userRole = member?.role;
+    }
 
     req.orgId = workspaceId;
     req.db = forOrganization(workspaceId);
     req.user = {
       id: user.id,
       workspaceId: workspaceId,
-      role: userRole,
+      role: userRole || "guest",
       teamId: teamId,
     };
 

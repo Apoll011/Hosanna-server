@@ -50,12 +50,15 @@ export const guest = ac.newRole({
   export: ["pdf"],
 });
 
+export const member = musician;
+
 export const roles = {
   owner,
   admin,
   teamLeader,
   editor,
   musician,
+  member,
   guest,
 } as const;
 
