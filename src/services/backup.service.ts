@@ -1,4 +1,5 @@
 import type { OrgScopedPrisma } from "../database/prisma.js";
+import { notifyOrg } from "../utils/notify.js";
 import { AppError } from "../utils/errors.js";
 
 const BACKUP_VERSION = "2.1";
@@ -104,6 +105,17 @@ export class BackupService {
           create: settingsData,
         });
       }
+    });
+
+    // Security notification: backup restore wipes and replaces all tenant data.
+    // Alert owners & admins so they are aware of the operation.
+    void notifyOrg({
+      organizationId: this.orgId,
+      roles: ["owner", "admin"],
+      type: "backup.restored",
+      title: "Backup restored — all data replaced",
+      description: `A full restore imported ${folders.length} folder(s), ${songs.length} song(s), and ${services.length} service(s).`,
+      // TODO: add href
     });
 
     return {

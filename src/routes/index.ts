@@ -3,6 +3,7 @@ import { Router } from "express";
 import { backupRouter } from "./backup.routes.js";
 import { folderRouter } from "./folder.routes.js";
 import { healthRouter } from "./health.routes.js";
+import { notificationsRouter } from "./notifications.routes.js";
 import { serviceRouter } from "./service.routes.js";
 import { settingsRouter } from "./settings.routes.js";
 import { songRouter } from "./song.routes.js";
@@ -27,5 +28,6 @@ apiRouter.use("/songs", apiLimiter, songRouter);
 apiRouter.use("/folders", apiLimiter, folderRouter);
 apiRouter.use("/services", apiLimiter, serviceRouter);
 apiRouter.use("/settings", apiLimiter, settingsRouter);
+apiRouter.use("/notifications", apiLimiter, notificationsRouter);
 
 apiRouter.use("/backup", backupLimiter, backupRouter);

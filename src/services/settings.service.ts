@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import type { OrgScopedPrisma } from "../database/prisma.js";
 import { SettingsRepository } from "../repositories/settings.repository.js";
 import { AppError } from "../utils/errors.js";
+import { notifyOrg } from "../utils/notify.js";
 import { syncCache } from "./syncCache.service.js";
 
 export class SettingsService {
@@ -24,9 +25,22 @@ export class SettingsService {
     return settings;
   }
 
-  update(patch: Prisma.SettingsUpdateInput) {
+  async update(patch: Prisma.SettingsUpdateInput) {
     syncCache.invalidate(this.tenantId);
 
-    return this.repo.upsert(patch);
+    const result = await this.repo.upsert(patch);
+
+    // Security notification: settings changes (e.g. publicRead, thresholds)
+    // are admin-only actions that owners should always be aware of.
+    void notifyOrg({
+      organizationId: this.tenantId,
+      roles: ["owner", "admin"],
+      type: "settings.changed",
+      title: "Organization settings updated",
+      description: "An admin changed one or more workspace settings.",
+      // TODO: add href
+    });
+
+    return result;
   }
 }
