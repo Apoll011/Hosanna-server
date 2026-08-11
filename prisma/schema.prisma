@@ -80,6 +80,9 @@ model Settings {
   allowPublicRead     Boolean @default(false)
   autoBackupEnabled   Boolean @default(true)
   maxUploadMB         Int     @default(10)
+  /// Minimum number of songs that must be deleted in a single operation before
+  /// owners/admins receive a bulk-delete security notification.
+  bulkDeleteThreshold Int     @default(10)
 
   serviceTemplateId     String @default("service-default")
   serviceTemplateConfig Json   @default("{}")
