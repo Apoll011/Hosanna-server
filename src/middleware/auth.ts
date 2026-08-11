@@ -180,7 +180,7 @@ export const authenticate = asyncHandler(
 
     const { user, session } = sessionData;
 
-    const workspaceId = session.activeOrganizationId;
+    const workspaceId = (session as any).activeOrganizationId;
 
     if (!workspaceId) {
       throw AppError.forbidden(
