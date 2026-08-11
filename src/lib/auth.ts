@@ -153,8 +153,14 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 30,
     updateAge: 60 * 60 * 24,
     cookieCache: {
-      enabled: false,
+      enabled: true,
       maxAge: 15 * 60,
+      version: (_session, user) => {
+        if (user?.image && (user.image.startsWith("data:") || user.image.length > 500)) {
+          return "no-cache-" + Date.now();
+        }
+        return "1";
+      },
     },
   },
   rateLimit: {
