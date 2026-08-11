@@ -88,6 +88,11 @@ export const auth = betterAuth({
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
+  trustedOrigins: [
+    "https://dashboard-hosanna.duckdns.org",
+    "https://www.dashboard-hosanna.duckdns.org",
+    "https://hosana.vercel.app",
+  ],
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,

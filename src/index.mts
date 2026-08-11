@@ -32,6 +32,7 @@ app.use(
   cors({
     origin: [
       "https://dashboard-hosanna.duckdns.org",
+      "https://www.dashboard-hosanna.duckdns.org",
       "https://hosana.vercel.app",
     ],
     credentials: true,
