@@ -127,31 +127,13 @@ export class FolderService {
       return this.deleteRecursive(id, tx);
     });
 
-    // Security notification: destructive delete always alerts owners & admins.
-    // If the deleted song count also exceeds the org's configured threshold,
-    // we emit a second, more urgent notification about the volume.
-    const settings = await this.db.settings.findFirst().catch(() => null);
-    const threshold = settings?.bulkDeleteThreshold ?? 10;
-
     void notifyOrg({
       organizationId: this.tenantId,
       roles: ["owner", "admin"],
       type: "library.folder_deleted_with_content",
       title: `Folder deleted with all its content`,
       description: `${result.deletedSongs} song(s) and ${result.deletedFolders} sub-folder(s) were permanently removed.`,
-      // TODO: add href
     });
-
-    if (result.deletedSongs >= threshold) {
-      void notifyOrg({
-        organizationId: this.tenantId,
-        roles: ["owner", "admin"],
-        type: "library.bulk_songs_deleted",
-        title: `${result.deletedSongs} songs deleted at once`,
-        description: `A single operation removed ${result.deletedSongs} songs.`,
-        // TODO: add href
-      });
-    }
 
     return result;
   }
