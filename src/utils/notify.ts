@@ -1,13 +1,7 @@
 import { auth } from "../lib/auth.js";
+import { roles } from "../permissions/index.js";
 
-type OrgRole =
-  | "owner"
-  | "admin"
-  | "teamLeader"
-  | "editor"
-  | "musician"
-  | "member"
-  | "guest";
+type OrgRole = keyof typeof roles;
 
 export interface OrgNotifyPayload {
   organizationId: string;

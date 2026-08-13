@@ -9,6 +9,7 @@ import {
 import { inbox } from "better-inbox";
 import { prisma } from "../database/prisma.js";
 import { roles } from "../permissions/index.js";
+import { notifyOrg } from "../utils/notify.js";
 
 /*import Stripe from "stripe";
 
@@ -129,12 +130,66 @@ export const auth = betterAuth({
     }),
     organization({
       organizationLimit: 1,
-      membershipLimit: 250,
+      membershipLimit: 500,
       teams: {
         enabled: true,
-        maximumTeams: 10,
+        maximumTeams: 50,
       },
       roles,
+      organizationHooks: {
+        beforeCreateOrganization: async ({ organization, user }) => {
+          return {
+            data: {
+              ...organization,
+              metadata: {
+                description:
+                  (organization?.metadata?.["description"] as string) || "",
+                shortName:
+                  (organization?.metadata?.["shortName"] as string) ||
+                  organization.name
+                    ?.split(/\s+/)
+                    .map((word) => word[0])
+                    .join("") ||
+                  "",
+                settings: {
+                  general: {
+                    locale:
+                      (organization?.metadata?.["locale"] as string) || "pt-PT",
+                    timezone:
+                      (organization?.metadata?.["timezone"] as string) ||
+                      "Europe/Lisbon",
+                    weekStartsOn: 1,
+                  },
+                  services: {
+                    defaultDurations: {
+                      sermon: 2300,
+                      song: 210,
+                    },
+                    showNotes: true,
+                    showServiceDuration: true,
+                    autoSave: true,
+                  },
+                  appearance: {
+                    accentColor: "#44e0ff",
+                    showBranding: true,
+                  },
+                },
+              },
+            },
+          };
+        },
+
+        afterAddMember: async ({ member, user, organization }) => {
+          //await sendWelcomeEmail(user.email, organization.name);
+          notifyOrg({
+            organizationId: organization.id,
+            roles: ["admin", "owner"],
+            type: "org.new_member",
+            title: "Um novo membro entrou!",
+            description: `${user.name} agora faz parte da organização`,
+          });
+        },
+      },
     }),
   ],
   advanced: {
