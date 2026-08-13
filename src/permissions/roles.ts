@@ -2,23 +2,23 @@ import { adminAc, ownerAc } from "better-auth/plugins/organization/access";
 import { ac } from "./permission.js";
 
 export const owner = ac.newRole({
-  song: ["create", "access", "update", "delete"],
-  service: ["create", "access", "update", "delete"],
-  folder: ["create", "update", "access", "delete"],
-  settings: ["manage"],
-  export: ["pdf", "backup"],
-  import: ["songs", "backup"],
-  billing: ["manage", "access"],
-  ...ownerAc.statements,
-});
-
-export const admin = ac.newRole({
-  song: ["create", "access", "update", "delete"],
+  song: ["create", "access", "update", "delete", "import"],
   service: ["create", "access", "update", "delete"],
   folder: ["create", "update", "access", "delete"],
   settings: ["manage"],
   export: ["pdf"],
-  import: ["songs"],
+  billing: ["manage", "access"],
+  backup: ["export", "import"],
+  ...ownerAc.statements,
+});
+
+export const admin = ac.newRole({
+  song: ["create", "access", "update", "delete", "import"],
+  service: ["create", "access", "update", "delete"],
+  folder: ["create", "update", "access", "delete"],
+  settings: ["manage"],
+  export: ["pdf"],
+  backup: ["export"],
   ...adminAc.statements,
 });
 
@@ -32,7 +32,7 @@ export const teamLeader = ac.newRole({
 });
 
 export const editor = ac.newRole({
-  song: ["create", "access", "update"],
+  song: ["create", "access", "update", "import"],
   service: ["create", "access", "update"],
   folder: ["create", "update", "access"],
   export: ["pdf"],

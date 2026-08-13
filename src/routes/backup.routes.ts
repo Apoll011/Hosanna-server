@@ -8,7 +8,7 @@ export const backupRouter = Router();
 // GET /api/backup — admin only. Exports the full dataset as JSON for the tenant.
 backupRouter.get(
   "/",
-  requirePermission("export.backup"),
+  requirePermission("backup.export"),
   asyncHandler(async (req, res) => {
     const service = new BackupService(req.db!, req.orgId!);
     res.json(await service.export());
@@ -18,7 +18,7 @@ backupRouter.get(
 // POST /api/backup/restore — admin only. Replaces the full dataset from a JSON export for the tenant.
 backupRouter.post(
   "/restore",
-  requirePermission("import.backup"),
+  requirePermission("backup.import"),
   asyncHandler(async (req, res) => {
     const service = new BackupService(req.db!, req.orgId!);
     const result = await service.restore(req.body);

@@ -4,12 +4,12 @@ import { defaultStatements } from "better-auth/plugins/organization/access";
 export const statement = {
   ...defaultStatements,
   billing: ["manage", "access"],
-  song: ["create", "access", "update", "delete"],
+  song: ["create", "access", "update", "delete", "import"],
   service: ["create", "access", "update", "delete"],
   folder: ["create", "update", "access", "delete"],
   settings: ["manage"],
-  export: ["pdf", "backup"],
-  import: ["songs", "backup"],
+  export: ["pdf"],
+  backup: ["import", "export"],
 } as const;
 
 export const ac = createAccessControl(statement);
