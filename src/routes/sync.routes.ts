@@ -22,18 +22,16 @@ syncRouter.get(
       });
     }
 
-    const [songAgg, folderAgg, serviceAgg, settingsAgg] = await Promise.all([
+    const [songAgg, folderAgg, serviceAgg] = await Promise.all([
       db.song.aggregate({ _max: { updatedAt: true } }),
       db.folder.aggregate({ _max: { updatedAt: true } }),
       db.service.aggregate({ _max: { updatedAt: true } }),
-      db.settings.aggregate({ _max: { updatedAt: true } }),
     ]);
 
     const timestamps = {
       songs: songAgg._max.updatedAt?.toISOString() ?? "0",
       folders: folderAgg._max.updatedAt?.toISOString() ?? "0",
       services: serviceAgg._max.updatedAt?.toISOString() ?? "0",
-      settings: settingsAgg._max.updatedAt?.toISOString() ?? "0",
     };
 
     syncCache.set(tenantId, timestamps);
