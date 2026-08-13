@@ -27,6 +27,7 @@ const globalLimiter = rateLimit({
 });
 
 app.set("trust proxy", 1);
+app.disable("etag");
 
 app.use(
   cors({
@@ -38,6 +39,11 @@ app.use(
     credentials: true,
   }),
 );
+
+app.use((req, res, next) => {
+  res.setHeader("Cache-Control", "private, no-store");
+  next();
+});
 
 // ── Security headers ────────────────────────────────────────────────────
 app.use(
