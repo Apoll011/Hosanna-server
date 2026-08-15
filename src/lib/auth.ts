@@ -95,6 +95,7 @@ export const auth = betterAuth({
     "https://hosana.vercel.app",
     "http://localhost:3000",
     "http://localhost",
+    "https://localhost",
     "capacitor://localhost",
   ],
   emailAndPassword: {
