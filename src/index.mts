@@ -35,6 +35,8 @@ app.use(
       "https://dashboard-hosanna.duckdns.org",
       "https://www.dashboard-hosanna.duckdns.org",
       "https://hosana.vercel.app",
+      "http://localhost:3000",
+      "http://localhost",
     ],
     credentials: true,
   }),

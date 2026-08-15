@@ -15,7 +15,6 @@ export interface SyncTimestamps {
   songs: string;
   folders: string;
   services: string;
-  settings: string;
 }
 
 interface CacheEntry {
