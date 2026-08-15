@@ -93,6 +93,9 @@ export const auth = betterAuth({
     "https://dashboard-hosanna.duckdns.org",
     "https://www.dashboard-hosanna.duckdns.org",
     "https://hosana.vercel.app",
+    "http://localhost:3000",
+    "http://localhost",
+    "capacitor://localhost",
   ],
   emailAndPassword: {
     enabled: true,
