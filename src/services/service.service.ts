@@ -51,7 +51,7 @@ export class ServiceService {
 
   async getById(id: string) {
     const service = await this.serviceRepo.findById(id);
-    if (!service)
+    if (!service || service.deleted)
       throw AppError.notFound("SERVICE_NOT_FOUND", "Service does not exist.");
     return service;
   }
@@ -106,7 +106,7 @@ export class ServiceService {
 
   async delete(id: string) {
     await this.getById(id);
-    await this.serviceRepo.delete(id);
+    await this.serviceRepo.update(id, { deleted: true });
     this.invalidateCache();
   }
 

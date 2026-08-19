@@ -1,16 +1,10 @@
-import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 
-const pool = new Pool({
-  connectionString: process.env.HOSANA_DB_PRISMA_DATABASE_URL,
-});
-
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
-
-const prisma = new PrismaClient({
-  adapter,
-});
+const prisma = new PrismaClient({ adapter });
 
 const ORG_SCOPED_MODELS = new Set(["Folder", "Song", "Service", "Settings"]);
 
@@ -83,5 +77,6 @@ export function forOrganization<T extends { $extends: typeof prisma.$extends }>(
 }
 
 export type OrgScopedPrisma = ReturnType<typeof forOrganization>;
+export type OrgScopedTx = Parameters<Parameters<OrgScopedPrisma["$transaction"]>[0]>[0];
 
 export { prisma };

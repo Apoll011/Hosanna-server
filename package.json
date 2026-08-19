@@ -11,17 +11,19 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.mjs",
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/index.mts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",
+    "prisma:push": "prisma db push",
     "postinstall": "prisma generate",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "^7.9.0",
+    "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.*",
+    "@supabase/supabase-js": "^2.49.0",
     "@types/compression": "^1.8.1",
     "bcrypt": "^6.0.0",
     "better-auth": "^1.6.26",
@@ -35,7 +37,7 @@
     "handlebars": "^4.7.9",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
-    "pg": "^8.22.0",
+    "pg": "^8.23.0",
     "qrcode": "^1.5.4",
     "uuid": "^11.1.1",
     "zod": "^3.23.8"
@@ -47,6 +49,7 @@
     "@types/handlebars": "^4.0.40",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^20.14.0",
+    "@types/pg": "^8.23.1",
     "@types/qrcode": "^1.5.5",
     "@types/uuid": "^9.0.8",
     "prisma": "^7.*",

@@ -1,11 +1,5 @@
-import { PrismaPg } from "@prisma/adapter-pg";
-import { Prisma } from "@prisma/client";
-import {
-  DynamicClientExtensionThis,
-  InternalArgs,
-} from "@prisma/client/runtime/client";
 import { v4 as uuid } from "uuid";
-import type { OrgScopedPrisma } from "../database/prisma.js";
+import type { OrgScopedPrisma, OrgScopedTx } from "../database/prisma.js";
 import { FolderRepository } from "../repositories/folder.repository.js";
 import { SongRepository } from "../repositories/song.repository.js";
 import { AppError } from "../utils/errors.js";
@@ -57,7 +51,7 @@ export class FolderService {
 
   async getById(id: string) {
     const folder = await this.folderRepo.findById(id);
-    if (!folder)
+    if (!folder || folder.deleted)
       throw AppError.notFound("FOLDER_NOT_FOUND", "Folder does not exist.");
     return folder;
   }
@@ -115,7 +109,7 @@ export class FolderService {
         }),
       ),
     );
-    await this.folderRepo.delete(id);
+    await this.folderRepo.update(id, { deleted: true });
 
     this.invalidateCache();
     return { movedSongs: songs.length };
@@ -140,29 +134,7 @@ export class FolderService {
 
   private async deleteRecursive(
     id: string,
-    tx: Omit<
-      DynamicClientExtensionThis<
-        Prisma.TypeMap<
-          InternalArgs & {
-            result: {};
-            model: {};
-            query: {};
-            client: {};
-          },
-          {}
-        >,
-        Prisma.TypeMapCb<{
-          adapter: PrismaPg;
-        }>,
-        {
-          result: {};
-          model: {};
-          query: {};
-          client: {};
-        }
-      >,
-      "$connect" | "$disconnect" | "$extends" | "$on" | "$use"
-    >,
+    tx: OrgScopedTx,
   ) {
     const folder = await tx.folder.findUnique({ where: { id } });
     if (!folder)
@@ -174,7 +146,7 @@ export class FolderService {
     let deletedSongs = songs.length;
     let deletedFolders = folders.length;
 
-    await tx.song.deleteMany({ where: { folderId: id } });
+    await tx.song.updateMany({ where: { folderId: id }, data: { deleted: true } });
 
     for (const folder of folders) {
       const result = await this.deleteRecursive(folder.id, tx);
@@ -182,7 +154,7 @@ export class FolderService {
       deletedFolders += result.deletedFolders;
     }
 
-    await tx.folder.delete({ where: { id } });
+    await tx.folder.update({ where: { id }, data: { deleted: true } });
 
     return {
       deletedSongs,

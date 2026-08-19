@@ -56,7 +56,7 @@ export class SongService {
   }
 
   async list(query: ListQuery) {
-    const where: Prisma.SongWhereInput = {};
+    const where: Prisma.SongWhereInput = { deleted: false };
 
     if (query.folder) {
       where.folderId = query.folder === "root" ? null : query.folder;
@@ -135,7 +135,7 @@ export class SongService {
 
   async getById(id: string): Promise<Song> {
     const song = await this.songRepo.findById(id);
-    if (!song)
+    if (!song || song.deleted)
       throw AppError.notFound("SONG_NOT_FOUND", "Song does not exist.");
     return song;
   }
@@ -228,7 +228,7 @@ export class SongService {
 
   async delete(id: string) {
     await this.getById(id);
-    await this.songRepo.delete(id);
+    await this.songRepo.update(id, { deleted: true });
     this.invalidateCache();
   }
 
