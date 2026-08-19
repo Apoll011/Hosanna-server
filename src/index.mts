@@ -36,6 +36,7 @@ app.use(
       "https://www.dashboard-hosanna.duckdns.org",
       "https://hosana.vercel.app",
       "http://localhost:3000",
+      "http://localhost:5173",
       "http://localhost",
       "https://localhost",
       "capacitor://localhost",
