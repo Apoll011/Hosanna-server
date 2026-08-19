@@ -1,13 +1,10 @@
 {
   "name": "@hosanna/backend",
-  "version": "2.1.0",
+  "version": "2.5.0",
   "license": "Apache-2.0",
   "description": "Production REST API backend for Hosanna Studio (songs, folders, services, musician access)",
   "main": "dist/index.mjs",
   "type": "module",
-  "engines": {
-    "node": "20.x"
-  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.mjs",
