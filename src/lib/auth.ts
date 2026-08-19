@@ -8,9 +8,14 @@ import {
 } from "better-auth/plugins";
 import { inbox } from "better-inbox";
 import { prisma } from "../database/prisma.js";
-import { isBase64Image, isExternalImageUrl, uploadBase64Avatar, uploadUrlAvatar } from "./supabase.js";
 import { roles } from "../permissions/index.js";
 import { notifyOrg } from "../utils/notify.js";
+import {
+  isBase64Image,
+  isExternalImageUrl,
+  uploadBase64Avatar,
+  uploadUrlAvatar,
+} from "./supabase.js";
 
 /*import Stripe from "stripe";
 
@@ -95,6 +100,7 @@ export const auth = betterAuth({
     "https://www.dashboard-hosanna.duckdns.org",
     "https://hosana.vercel.app",
     "http://localhost:3000",
+    "http://localhost:5173",
     "http://localhost",
     "https://localhost",
     "capacitor://localhost",
@@ -215,7 +221,10 @@ export const auth = betterAuth({
     hooks: {
       before: [
         {
-          matcher: (ctx: any) => ctx.method === "POST" || ctx.method === "PATCH" || ctx.method === "PUT",
+          matcher: (ctx: any) =>
+            ctx.method === "POST" ||
+            ctx.method === "PATCH" ||
+            ctx.method === "PUT",
           handler: async (ctx: any) => {
             const body = ctx.body as Record<string, any> | undefined;
             if (!body?.image || typeof body.image !== "string") {
@@ -243,7 +252,10 @@ export const auth = betterAuth({
                 publicUrl = await uploadUrlAvatar(userId, imageValue);
               }
             } catch (err) {
-              console.error("[auth hook] avatar upload failed, keeping original value:", err);
+              console.error(
+                "[auth hook] avatar upload failed, keeping original value:",
+                err,
+              );
               return { context: ctx };
             }
 
