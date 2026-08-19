@@ -5,7 +5,7 @@ export class FolderRepository {
   constructor(private readonly db: OrgScopedPrisma) {}
 
   findAll() {
-    return this.db.folder.findMany({ orderBy: { name: "asc" } });
+    return this.db.folder.findMany({ where: { deleted: false }, orderBy: { name: "asc" } });
   }
 
   findById(id: string) {

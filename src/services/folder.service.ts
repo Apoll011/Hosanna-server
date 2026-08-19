@@ -57,7 +57,7 @@ export class FolderService {
 
   async getById(id: string) {
     const folder = await this.folderRepo.findById(id);
-    if (!folder)
+    if (!folder || folder.deleted)
       throw AppError.notFound("FOLDER_NOT_FOUND", "Folder does not exist.");
     return folder;
   }
@@ -115,7 +115,7 @@ export class FolderService {
         }),
       ),
     );
-    await this.folderRepo.delete(id);
+    await this.folderRepo.update(id, { deleted: true });
 
     this.invalidateCache();
     return { movedSongs: songs.length };
@@ -174,7 +174,7 @@ export class FolderService {
     let deletedSongs = songs.length;
     let deletedFolders = folders.length;
 
-    await tx.song.deleteMany({ where: { folderId: id } });
+    await tx.song.updateMany({ where: { folderId: id }, data: { deleted: true } });
 
     for (const folder of folders) {
       const result = await this.deleteRecursive(folder.id, tx);
@@ -182,7 +182,7 @@ export class FolderService {
       deletedFolders += result.deletedFolders;
     }
 
-    await tx.folder.delete({ where: { id } });
+    await tx.folder.update({ where: { id }, data: { deleted: true } });
 
     return {
       deletedSongs,

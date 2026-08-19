@@ -20,9 +20,11 @@ model Folder {
   songs     Song[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  deleted   Boolean  @default(false) @map("_deleted")
 
   @@index([orgId])
   @@index([parentId])
+  @@index([orgId, updatedAt, id], map: "folders_replication_idx")
   @@map("folders")
 }
 
@@ -43,10 +45,12 @@ model Song {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   song_number Int?
+  deleted     Boolean  @default(false) @map("_deleted")
 
   @@unique([orgId, path])
   @@index([orgId])
   @@index([folderId])
+  @@index([orgId, updatedAt, id], map: "songs_replication_idx")
   @@map("songs")
 }
 
@@ -65,8 +69,10 @@ model Service {
   updatedAt DateTime @updatedAt
 
   archived Boolean @default(false)
+  deleted  Boolean @default(false) @map("_deleted")
 
   @@index([orgId])
+  @@index([orgId, updatedAt, id], map: "services_replication_idx")
   @@map("services")
 }
 

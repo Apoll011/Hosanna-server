@@ -6,7 +6,7 @@ export class ServiceRepository {
 
   findAll(archived: boolean) {
     return this.db.service.findMany({
-      where: { archived },
+      where: { archived, deleted: false },
       orderBy: { date: "asc" },
     });
   }
