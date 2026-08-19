@@ -8,6 +8,7 @@ import {
 } from "better-auth/plugins";
 import { inbox } from "better-inbox";
 import { prisma } from "../database/prisma.js";
+import { isBase64Image, isExternalImageUrl, uploadBase64Avatar, uploadUrlAvatar } from "./supabase.js";
 import { roles } from "../permissions/index.js";
 import { notifyOrg } from "../utils/notify.js";
 
@@ -207,6 +208,63 @@ export const auth = betterAuth({
     //  domain: "example.com",
     //},
   },
+  user: {
+    changeEmail: {
+      enabled: true,
+    },
+    hooks: {
+      before: [
+        {
+          matcher: (ctx: any) => ctx.method === "POST" || ctx.method === "PATCH" || ctx.method === "PUT",
+          handler: async (ctx: any) => {
+            const body = ctx.body as Record<string, any> | undefined;
+            if (!body?.image || typeof body.image !== "string") {
+              return { context: ctx };
+            }
+
+            const imageValue: string = body.image;
+            let publicUrl: string | undefined;
+
+            try {
+              if (isBase64Image(imageValue)) {
+                // Determine the user ID from context
+                const userId =
+                  (body as any).id ??
+                  (ctx as any).params?.id ??
+                  (ctx as any).session?.user?.id ??
+                  "unknown";
+                publicUrl = await uploadBase64Avatar(userId, imageValue);
+              } else if (isExternalImageUrl(imageValue)) {
+                const userId =
+                  (body as any).id ??
+                  (ctx as any).params?.id ??
+                  (ctx as any).session?.user?.id ??
+                  "unknown";
+                publicUrl = await uploadUrlAvatar(userId, imageValue);
+              }
+            } catch (err) {
+              console.error("[auth hook] avatar upload failed, keeping original value:", err);
+              return { context: ctx };
+            }
+
+            if (publicUrl) {
+              return {
+                context: {
+                  ...ctx,
+                  body: {
+                    ...body,
+                    image: publicUrl,
+                  },
+                },
+              };
+            }
+
+            return { context: ctx };
+          },
+        },
+      ],
+    },
+  },
   session: {
     freshAge: 60 * 15,
     expiresIn: 60 * 60 * 24 * 30,
@@ -214,13 +272,7 @@ export const auth = betterAuth({
     cookieCache: {
       enabled: true,
       maxAge: 15 * 60,
-      version: (_session, user) => {
-        if (
-          user?.image &&
-          (user.image.startsWith("data:") || user.image.length > 500)
-        ) {
-          return "no-cache-" + Date.now();
-        }
+      version: () => {
         return "1";
       },
     },

@@ -1,11 +1,5 @@
-import { PrismaPg } from "@prisma/adapter-pg";
-import { Prisma } from "@prisma/client";
-import {
-  DynamicClientExtensionThis,
-  InternalArgs,
-} from "@prisma/client/runtime/client";
 import { v4 as uuid } from "uuid";
-import type { OrgScopedPrisma } from "../database/prisma.js";
+import type { OrgScopedPrisma, OrgScopedTx } from "../database/prisma.js";
 import { FolderRepository } from "../repositories/folder.repository.js";
 import { SongRepository } from "../repositories/song.repository.js";
 import { AppError } from "../utils/errors.js";
@@ -140,29 +134,7 @@ export class FolderService {
 
   private async deleteRecursive(
     id: string,
-    tx: Omit<
-      DynamicClientExtensionThis<
-        Prisma.TypeMap<
-          InternalArgs & {
-            result: {};
-            model: {};
-            query: {};
-            client: {};
-          },
-          {}
-        >,
-        Prisma.TypeMapCb<{
-          adapter: PrismaPg;
-        }>,
-        {
-          result: {};
-          model: {};
-          query: {};
-          client: {};
-        }
-      >,
-      "$connect" | "$disconnect" | "$extends" | "$on" | "$use"
-    >,
+    tx: OrgScopedTx,
   ) {
     const folder = await tx.folder.findUnique({ where: { id } });
     if (!folder)

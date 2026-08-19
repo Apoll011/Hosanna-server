@@ -12,4 +12,14 @@ export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: parseInt(process.env.PORT ?? "3000", 10),
   corsOrigin: process.env.CORS_ORIGIN ?? "*",
+  supabaseUrl: required("SUPABASE_URL"),
+  supabaseServiceRoleKey:
+    process.env.SUPABASE_SERVICE_ROLE_KEY ??
+    process.env.SUPABASE_PUBLISHABLE_KEY ??
+    process.env.SUPABASE_ANON_KEY ??
+    required("SUPABASE_SERVICE_ROLE_KEY"),
+  databaseUrl: required("DATABASE_URL"),
+  directUrl: required("DIRECT_URL"),
+  betterAuthSecret: required("BETTER_AUTH_SECRET"),
+  publicAppUrl: required("PUBLIC_APP_URL"),
 };
