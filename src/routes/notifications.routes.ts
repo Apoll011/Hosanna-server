@@ -7,39 +7,39 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 
 export const notificationsRouter = Router();
 
-const createNotificationSchema = z.object({
-  /** Target a single user. Mutually exclusive with organizationId. */
-  userId: z.string().optional(),
-  /** Fan-out to an entire org (or a subset of roles). Mutually exclusive with userId. */
-  organizationId: z.string().optional(),
-  /** Restrict org fan-out to these roles. Only used when organizationId is set. */
-  roles: z
-    .array(
-      z.enum([
-        "owner",
-        "admin",
-        "teamLeader",
-        "editor",
-        "musician",
-        "member",
-        "guest",
-      ]),
-    )
-    .optional(),
-  /** Notification type — used by the client to render the correct icon / action. */
-  type: z.string().min(1),
-  /** Short title shown in the notification bell. */
-  title: z.string().min(1).max(255),
-  /** Optional longer description shown in the notification detail. */
-  description: z.string().max(1000).optional(),
-  // TODO: add href
-}).refine(
-  (data) => !!data.userId !== !!data.organizationId,
-  {
-    message: "Provide either userId or organizationId, not both (and not neither).",
+const createNotificationSchema = z
+  .object({
+    /** Target a single user. Mutually exclusive with organizationId. */
+    userId: z.string().optional(),
+    /** Fan-out to an entire org (or a subset of roles). Mutually exclusive with userId. */
+    organizationId: z.string().optional(),
+    /** Restrict org fan-out to these roles. Only used when organizationId is set. */
+    roles: z
+      .array(
+        z.enum([
+          "owner",
+          "admin",
+          "teamLeader",
+          "editor",
+          "musician",
+          "member",
+          "guest",
+        ]),
+      )
+      .optional(),
+    /** Notification type — used by the client to render the correct icon / action. */
+    type: z.string().min(1),
+    /** Short title shown in the notification bell. */
+    title: z.string().min(1).max(255),
+    /** Optional longer description shown in the notification detail. */
+    description: z.string().max(1000).optional(),
+    // TODO: add href
+  })
+  .refine((data) => !!data.userId !== !!data.organizationId, {
+    message:
+      "Provide either userId or organizationId, not both (and not neither).",
     path: ["userId"],
-  },
-);
+  });
 
 /**
  * POST /api/notifications

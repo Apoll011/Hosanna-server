@@ -20,8 +20,7 @@ const AVATAR_BUCKET = "avatars";
  */
 export function isBase64Image(value: string): boolean {
   return (
-    value.startsWith("data:image/") ||
-    /^[A-Za-z0-9+/=]{100,}/.test(value) // raw base64 without data: prefix
+    value.startsWith("data:image/") || /^[A-Za-z0-9+/=]{100,}/.test(value) // raw base64 without data: prefix
   );
 }
 
@@ -51,9 +50,7 @@ export async function uploadBase64Avatar(
   let rawBase64 = base64;
 
   // Parse data URI: data:image/png;base64,iVBOR...
-  const dataUriMatch = base64.match(
-    /^data:(image\/[a-zA-Z+]+);base64,(.+)$/,
-  );
+  const dataUriMatch = base64.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
   if (dataUriMatch) {
     mimeType = dataUriMatch[1];
     rawBase64 = dataUriMatch[2];
