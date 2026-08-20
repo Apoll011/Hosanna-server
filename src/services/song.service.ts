@@ -147,6 +147,9 @@ export class SongService {
       input.path,
     );
     this.invalidateCache();
+    if (input.folderId) {
+      this.folderRepo.touch(input.folderId);
+    }
     return this.songRepo.create({
       id: uuid(),
       title: input.title,
@@ -160,6 +163,7 @@ export class SongService {
   }
 
   async batchCreate(items: CreateInput[]) {
+    const folderIds = items.map((i) => i.folderId!);
     const prepared = await Promise.all(
       items.map(async (item) => ({
         id: uuid(),
@@ -177,6 +181,12 @@ export class SongService {
     this.invalidateCache();
 
     const created = await this.songRepo.createMany(prepared);
+    await this.db.folder.updateMany({
+      where: {
+        id: { in: folderIds },
+      },
+      data: {},
+    });
     return { created, count: created.count };
   }
 
@@ -220,6 +230,7 @@ export class SongService {
       data.folder = patch.folderId
         ? { connect: { id: patch.folderId } }
         : { disconnect: true };
+      this.folderRepo.touch(patch.folderId!);
     }
     this.invalidateCache();
 
@@ -227,8 +238,11 @@ export class SongService {
   }
 
   async delete(id: string) {
-    await this.getById(id);
+    const song = await this.getById(id);
     await this.songRepo.update(id, { deleted: true });
+    if (song.folderId) {
+      this.folderRepo.touch(song.folderId);
+    }
     this.invalidateCache();
   }
 
@@ -241,7 +255,12 @@ export class SongService {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
     this.invalidateCache();
-
+    if (current.folderId) {
+      this.folderRepo.touch(current.folderId);
+    }
+    if (folderId) {
+      this.folderRepo.touch(folderId);
+    }
     return this.songRepo.update(id, {
       folder: folderId ? { connect: { id: folderId } } : { disconnect: true },
       path: newPath ?? current.path,
