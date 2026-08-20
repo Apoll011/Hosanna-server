@@ -5,7 +5,10 @@ export class FolderRepository {
   constructor(private readonly db: OrgScopedPrisma) {}
 
   findAll() {
-    return this.db.folder.findMany({ where: { deleted: false }, orderBy: { name: "asc" } });
+    return this.db.folder.findMany({
+      where: { deleted: false },
+      orderBy: { name: "asc" },
+    });
   }
 
   findById(id: string) {
@@ -38,6 +41,22 @@ export class FolderRepository {
 
   deleteManyByFolder(parentId: string) {
     return this.db.folder.deleteMany({ where: { parentId } });
+  }
+
+  async touch(id: string) {
+    let folderId: string | null = id;
+
+    while (folderId) {
+      const folder: { parentId: string | null } = await this.db.folder.update({
+        where: { id: folderId },
+        data: {},
+        select: {
+          parentId: true,
+        },
+      });
+
+      folderId = folder.parentId;
+    }
   }
 
   moveManyToRoot(parentId: string) {

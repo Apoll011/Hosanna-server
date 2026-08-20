@@ -1,7 +1,7 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const idParamSchema = z.object({
-  id: z.string().uuid('Must be a valid UUID.'),
+  id: z.string().uuid("Must be a valid UUID."),
 });
 
 export const twoIdParamSchema = z.object({
@@ -16,8 +16,8 @@ export const twoIdParamSchema = z.object({
  */
 export const concurrencySchema = z.object({
   updatedAt: z.coerce.date({
-    required_error: 'updatedAt is required for optimistic concurrency control.',
-    invalid_type_error: 'updatedAt must be a valid ISO date string.',
+    required_error: "updatedAt is required for optimistic concurrency control.",
+    invalid_type_error: "updatedAt must be a valid ISO date string.",
   }),
 });
 

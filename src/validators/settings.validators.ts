@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const updateSettingsSchema = z.object({
   serverName: z.string().trim().min(1).optional(),

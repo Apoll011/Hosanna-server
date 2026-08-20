@@ -54,14 +54,22 @@ export type ReplicatedCollection = "songs" | "folders" | "services";
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function getDelegate(db: OrgScopedPrisma, collection: ReplicatedCollection) {
-  return db[collection === "songs" ? "song" : collection === "folders" ? "folder" : "service"] as any;
+  return db[
+    collection === "songs"
+      ? "song"
+      : collection === "folders"
+        ? "folder"
+        : "service"
+  ] as any;
 }
 
 /** Convert a Prisma row to the RxDB wire format (dates → ISO, deleted → _deleted). */
-function toWireDoc(doc: any): any {
-  const out: any = { ...doc };
-  if (out.createdAt instanceof Date) out.createdAt = out.createdAt.toISOString();
-  if (out.updatedAt instanceof Date) out.updatedAt = out.updatedAt.toISOString();
+function toWireDoc(doc: any, collection: ReplicatedCollection): any {
+  let out: any = { ...doc };
+  if (out.createdAt instanceof Date)
+    out.createdAt = out.createdAt.toISOString();
+  if (out.updatedAt instanceof Date)
+    out.updatedAt = out.updatedAt.toISOString();
   if (out.date instanceof Date) out.date = out.date.toISOString();
   // Prisma field "deleted" → RxDB wire field "_deleted"
   out._deleted = !!out.deleted;
@@ -69,17 +77,30 @@ function toWireDoc(doc: any): any {
   // Strip server-only fields
   delete out.orgId;
   delete out.org;
+
+  if (collection === "folders") {
+    out = {
+      ...out,
+      songCount: doc._count?.songs ?? 0,
+      folderCount: doc._count?.children ?? 0,
+    };
+
+    delete out._count;
+  }
+
   return out;
 }
 
 function hasConflict(serverDoc: any, assumed: any): boolean {
   if (!assumed) return false;
-  const sTime = serverDoc.updatedAt instanceof Date
-    ? serverDoc.updatedAt.getTime()
-    : new Date(serverDoc.updatedAt).getTime();
-  const aTime = assumed.updatedAt instanceof Date
-    ? assumed.updatedAt.getTime()
-    : new Date(assumed.updatedAt).getTime();
+  const sTime =
+    serverDoc.updatedAt instanceof Date
+      ? serverDoc.updatedAt.getTime()
+      : new Date(serverDoc.updatedAt).getTime();
+  const aTime =
+    assumed.updatedAt instanceof Date
+      ? assumed.updatedAt.getTime()
+      : new Date(assumed.updatedAt).getTime();
   return sTime !== aTime;
 }
 
@@ -106,6 +127,19 @@ async function pull(
     where,
     orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
     take: limit,
+
+    ...(collection === "folders"
+      ? {
+          include: {
+            _count: {
+              select: {
+                songs: true,
+                children: true,
+              },
+            },
+          },
+        }
+      : {}),
   });
 
   const newCheckpoint: ReplicationCheckpoint | null =
@@ -116,7 +150,12 @@ async function pull(
         }
       : checkpoint;
 
-  return { documents: docs.map(toWireDoc), checkpoint: newCheckpoint };
+  return {
+    documents: docs.map((doc: any) => {
+      return toWireDoc(doc, collection);
+    }),
+    checkpoint: newCheckpoint,
+  };
 }
 
 // ── Push: songs ────────────────────────────────────────────────────────────
@@ -133,11 +172,14 @@ async function pushSongs(
 
     if (existing) {
       if (assumed && hasConflict(existing, assumed)) {
-        conflicts.push(toWireDoc(existing));
+        conflicts.push(toWireDoc(existing, "songs"));
         continue;
       }
       if (doc._deleted) {
-        await db.song.update({ where: { id: doc.id }, data: { deleted: true } });
+        await db.song.update({
+          where: { id: doc.id },
+          data: { deleted: true },
+        });
       } else {
         await db.song.update({
           where: { id: doc.id },
@@ -184,15 +226,28 @@ async function pushFolders(
   const conflicts: any[] = [];
 
   for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
-    const existing = await db.folder.findUnique({ where: { id: doc.id } });
+    const existing = await db.folder.findUnique({
+      where: { id: doc.id },
+      include: {
+        _count: {
+          select: {
+            songs: true,
+            children: true,
+          },
+        },
+      },
+    });
 
     if (existing) {
       if (assumed && hasConflict(existing, assumed)) {
-        conflicts.push(toWireDoc(existing));
+        conflicts.push(toWireDoc(existing, "folders"));
         continue;
       }
       if (doc._deleted) {
-        await db.folder.update({ where: { id: doc.id }, data: { deleted: true } });
+        await db.folder.update({
+          where: { id: doc.id },
+          data: { deleted: true },
+        });
       } else {
         await db.folder.update({
           where: { id: doc.id },
@@ -233,11 +288,14 @@ async function pushServices(
 
     if (existing) {
       if (assumed && hasConflict(existing, assumed)) {
-        conflicts.push(toWireDoc(existing));
+        conflicts.push(toWireDoc(existing, "services"));
         continue;
       }
       if (doc._deleted) {
-        await db.service.update({ where: { id: doc.id }, data: { deleted: true } });
+        await db.service.update({
+          where: { id: doc.id },
+          data: { deleted: true },
+        });
       } else {
         await db.service.update({
           where: { id: doc.id },
@@ -284,7 +342,12 @@ export class ReplicationService {
   ) {}
 
   pull(collection: ReplicatedCollection, req: PullRequest) {
-    return pull(this.db, collection, req.checkpoint, Math.min(req.limit || 100, 500));
+    return pull(
+      this.db,
+      collection,
+      req.checkpoint,
+      Math.min(req.limit || 100, 500),
+    );
   }
 
   push(collection: ReplicatedCollection, req: PushRequest<any>) {

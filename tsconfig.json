@@ -16,7 +16,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noImplicitAny": true,
-    "strictNullChecks": true,
+    "strictNullChecks": true
   },
   "include": ["src/**/*.ts", "src/index.mts"],
   "exclude": ["node_modules", "dist"]

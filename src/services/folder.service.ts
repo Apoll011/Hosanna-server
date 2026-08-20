@@ -58,6 +58,9 @@ export class FolderService {
 
   async create(name: string, parentId?: string | null) {
     this.invalidateCache();
+    if (parentId) {
+      this.folderRepo.touch(parentId);
+    }
     return this.folderRepo.create({
       id: uuid(),
       name: name.trim(),
@@ -73,6 +76,10 @@ export class FolderService {
   ) {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
+
+    if (parentId) {
+      this.folderRepo.touch(parentId);
+    }
 
     const updated = await this.folderRepo.update(id, {
       name: name ?? undefined,
@@ -99,7 +106,7 @@ export class FolderService {
   }
 
   async deleteMovingContentToRoot(id: string) {
-    await this.getById(id);
+    const folder = await this.getById(id);
     const songs = await this.songRepo.findManyByFolder(id);
     await Promise.all(
       songs.map((s) =>
@@ -109,8 +116,11 @@ export class FolderService {
         }),
       ),
     );
+    //TODO: move the folders to....
     await this.folderRepo.update(id, { deleted: true });
-
+    if (folder.parentId) {
+      this.folderRepo.touch(folder.parentId);
+    }
     this.invalidateCache();
     return { movedSongs: songs.length };
   }
@@ -120,6 +130,10 @@ export class FolderService {
     const result = await this.db.$transaction(async (tx) => {
       return this.deleteRecursive(id, tx);
     });
+
+    if (result.parentId) {
+      this.folderRepo.touch(result.parentId);
+    }
 
     void notifyOrg({
       organizationId: this.tenantId,
@@ -132,10 +146,7 @@ export class FolderService {
     return result;
   }
 
-  private async deleteRecursive(
-    id: string,
-    tx: OrgScopedTx,
-  ) {
+  private async deleteRecursive(id: string, tx: OrgScopedTx) {
     const folder = await tx.folder.findUnique({ where: { id } });
     if (!folder)
       throw AppError.notFound("FOLDER_NOT_FOUND", "Folder does not exist.");
@@ -146,7 +157,10 @@ export class FolderService {
     let deletedSongs = songs.length;
     let deletedFolders = folders.length;
 
-    await tx.song.updateMany({ where: { folderId: id }, data: { deleted: true } });
+    await tx.song.updateMany({
+      where: { folderId: id },
+      data: { deleted: true },
+    });
 
     for (const folder of folders) {
       const result = await this.deleteRecursive(folder.id, tx);
@@ -157,6 +171,7 @@ export class FolderService {
     await tx.folder.update({ where: { id }, data: { deleted: true } });
 
     return {
+      parentId: folder.parentId,
       deletedSongs,
       deletedFolders,
     };
