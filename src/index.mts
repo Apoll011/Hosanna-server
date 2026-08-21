@@ -42,6 +42,7 @@ app.use(
       "capacitor://localhost",
     ],
     credentials: true,
+    exposedHeaders: ["set-auth-token"],
   }),
 );
 
