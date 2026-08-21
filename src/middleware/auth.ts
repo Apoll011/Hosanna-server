@@ -168,20 +168,88 @@ export function requireOwnTeamResource(
   };
 }
 
+type SessionResult = Awaited<ReturnType<typeof auth.api.getSession>>;
+
+/**
+ * Resolves a session from cookies on the incoming request (web dashboard flow).
+ * This also happens to pick up a Bearer token if better-auth manages to parse
+ * it alongside the cookie header, but don't rely on that — see getSessionFromBearerToken.
+ */
+async function getSessionFromCookies(
+  req: Request,
+): Promise<SessionResult | null> {
+  const sessionData = await auth.api.getSession({
+    headers: req.headers as any,
+  });
+  return sessionData ?? null;
+}
+
+/**
+ * Resolves a session from an `Authorization: Bearer <token>` header
+ * (mobile app / API clients using the better-auth bearer plugin).
+ * Builds a clean Headers object with ONLY the Authorization header so a stray
+ * cookie header on the same request can't interfere with resolution.
+ */
+async function getSessionFromBearerToken(
+  req: Request,
+): Promise<SessionResult | null> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) return null;
+
+  const token = authHeader.slice("Bearer ".length).trim();
+  if (!token) return null;
+
+  const headers = new Headers();
+  headers.set("authorization", `Bearer ${token}`);
+
+  const sessionData = await auth.api.getSession({ headers });
+  return sessionData ?? null;
+}
+
+async function resolveSession(req: Request): Promise<SessionResult | null> {
+  const cookieSession = await getSessionFromCookies(req);
+  if (cookieSession?.session && cookieSession?.user) {
+    return cookieSession;
+  }
+  return getSessionFromBearerToken(req);
+}
+
+async function resolveUserRole(
+  sessionData: NonNullable<SessionResult>,
+  workspaceId: string,
+): Promise<string> {
+  const { user, session } = sessionData;
+
+  let userRole =
+    (session as any).role ||
+    (sessionData as any).member?.role ||
+    (user as any).role;
+
+  if (!userRole) {
+    const member = await prisma.member.findFirst({
+      where: {
+        organizationId: workspaceId,
+        userId: user.id,
+      },
+      select: { role: true },
+    });
+    userRole = member?.role;
+  }
+
+  return userRole || "guest";
+}
+
 export const authenticate = asyncHandler(
   async (req: Request, _res: Response, next: NextFunction) => {
-    const sessionData = await auth.api.getSession({
-      headers: req.headers,
-    });
+    const sessionData = await resolveSession(req);
 
-    if (!sessionData || !sessionData.session || !sessionData.user) {
+    if (!sessionData?.session || !sessionData?.user) {
       throw AppError.unauthorized("Invalid or missing authentication session.");
     }
 
     const { user, session } = sessionData;
 
     const workspaceId = (session as any).activeOrganizationId;
-
     if (!workspaceId) {
       throw AppError.forbidden(
         "An active workspace/organization context is required.",
@@ -189,30 +257,15 @@ export const authenticate = asyncHandler(
     }
 
     const teamId = (session as any).activeTeamId || undefined;
-
-    let userRole =
-      (session as any).role ||
-      (sessionData as any).member?.role ||
-      (user as any).role;
-
-    if (!userRole) {
-      const member = await prisma.member.findFirst({
-        where: {
-          organizationId: workspaceId,
-          userId: user.id,
-        },
-        select: { role: true },
-      });
-      userRole = member?.role;
-    }
+    const userRole = await resolveUserRole(sessionData, workspaceId);
 
     req.orgId = workspaceId;
     req.db = forOrganization(workspaceId);
     req.user = {
       id: user.id,
-      workspaceId: workspaceId,
-      role: userRole || "guest",
-      teamId: teamId,
+      workspaceId,
+      role: userRole,
+      teamId,
     };
 
     next();
