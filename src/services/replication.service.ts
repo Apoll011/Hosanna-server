@@ -254,6 +254,8 @@ async function pushFolders(
           data: {
             name: doc.name,
             parentId: doc.parentId ?? null,
+            color: doc.color ?? "default",
+            icon: doc.icon ?? "default",
             deleted: false,
           },
         });
@@ -264,6 +266,8 @@ async function pushFolders(
           id: doc.id || uuid(),
           name: doc.name,
           parentId: doc.parentId ?? null,
+          color: doc.color ?? "default",
+          icon: doc.icon ?? "default",
           deleted: false,
         } as any,
       });

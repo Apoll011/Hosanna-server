@@ -13,6 +13,8 @@ model Folder {
   org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   name String
+  color String @default("default")
+  icon  String @default("default")
 
   parentId  String?
   parent    Folder?  @relation("FolderChildren", fields: [parentId], references: [id], onDelete: SetNull)

@@ -4,11 +4,15 @@ import { concurrencySchema } from "./common.validators.js";
 export const createFolderSchema = z.object({
   name: z.string().trim().min(1, "name is required"),
   parentId: z.string().uuid().nullable().optional(),
+  color: z.string().trim().optional(),
+  icon: z.string().trim().optional(),
 });
 
 export const updateFolderSchema = concurrencySchema.extend({
   name: z.string().trim().min(1).optional(),
   parentId: z.string().uuid().nullable().optional(),
+  color: z.string().trim().optional(),
+  icon: z.string().trim().optional(),
 });
 
 export const deleteFolderQuerySchema = z.object({

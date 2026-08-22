@@ -56,7 +56,12 @@ export class FolderService {
     return folder;
   }
 
-  async create(name: string, parentId?: string | null) {
+  async create(
+    name: string,
+    parentId?: string | null,
+    color?: string,
+    icon?: string,
+  ) {
     this.invalidateCache();
     if (parentId) {
       this.folderRepo.touch(parentId);
@@ -64,6 +69,8 @@ export class FolderService {
     return this.folderRepo.create({
       id: uuid(),
       name: name.trim(),
+      color: color ?? "default",
+      icon: icon ?? "default",
       parent: parentId ? { connect: { id: parentId } } : undefined,
     });
   }
@@ -73,6 +80,8 @@ export class FolderService {
     updatedAt: Date,
     name?: string,
     parentId?: string | null,
+    color?: string,
+    icon?: string,
   ) {
     const current = await this.getById(id);
     assertUnchanged(current, updatedAt);
@@ -83,6 +92,8 @@ export class FolderService {
 
     const updated = await this.folderRepo.update(id, {
       name: name ?? undefined,
+      color: color ?? undefined,
+      icon: icon ?? undefined,
       parent:
         parentId !== undefined
           ? parentId

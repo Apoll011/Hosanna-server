@@ -40,7 +40,12 @@ folderRouter.post(
   validate({ body: createFolderSchema }),
   asyncHandler(async (req, res) => {
     const service = new FolderService(req.db!, req.orgId!);
-    const folder = await service.create(req.body.name, req.body.parentId);
+    const folder = await service.create(
+      req.body.name,
+      req.body.parentId,
+      req.body.color,
+      req.body.icon,
+    );
     res.status(201).json({ ...folder, songCount: 0 });
   }),
 );
@@ -52,8 +57,17 @@ folderRouter.put(
   validate({ params: idParamSchema, body: updateFolderSchema }),
   asyncHandler(async (req, res) => {
     const service = new FolderService(req.db!, req.orgId!);
-    const { updatedAt, name, parentId } = req.body;
-    res.json(await service.update(req.params.id, updatedAt, name, parentId));
+    const { updatedAt, name, parentId, color, icon } = req.body;
+    res.json(
+      await service.update(
+        req.params.id,
+        updatedAt,
+        name,
+        parentId,
+        color,
+        icon,
+      ),
+    );
   }),
 );
 
