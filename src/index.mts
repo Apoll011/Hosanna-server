@@ -39,7 +39,7 @@ app.use(
       "http://localhost",
       "https://localhost",
       "capacitor://localhost",
-      "https://*.hosanna.live",
+      "https://studio.hosanna.live",
       "https://hosanna.live",
     ],
     credentials: true,
