@@ -48,11 +48,6 @@ const en = {
     not_found: "The service does not exist.",
   },
 
-  // ── settings ────────────────────────────────────────────────────────────
-  settings: {
-    not_found: "Settings not initialized for this tenant.",
-  },
-
   // ── backup ──────────────────────────────────────────────────────────────
   backup: {
     restored_successfully: "Backup restored successfully",
@@ -70,9 +65,6 @@ const en = {
     backup_restored_title: "Backup restored — all data replaced",
     backup_restored_description:
       "A full restore imported {{folders}} folder(s), {{songs}} song(s), and {{services}} service(s).",
-    settings_changed_title: "Organization settings updated",
-    settings_changed_description:
-      "An administrator changed one or more workspace settings.",
   },
 } as const satisfies I18nKeys;
 
