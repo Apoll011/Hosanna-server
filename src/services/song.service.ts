@@ -140,7 +140,10 @@ export class SongService {
   async getById(id: string): Promise<Song> {
     const song = await this.songRepo.findById(id);
     if (!song || song.deleted)
-      throw AppError.notFound("SONG_NOT_FOUND", t(this.locale, "song.not_found"));
+      throw AppError.notFound(
+        "SONG_NOT_FOUND",
+        t(this.locale, "song.not_found"),
+      );
     return song;
   }
 

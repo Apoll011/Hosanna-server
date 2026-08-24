@@ -56,7 +56,10 @@ export class FolderService {
   async getById(id: string) {
     const folder = await this.folderRepo.findById(id);
     if (!folder || folder.deleted)
-      throw AppError.notFound("FOLDER_NOT_FOUND", t(this.locale, "folder.not_found"));
+      throw AppError.notFound(
+        "FOLDER_NOT_FOUND",
+        t(this.locale, "folder.not_found"),
+      );
     return folder;
   }
 
@@ -167,7 +170,10 @@ export class FolderService {
   private async deleteRecursive(id: string, tx: OrgScopedTx) {
     const folder = await tx.folder.findUnique({ where: { id } });
     if (!folder)
-      throw AppError.notFound("FOLDER_NOT_FOUND", t(this.locale, "folder.not_found"));
+      throw AppError.notFound(
+        "FOLDER_NOT_FOUND",
+        t(this.locale, "folder.not_found"),
+      );
 
     const songs = await tx.song.findMany({ where: { folderId: id } });
     const folders = await tx.folder.findMany({ where: { parentId: id } });

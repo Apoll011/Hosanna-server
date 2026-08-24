@@ -359,9 +359,13 @@ export const auth = betterAuth({
             roles: ["admin", "owner"],
             type: "org.new_member",
             title: t(DEFAULT_LOCALE, "notification.new_member_title"),
-            description: t(DEFAULT_LOCALE, "notification.new_member_description", {
-              name: user.name,
-            }),
+            description: t(
+              DEFAULT_LOCALE,
+              "notification.new_member_description",
+              {
+                name: user.name,
+              },
+            ),
           });
         },
 

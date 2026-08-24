@@ -23,6 +23,9 @@ backupRouter.post(
   asyncHandler(async (req, res) => {
     const service = new BackupService(req.db!, req.orgId!, req.locale);
     const result = await service.restore(req.body);
-    res.json({ message: t(req.locale, "backup.restored_successfully"), ...result });
+    res.json({
+      message: t(req.locale, "backup.restored_successfully"),
+      ...result,
+    });
   }),
 );

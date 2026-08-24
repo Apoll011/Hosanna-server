@@ -87,7 +87,11 @@ folderRouter.delete(
         : await service.deleteMovingContentToRoot(req.params.id);
     res
       .status(200)
-      .json({ message: t(req.locale, "folder.deleted"), actionUsed: action, ...result });
+      .json({
+        message: t(req.locale, "folder.deleted"),
+        actionUsed: action,
+        ...result,
+      });
   }),
 );
 

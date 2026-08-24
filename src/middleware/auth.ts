@@ -268,9 +268,7 @@ export const authenticate = asyncHandler(
         select: { metadata: true },
       });
       const meta = (org?.metadata as any) ?? {};
-      const orgLocale =
-        meta?.settings?.general?.locale ??
-        meta?.locale;
+      const orgLocale = meta?.settings?.general?.locale ?? meta?.locale;
       if (typeof orgLocale === "string" && orgLocale.length > 0) {
         locale = orgLocale;
       }
