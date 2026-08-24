@@ -267,15 +267,25 @@ export const authenticate = asyncHandler(
         where: { id: workspaceId },
         select: { metadata: true },
       });
-      const meta = (org?.metadata as any) ?? {};
+
+      let meta: any = {};
+
+      if (typeof org?.metadata === "string") {
+        try {
+          meta = JSON.parse(org.metadata);
+        } catch {
+          meta = {};
+        }
+      }
+
       const orgLocale = meta?.settings?.general?.locale ?? meta?.locale;
+
       if (typeof orgLocale === "string" && orgLocale.length > 0) {
         locale = orgLocale;
       }
     } catch {
       // Non-fatal — keep DEFAULT_LOCALE.
     }
-
     req.locale = locale;
     req.orgId = workspaceId;
     req.db = forOrganization(workspaceId);
