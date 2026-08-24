@@ -20,9 +20,10 @@ model Folder {
   parent    Folder?  @relation("FolderChildren", fields: [parentId], references: [id], onDelete: SetNull)
   children  Folder[] @relation("FolderChildren")
   songs     Song[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  deleted   Boolean  @default(false) @map("_deleted")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deleted   Boolean   @default(false) @map("_deleted")
+  purgeAt   DateTime? @map("purge_at")
 
   @@index([orgId])
   @@index([parentId])
@@ -44,10 +45,11 @@ model Song {
   folder      Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
   path        String
   tags        String[] @default([])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   song_number Int?
-  deleted     Boolean  @default(false) @map("_deleted")
+  deleted     Boolean   @default(false) @map("_deleted")
+  purgeAt     DateTime? @map("purge_at")
 
   @@unique([orgId, path])
   @@index([orgId])
@@ -70,8 +72,9 @@ model Service {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  archived Boolean @default(false)
-  deleted  Boolean @default(false) @map("_deleted")
+  archived Boolean   @default(false)
+  deleted  Boolean   @default(false) @map("_deleted")
+  purgeAt  DateTime? @map("purge_at")
 
   @@index([orgId])
   @@index([orgId, updatedAt, id], map: "services_replication_idx")

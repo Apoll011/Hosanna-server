@@ -11,5 +11,11 @@
       "src": "/(.*)",
       "dest": "src/index.mts"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/purge-trash",
+      "schedule": "0 0 * * *"
+    }
   ]
 }

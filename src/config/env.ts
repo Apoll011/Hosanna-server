@@ -27,4 +27,5 @@ export const env = {
     process.env.EMAIL_FROM ??
     process.env.RESEND_FROM_EMAIL ??
     "Hosanna <no-reply@hosanna.live>",
+  cronSecret: process.env.CRON_SECRET,
 };

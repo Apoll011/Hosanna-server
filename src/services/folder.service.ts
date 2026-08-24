@@ -126,6 +126,7 @@ export class FolderService {
   async deleteMovingContentToRoot(id: string) {
     const folder = await this.getById(id);
     const songs = await this.songRepo.findManyByFolder(id);
+    const purgeAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     await Promise.all(
       songs.map((s) =>
         this.songRepo.update(s.id, {
@@ -135,7 +136,7 @@ export class FolderService {
       ),
     );
     //TODO: move the folders to....
-    await this.folderRepo.update(id, { deleted: true });
+    await this.folderRepo.update(id, { deleted: true, purgeAt });
     if (folder.parentId) {
       this.folderRepo.touch(folder.parentId);
     }
@@ -181,9 +182,11 @@ export class FolderService {
     let deletedSongs = songs.length;
     let deletedFolders = folders.length;
 
+    const purgeAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
     await tx.song.updateMany({
       where: { folderId: id },
-      data: { deleted: true },
+      data: { deleted: true, purgeAt },
     });
 
     for (const folder of folders) {
@@ -192,12 +195,25 @@ export class FolderService {
       deletedFolders += result.deletedFolders;
     }
 
-    await tx.folder.update({ where: { id }, data: { deleted: true } });
+    await tx.folder.update({ where: { id }, data: { deleted: true, purgeAt } });
 
     return {
       parentId: folder.parentId,
       deletedSongs,
       deletedFolders,
     };
+  }
+
+  async restore(id: string) {
+    const folder = await this.folderRepo.findById(id);
+    if (!folder || !folder.deleted)
+      throw AppError.notFound("FOLDER_NOT_FOUND", t(this.locale, "folder.not_found"));
+    await this.folderRepo.update(id, { deleted: false, purgeAt: null });
+    this.invalidateCache();
+    return this.folderRepo.findById(id);
+  }
+
+  async listTrashed() {
+    return this.db.folder.findMany({ where: { deleted: true } });
   }
 }

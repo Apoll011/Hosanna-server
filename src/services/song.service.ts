@@ -247,11 +247,25 @@ export class SongService {
 
   async delete(id: string) {
     const song = await this.getById(id);
-    await this.songRepo.update(id, { deleted: true });
+    const purgeAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await this.songRepo.update(id, { deleted: true, purgeAt });
     if (song.folderId) {
       this.folderRepo.touch(song.folderId);
     }
     this.invalidateCache();
+  }
+
+  async restore(id: string) {
+    const song = await this.songRepo.findById(id);
+    if (!song || !song.deleted)
+      throw AppError.notFound("SONG_NOT_FOUND", t(this.locale, "song.not_found"));
+    await this.songRepo.update(id, { deleted: false, purgeAt: null });
+    this.invalidateCache();
+    return this.songRepo.findById(id);
+  }
+
+  async listTrashed() {
+    return this.songRepo.findMany({ deleted: true }, {});
   }
 
   async move(
