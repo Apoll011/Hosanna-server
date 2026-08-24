@@ -18,9 +18,9 @@ import ptPT from "../locales/pt-PT.js";
 /** Map of loaded locale objects. pt-PT is always present. */
 const registry = new Map<string, Record<string, any>>();
 registry.set("pt-PT", ptPT);
-registry.set("en", en);
+registry.set("pt-BR", ptPT);
 registry.set("en-US", en);
-registry.set("es", es);
+registry.set("es-ES", es);
 
 /** Lazy-load a locale module on first use. */
 async function loadLocale(locale: string): Promise<Record<string, any>> {
