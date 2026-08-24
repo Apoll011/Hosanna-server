@@ -8,7 +8,6 @@ import {
 } from "better-auth/plugins";
 import { inbox } from "better-inbox";
 import { prisma } from "../database/prisma.js";
-import { DEFAULT_LOCALE, t } from "./i18n.js";
 import { roles } from "../permissions/index.js";
 import {
   sendAccountDeletedEmail,
@@ -24,6 +23,7 @@ import {
   sendWelcomeEmail,
 } from "../services/email.service.js";
 import { notifyOrg } from "../utils/notify.js";
+import { DEFAULT_LOCALE, t } from "./i18n.js";
 import {
   isBase64Image,
   isExternalImageUrl,
@@ -451,7 +451,7 @@ export const auth = betterAuth({
     },
   },
   session: {
-    freshAge: 60 * 15,
+    freshAge: 0,
     expiresIn: 60 * 60 * 24 * 30,
     updateAge: 60 * 60 * 24,
     cookieCache: {
