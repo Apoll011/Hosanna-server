@@ -8,6 +8,8 @@
  * - `t(locale, key, vars?)` interpolates {{var}} placeholders.
  */
 
+import en from "../locales/en.js";
+import es from "../locales/es.js";
 import type { I18nKeys } from "../locales/pt-PT.js";
 import ptPT from "../locales/pt-PT.js";
 
@@ -16,6 +18,9 @@ import ptPT from "../locales/pt-PT.js";
 /** Map of loaded locale objects. pt-PT is always present. */
 const registry = new Map<string, Record<string, any>>();
 registry.set("pt-PT", ptPT);
+registry.set("en", en);
+registry.set("en-US", en);
+registry.set("es", es);
 
 /** Lazy-load a locale module on first use. */
 async function loadLocale(locale: string): Promise<Record<string, any>> {
@@ -34,14 +39,15 @@ async function loadLocale(locale: string): Promise<Record<string, any>> {
 
 // ── Key resolution ─────────────────────────────────────────────────────────
 
-type DotPath<T, Prefix extends string = ""> = T extends Record<string, unknown>
-  ? {
-      [K in keyof T & string]: DotPath<
-        T[K],
-        Prefix extends "" ? K : `${Prefix}.${K}`
-      >;
-    }[keyof T & string]
-  : Prefix;
+type DotPath<T, Prefix extends string = ""> =
+  T extends Record<string, unknown>
+    ? {
+        [K in keyof T & string]: DotPath<
+          T[K],
+          Prefix extends "" ? K : `${Prefix}.${K}`
+        >;
+      }[keyof T & string]
+    : Prefix;
 
 export type TranslationKey = DotPath<I18nKeys>;
 
@@ -55,7 +61,10 @@ function resolve(obj: Record<string, any>, path: string): string | undefined {
   return typeof cur === "string" ? cur : undefined;
 }
 
-function interpolate(template: string, vars: Record<string, string | number>): string {
+function interpolate(
+  template: string,
+  vars: Record<string, string | number>,
+): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) =>
     key in vars ? String(vars[key]) : `{{${key}}}`,
   );
@@ -77,8 +86,7 @@ export function t(
   vars?: Record<string, string | number>,
 ): string {
   const data = registry.get(locale) ?? ptPT;
-  const raw =
-    resolve(data, key) ?? resolve(ptPT, key) ?? key;
+  const raw = resolve(data, key) ?? resolve(ptPT, key) ?? key;
   return vars ? interpolate(raw, vars) : raw;
 }
 
