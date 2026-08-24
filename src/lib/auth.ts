@@ -9,6 +9,19 @@ import {
 import { inbox } from "better-inbox";
 import { prisma } from "../database/prisma.js";
 import { roles } from "../permissions/index.js";
+import {
+  sendAccountDeletedEmail,
+  sendChangeEmailVerificationEmail,
+  sendChurchInvitationEmail,
+  sendOtpEmail,
+  sendPasswordResetEmail,
+  sendPasswordResetSuccessEmail,
+  sendPromotedToAdminEmail,
+  sendRemovedFromChurchEmail,
+  sendRoleChangedEmail,
+  sendVerificationEmail,
+  sendWelcomeEmail,
+} from "../services/email.service.js";
 import { notifyOrg } from "../utils/notify.js";
 import {
   isBase64Image,
@@ -89,6 +102,7 @@ const secondaryStorage = redisStorage({
     keyPrefix: "better-auth:", // optional, defaults to "better-auth:"
   })
 */
+const appUrl = process.env.STUDIO_URL || "https://studio.hosanna.live";
 export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.PUBLIC_APP_URL,
@@ -116,13 +130,128 @@ export const auth = betterAuth({
     autoSignIn: false,
 
     sendResetPassword: async ({ user, url, token }, request) => {
-      //...
+      try {
+        const resetUrl = `${appUrl}/reset-password/?token=${token}`;
+        await sendPasswordResetEmail(user.email, {
+          name: user.name,
+          url: resetUrl,
+          expireMinutes: 60,
+        });
+      } catch (err) {
+        console.error("[auth] Failed to send password reset email:", err);
+      }
+    },
+    onPasswordReset: async ({ user }, request) => {
+      try {
+        await sendPasswordResetSuccessEmail(user.email, {
+          first_name: user.name,
+        });
+      } catch (err) {
+        console.error(
+          "[auth] Failed to send password reset success email:",
+          err,
+        );
+      }
+    },
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (user, context) => {
+          if (user.image && typeof user.image === "string") {
+            try {
+              let publicUrl: string | undefined;
+              if (isBase64Image(user.image)) {
+                publicUrl = await uploadBase64Avatar(user.id, user.image);
+              } else if (isExternalImageUrl(user.image)) {
+                publicUrl = await uploadUrlAvatar(user.id, user.image);
+              }
+
+              if (publicUrl) {
+                return {
+                  data: {
+                    ...user,
+                    image: publicUrl,
+                  },
+                };
+              }
+            } catch (err) {
+              console.error(
+                "[auth databaseHook] avatar upload failed on create:",
+                err,
+              );
+            }
+          }
+        },
+        after: async (user) => {
+          try {
+            await sendWelcomeEmail(user.email, {
+              first_name: user.name,
+            });
+          } catch (err) {
+            console.error("[auth] Failed to send user welcome email:", err);
+          }
+        },
+      },
+      update: {
+        before: async (user, context) => {
+          if (user.image && typeof user.image === "string") {
+            try {
+              const userId =
+                (user as any).id ??
+                context?.context?.session?.user?.id ??
+                "unknown";
+
+              let publicUrl: string | undefined;
+              if (isBase64Image(user.image)) {
+                publicUrl = await uploadBase64Avatar(userId, user.image);
+              } else if (isExternalImageUrl(user.image)) {
+                publicUrl = await uploadUrlAvatar(userId, user.image);
+              }
+
+              if (publicUrl) {
+                return {
+                  data: {
+                    ...user,
+                    image: publicUrl,
+                  },
+                };
+              }
+            } catch (err) {
+              console.error(
+                "[auth databaseHook] avatar upload failed on update:",
+                err,
+              );
+            }
+          }
+        },
+      },
+      delete: {
+        after: async (user) => {
+          try {
+            await sendAccountDeletedEmail(user.email, {
+              first_name: user.name,
+            });
+          } catch (err) {
+            console.error("[auth] Failed to send account deleted email:", err);
+          }
+        },
+      },
     },
   },
   emailVerification: {
     sendOnSignUp: true,
     sendVerificationEmail: async ({ user, url, token }, request) => {
-      //...
+      try {
+        const resetUrl = `${appUrl}/verify-email/?token=${token}`;
+        await sendVerificationEmail(user.email, {
+          name: user.name,
+          url: resetUrl,
+          expireMinutes: 60,
+        });
+      } catch (err) {
+        console.error("[auth] Failed to send verification email:", err);
+      }
     },
   },
   plugins: [
@@ -137,7 +266,17 @@ export const auth = betterAuth({
       issuer: "Hosanna",
 
       otpOptions: {
-        sendOTP: async ({ user, otp }) => {},
+        sendOTP: async ({ user, otp }) => {
+          try {
+            await sendOtpEmail(user.email, {
+              name: user.name,
+              otp,
+              expireMinutes: 10,
+            });
+          } catch (err) {
+            console.error("[auth] Failed to send 2FA OTP email:", err);
+          }
+        },
       },
     }),
     organization({
@@ -148,6 +287,18 @@ export const auth = betterAuth({
         maximumTeams: 50,
       },
       roles,
+      sendInvitationEmail: async (data) => {
+        try {
+          const inviteUrl = `${appUrl}/accept-invitation/?id=${data.id}`;
+          await sendChurchInvitationEmail(data.email, {
+            church_name: data.organization.name,
+            inviter_name: data.inviter?.user?.name || "A church leader",
+            invite_link: inviteUrl,
+          });
+        } catch (err) {
+          console.error("[auth] Failed to send church invitation email:", err);
+        }
+      },
       organizationHooks: {
         beforeCreateOrganization: async ({ organization, user }) => {
           return {
@@ -192,7 +343,16 @@ export const auth = betterAuth({
         },
 
         afterAddMember: async ({ member, user, organization }) => {
-          //await sendWelcomeEmail(user.email, organization.name);
+          try {
+            await sendWelcomeEmail(user.email, {
+              first_name: user.name,
+              organizationName: organization.name,
+              dashboardUrl: appUrl,
+            });
+          } catch (err) {
+            console.error("[auth] Failed to send welcome email:", err);
+          }
+
           notifyOrg({
             organizationId: organization.id,
             roles: ["admin", "owner"],
@@ -200,6 +360,48 @@ export const auth = betterAuth({
             title: "Um novo membro entrou!",
             description: `${user.name} agora faz parte da organização`,
           });
+        },
+
+        afterUpdateMemberRole: async ({
+          member,
+          previousRole,
+          user,
+          organization,
+        }) => {
+          try {
+            if (member.role === "admin" || member.role === "owner") {
+              await sendPromotedToAdminEmail(user.email, {
+                first_name: user.name,
+                church_name: organization.name,
+                workspace_settings_url: `${appUrl}/${organization.slug}/settings`,
+              });
+            } else {
+              await sendRoleChangedEmail(user.email, {
+                first_name: user.name,
+                church_name: organization.name,
+                new_role: member.role,
+              });
+            }
+          } catch (err) {
+            console.error(
+              "[auth] Failed to send member role updated email:",
+              err,
+            );
+          }
+        },
+
+        afterRemoveMember: async ({ member, user, organization }) => {
+          try {
+            await sendRemovedFromChurchEmail(user.email, {
+              first_name: user.name,
+              church_name: organization.name,
+            });
+          } catch (err) {
+            console.error(
+              "[auth] Failed to send removed from church email:",
+              err,
+            );
+          }
         },
       },
     }),
@@ -217,64 +419,28 @@ export const auth = betterAuth({
   user: {
     changeEmail: {
       enabled: true,
-    },
-    hooks: {
-      before: [
+      sendChangeEmailVerification: async (
         {
-          matcher: (ctx: any) =>
-            ctx.method === "POST" ||
-            ctx.method === "PATCH" ||
-            ctx.method === "PUT",
-          handler: async (ctx: any) => {
-            const body = ctx.body as Record<string, any> | undefined;
-            if (!body?.image || typeof body.image !== "string") {
-              return { context: ctx };
-            }
-
-            const imageValue: string = body.image;
-            let publicUrl: string | undefined;
-
-            try {
-              if (isBase64Image(imageValue)) {
-                // Determine the user ID from context
-                const userId =
-                  (body as any).id ??
-                  (ctx as any).params?.id ??
-                  (ctx as any).session?.user?.id ??
-                  "unknown";
-                publicUrl = await uploadBase64Avatar(userId, imageValue);
-              } else if (isExternalImageUrl(imageValue)) {
-                const userId =
-                  (body as any).id ??
-                  (ctx as any).params?.id ??
-                  (ctx as any).session?.user?.id ??
-                  "unknown";
-                publicUrl = await uploadUrlAvatar(userId, imageValue);
-              }
-            } catch (err) {
-              console.error(
-                "[auth hook] avatar upload failed, keeping original value:",
-                err,
-              );
-              return { context: ctx };
-            }
-
-            if (publicUrl) {
-              return {
-                context: {
-                  ...ctx,
-                  body: {
-                    ...body,
-                    image: publicUrl,
-                  },
-                },
-              };
-            }
-
-            return { context: ctx };
-          },
-        },
-      ],
+          user,
+          newEmail,
+          url,
+          token,
+        }: { user: any; newEmail: string; url: string; token: string },
+        request?: any,
+      ) => {
+        try {
+          await sendChangeEmailVerificationEmail(newEmail, {
+            first_name: user.name,
+            new_email: newEmail,
+            confirm_email_link: url,
+          });
+        } catch (err) {
+          console.error(
+            "[auth] Failed to send change email verification:",
+            err,
+          );
+        }
+      },
     },
   },
   session: {

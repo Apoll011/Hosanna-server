@@ -22,4 +22,9 @@ export const env = {
   directUrl: required("DIRECT_URL"),
   betterAuthSecret: required("BETTER_AUTH_SECRET"),
   publicAppUrl: required("PUBLIC_APP_URL"),
+  resendApiKey: process.env.RESEND_API_KEY,
+  emailFrom:
+    process.env.EMAIL_FROM ??
+    process.env.RESEND_FROM_EMAIL ??
+    "Hosanna <no-reply@hosanna.live>",
 };
