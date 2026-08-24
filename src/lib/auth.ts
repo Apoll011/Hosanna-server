@@ -16,6 +16,12 @@ import {
   uploadBase64Avatar,
   uploadUrlAvatar,
 } from "./supabase.js";
+import {
+  sendPasswordResetEmail,
+  sendVerificationEmail,
+  sendOtpEmail,
+  sendWelcomeEmail,
+} from "../services/email.service.js";
 
 /*import Stripe from "stripe";
 
@@ -116,13 +122,31 @@ export const auth = betterAuth({
     autoSignIn: false,
 
     sendResetPassword: async ({ user, url, token }, request) => {
-      //...
+      try {
+        await sendPasswordResetEmail(user.email, {
+          name: user.name,
+          url,
+          token,
+          expireMinutes: 60,
+        });
+      } catch (err) {
+        console.error("[auth] Failed to send password reset email:", err);
+      }
     },
   },
   emailVerification: {
     sendOnSignUp: true,
     sendVerificationEmail: async ({ user, url, token }, request) => {
-      //...
+      try {
+        await sendVerificationEmail(user.email, {
+          name: user.name,
+          url,
+          token,
+          expireMinutes: 60,
+        });
+      } catch (err) {
+        console.error("[auth] Failed to send verification email:", err);
+      }
     },
   },
   plugins: [
@@ -137,7 +161,17 @@ export const auth = betterAuth({
       issuer: "Hosanna",
 
       otpOptions: {
-        sendOTP: async ({ user, otp }) => {},
+        sendOTP: async ({ user, otp }) => {
+          try {
+            await sendOtpEmail(user.email, {
+              name: user.name,
+              otp,
+              expireMinutes: 10,
+            });
+          } catch (err) {
+            console.error("[auth] Failed to send 2FA OTP email:", err);
+          }
+        },
       },
     }),
     organization({
@@ -192,7 +226,15 @@ export const auth = betterAuth({
         },
 
         afterAddMember: async ({ member, user, organization }) => {
-          //await sendWelcomeEmail(user.email, organization.name);
+          try {
+            await sendWelcomeEmail(user.email, {
+              name: user.name,
+              organizationName: organization.name,
+            });
+          } catch (err) {
+            console.error("[auth] Failed to send welcome email:", err);
+          }
+
           notifyOrg({
             organizationId: organization.id,
             roles: ["admin", "owner"],
