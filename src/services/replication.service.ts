@@ -82,7 +82,7 @@ function toWireDoc(doc: any, collection: ReplicatedCollection): any {
     out.updatedAt = out.updatedAt.toISOString();
   if (out.date instanceof Date) out.date = out.date.toISOString();
   if (out.purgeAt instanceof Date) out.purgeAt = out.purgeAt.toISOString();
-  out.deleted = !!out.deleted;
+  out.isDeleted = !!out.deleted;
   out._deleted = false;
   // Strip server-only fields
   delete out.orgId;
@@ -201,7 +201,7 @@ async function pushSongs(
             path: doc.path,
             tags: doc.tags ?? [],
             song_number: doc.song_number ?? null,
-            deleted: !!doc.deleted,
+            deleted: !!doc.isDeleted,
             purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
           },
         });
@@ -217,7 +217,7 @@ async function pushSongs(
           path: doc.path ?? `${doc.title}.pro`,
           tags: doc.tags ?? [],
           song_number: doc.song_number ?? null,
-          deleted: !!doc.deleted,
+          deleted: !!doc.isDeleted,
           purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
         } as any,
       });
@@ -268,7 +268,7 @@ async function pushFolders(
             parentId: doc.parentId ?? null,
             color: doc.color ?? "default",
             icon: doc.icon ?? "default",
-            deleted: !!doc.deleted,
+            deleted: !!doc.isDeleted,
             purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
           },
         });
@@ -281,7 +281,7 @@ async function pushFolders(
           parentId: doc.parentId ?? null,
           color: doc.color ?? "default",
           icon: doc.icon ?? "default",
-          deleted: !!doc.deleted,
+          deleted: !!doc.isDeleted,
           purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
         } as any,
       });
@@ -323,7 +323,7 @@ async function pushServices(
             notes: doc.notes ?? null,
             elements: doc.elements ?? [],
             archived: doc.archived ?? false,
-            deleted: !!doc.deleted,
+            deleted: !!doc.isDeleted,
             purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
           },
         });
@@ -337,7 +337,7 @@ async function pushServices(
           notes: doc.notes ?? "",
           elements: doc.elements ?? [],
           archived: doc.archived ?? false,
-          deleted: !!doc.deleted,
+          deleted: !!doc.isDeleted,
           purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
         } as any,
       });
