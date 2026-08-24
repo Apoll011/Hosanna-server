@@ -1,7 +1,7 @@
 import type { OrgScopedPrisma } from "../database/prisma.js";
 import { DEFAULT_LOCALE, t } from "../lib/i18n.js";
-import { notifyOrg } from "../utils/notify.js";
 import { AppError } from "../utils/errors.js";
+import { notifyOrg } from "../utils/notify.js";
 
 const BACKUP_VERSION = "2.1";
 
@@ -13,11 +13,10 @@ export class BackupService {
   ) {}
 
   async export() {
-    const [folders, songs, services, settings] = await Promise.all([
+    const [folders, songs, services] = await Promise.all([
       this.db.folder.findMany(),
       this.db.song.findMany(),
       this.db.service.findMany(),
-      this.db.settings.findUnique({ where: { orgId: this.orgId } }),
     ]);
 
     return {
@@ -26,7 +25,6 @@ export class BackupService {
       folders,
       songs,
       services,
-      settings: settings ?? null,
     };
   }
 
@@ -98,15 +96,6 @@ export class BackupService {
           })),
         });
       }
-
-      if (settings) {
-        const { tenantId, orgId, ...settingsData } = settings;
-        await tx.settings.upsert({
-          where: { orgId: this.orgId },
-          update: settingsData,
-          create: settingsData,
-        });
-      }
     });
 
     // Security notification: backup restore wipes and replaces all tenant data.
@@ -116,15 +105,11 @@ export class BackupService {
       roles: ["owner", "admin"],
       type: "backup.restored",
       title: t(this.locale, "notification.backup_restored_title"),
-      description: t(
-        this.locale,
-        "notification.backup_restored_description",
-        {
-          folders: folders.length,
-          songs: songs.length,
-          services: services.length,
-        },
-      ),
+      description: t(this.locale, "notification.backup_restored_description", {
+        folders: folders.length,
+        songs: songs.length,
+        services: services.length,
+      }),
       // TODO: add href
     });
 
