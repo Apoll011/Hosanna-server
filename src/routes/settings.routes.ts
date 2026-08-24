@@ -12,7 +12,7 @@ settingsRouter.get(
   "/",
   assertUser,
   asyncHandler(async (req, res) => {
-    const service = new SettingsService(req.db!, req.orgId!);
+    const service = new SettingsService(req.db!, req.orgId!, req.locale);
     res.json(await service.get());
   }),
 );
@@ -23,7 +23,7 @@ settingsRouter.put(
   requirePermission("settings.manage"),
   validate({ body: updateSettingsSchema }),
   asyncHandler(async (req, res) => {
-    const service = new SettingsService(req.db!, req.orgId!);
+    const service = new SettingsService(req.db!, req.orgId!, req.locale);
     res.json(await service.update(req.body));
   }),
 );

@@ -13,6 +13,8 @@ declare global {
       orgId?: string; //same as workspaceId
       db?: OrgScopedPrisma;
       user?: AuthorizedUser;
+      /** BCP-47 locale resolved from the active organisation's settings. */
+      locale: string;
     }
   }
 }

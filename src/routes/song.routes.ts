@@ -21,7 +21,7 @@ songRouter.get(
   requirePermission("song.access"),
   validate({ query: listSongsQuerySchema }),
   asyncHandler(async (req, res) => {
-    const service = new SongService(req.db!, req.orgId!);
+    const service = new SongService(req.db!, req.orgId!, req.locale);
     res.json(await service.list(req.query as any));
   }),
 );
@@ -32,7 +32,7 @@ songRouter.post(
   requirePermission("song.create"),
   validate({ body: batchCreateSongsSchema }),
   asyncHandler(async (req, res) => {
-    const service = new SongService(req.db!, req.orgId!);
+    const service = new SongService(req.db!, req.orgId!, req.locale);
     res.status(201).json(await service.batchCreate(req.body.songs));
   }),
 );
@@ -43,7 +43,7 @@ songRouter.put(
   requirePermission("song.update"),
   validate({ body: batchTagsSchema }),
   asyncHandler(async (req, res) => {
-    const service = new SongService(req.db!, req.orgId!);
+    const service = new SongService(req.db!, req.orgId!, req.locale);
     res.json(
       await service.batchUpdateTags(
         req.body.songIds,
@@ -60,7 +60,7 @@ songRouter.get(
   requirePermission("song.access"),
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
-    const service = new SongService(req.db!, req.orgId!);
+    const service = new SongService(req.db!, req.orgId!, req.locale);
     res.json(await service.getById(req.params.id));
   }),
 );
@@ -71,7 +71,7 @@ songRouter.get(
   requirePermission("song.access"),
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
-    const service = new SongService(req.db!, req.orgId!);
+    const service = new SongService(req.db!, req.orgId!, req.locale);
     const song = await service.getById(req.params.id);
     const filename = song.path?.split("/").pop() || `${song.title}.pro`;
     res.setHeader("Content-Type", "text/vnd.chordpro; charset=utf-8");
@@ -89,7 +89,7 @@ songRouter.post(
   requirePermission("song.create"),
   validate({ body: createSongSchema }),
   asyncHandler(async (req, res) => {
-    const service = new SongService(req.db!, req.orgId!);
+    const service = new SongService(req.db!, req.orgId!, req.locale);
     res.status(201).json(await service.create(req.body));
   }),
 );
@@ -100,7 +100,7 @@ songRouter.put(
   requirePermission("song.update"),
   validate({ params: idParamSchema, body: updateSongSchema }),
   asyncHandler(async (req, res) => {
-    const service = new SongService(req.db!, req.orgId!);
+    const service = new SongService(req.db!, req.orgId!, req.locale);
     const { updatedAt, ...patch } = req.body;
     res.json(
       await service.update(
@@ -118,7 +118,7 @@ songRouter.delete(
   requirePermission("song.delete"),
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
-    const service = new SongService(req.db!, req.orgId!);
+    const service = new SongService(req.db!, req.orgId!, req.locale);
     await service.delete(req.params.id);
     res.status(204).send();
   }),
@@ -130,7 +130,7 @@ songRouter.put(
   requirePermission("song.update"),
   validate({ params: idParamSchema, body: moveSongSchema }),
   asyncHandler(async (req, res) => {
-    const service = new SongService(req.db!, req.orgId!);
+    const service = new SongService(req.db!, req.orgId!, req.locale);
     const { updatedAt, folderId, newPath } = req.body;
     res.json(
       await service.move(

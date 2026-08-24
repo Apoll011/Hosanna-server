@@ -1,16 +1,19 @@
 import { v4 as uuid } from "uuid";
 import type { OrgScopedPrisma, OrgScopedTx } from "../database/prisma.js";
+import { DEFAULT_LOCALE, t } from "../lib/i18n.js";
 import { FolderRepository } from "../repositories/folder.repository.js";
 import { SongRepository } from "../repositories/song.repository.js";
 import { AppError } from "../utils/errors.js";
 import { notifyOrg } from "../utils/notify.js";
 import { syncCache } from "./syncCache.service.js";
 
-function assertUnchanged(current: { updatedAt: Date }, clientUpdatedAt: Date) {
+function assertUnchanged(
+  current: { updatedAt: Date },
+  clientUpdatedAt: Date,
+  locale: string,
+) {
   if (current.updatedAt.getTime() !== clientUpdatedAt.getTime()) {
-    throw AppError.conflict(
-      "This folder was modified by someone else since you last loaded it.",
-    );
+    throw AppError.conflict(t(locale, "conflict.folder"));
   }
 }
 
@@ -21,6 +24,7 @@ export class FolderService {
   constructor(
     private readonly db: OrgScopedPrisma,
     private readonly tenantId: string,
+    private readonly locale: string = DEFAULT_LOCALE,
   ) {
     this.folderRepo = new FolderRepository(db);
     this.songRepo = new SongRepository(db);
@@ -52,7 +56,7 @@ export class FolderService {
   async getById(id: string) {
     const folder = await this.folderRepo.findById(id);
     if (!folder || folder.deleted)
-      throw AppError.notFound("FOLDER_NOT_FOUND", "Folder does not exist.");
+      throw AppError.notFound("FOLDER_NOT_FOUND", t(this.locale, "folder.not_found"));
     return folder;
   }
 
@@ -84,7 +88,7 @@ export class FolderService {
     icon?: string,
   ) {
     const current = await this.getById(id);
-    assertUnchanged(current, updatedAt);
+    assertUnchanged(current, updatedAt, this.locale);
 
     if (parentId) {
       this.folderRepo.touch(parentId);
@@ -150,8 +154,11 @@ export class FolderService {
       organizationId: this.tenantId,
       roles: ["owner", "admin"],
       type: "library.folder_deleted_with_content",
-      title: `Folder deleted with all its content`,
-      description: `${result.deletedSongs} song(s) and ${result.deletedFolders} sub-folder(s) were permanently removed.`,
+      title: t(this.locale, "notification.folder_deleted_title"),
+      description: t(this.locale, "notification.folder_deleted_description", {
+        songs: result.deletedSongs,
+        folders: result.deletedFolders,
+      }),
     });
 
     return result;
@@ -160,7 +167,7 @@ export class FolderService {
   private async deleteRecursive(id: string, tx: OrgScopedTx) {
     const folder = await tx.folder.findUnique({ where: { id } });
     if (!folder)
-      throw AppError.notFound("FOLDER_NOT_FOUND", "Folder does not exist.");
+      throw AppError.notFound("FOLDER_NOT_FOUND", t(this.locale, "folder.not_found"));
 
     const songs = await tx.song.findMany({ where: { folderId: id } });
     const folders = await tx.folder.findMany({ where: { parentId: id } });

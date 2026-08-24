@@ -6,6 +6,7 @@ import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 import { env } from "./config/env.js";
 import { auth } from "./lib/auth.js";
+import { DEFAULT_LOCALE, t } from "./lib/i18n.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { apiRouter } from "./routes/index.js";
 
@@ -20,7 +21,7 @@ const globalLimiter = rateLimit({
   message: {
     error: {
       code: "TOO_MANY_REQUESTS",
-      message: "Demasiados pedidos. Por favor, tente novamente mais tarde.",
+      message: t(DEFAULT_LOCALE, "error.rate_limit_exceeded"),
     },
   },
   skip: () => env.nodeEnv !== "production",
@@ -49,6 +50,14 @@ app.use(
 
 app.use((req, res, next) => {
   res.setHeader("Cache-Control", "private, no-store");
+  next();
+});
+
+// ── Default locale ──────────────────────────────────────────────────────
+// Ensures req.locale is always defined. The authenticate middleware overwrites
+// this with the org-specific locale for authenticated routes.
+app.use((req, _res, next) => {
+  if (!req.locale) req.locale = DEFAULT_LOCALE;
   next();
 });
 

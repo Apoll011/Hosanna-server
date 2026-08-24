@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import type { OrgScopedPrisma } from "../database/prisma.js";
+import { DEFAULT_LOCALE, t } from "../lib/i18n.js";
 import { SettingsRepository } from "../repositories/settings.repository.js";
 import { AppError } from "../utils/errors.js";
 import { notifyOrg } from "../utils/notify.js";
@@ -11,6 +12,7 @@ export class SettingsService {
   constructor(
     db: OrgScopedPrisma,
     private readonly tenantId: string,
+    private readonly locale: string = DEFAULT_LOCALE,
   ) {
     this.repo = new SettingsRepository(db, tenantId);
   }
@@ -20,7 +22,7 @@ export class SettingsService {
     if (!settings)
       throw AppError.notFound(
         "SETTINGS_NOT_FOUND",
-        "Settings not initialized for this tenant.",
+        t(this.locale, "settings.not_found"),
       );
     return settings;
   }
@@ -36,8 +38,8 @@ export class SettingsService {
       organizationId: this.tenantId,
       roles: ["owner", "admin"],
       type: "settings.changed",
-      title: "Organization settings updated",
-      description: "An admin changed one or more workspace settings.",
+      title: t(this.locale, "notification.settings_changed_title"),
+      description: t(this.locale, "notification.settings_changed_description"),
       // TODO: add href
     });
 

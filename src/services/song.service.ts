@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { OrgScopedPrisma } from "../database/prisma.js";
 import { FolderRepository } from "../repositories/folder.repository.js";
 import { SongRepository } from "../repositories/song.repository.js";
+import { DEFAULT_LOCALE, t } from "../lib/i18n.js";
 import { AppError } from "../utils/errors.js";
 import {
   createSongSchema,
@@ -16,11 +17,13 @@ type CreateInput = z.infer<typeof createSongSchema>;
 
 const KEY_DIRECTIVE = /\{key:\s*([^}]+)\}/i;
 
-function assertUnchanged(current: { updatedAt: Date }, clientUpdatedAt: Date) {
+function assertUnchanged(
+  current: { updatedAt: Date },
+  clientUpdatedAt: Date,
+  locale: string,
+) {
   if (current.updatedAt.getTime() !== clientUpdatedAt.getTime()) {
-    throw AppError.conflict(
-      "This song was modified by someone else since you last loaded it.",
-    );
+    throw AppError.conflict(t(locale, "conflict.song"));
   }
 }
 
@@ -35,6 +38,7 @@ export class SongService {
   constructor(
     private readonly db: OrgScopedPrisma,
     private readonly tenantId: string,
+    private readonly locale: string = DEFAULT_LOCALE,
   ) {
     this.songRepo = new SongRepository(db);
     this.folderRepo = new FolderRepository(db);
@@ -136,7 +140,7 @@ export class SongService {
   async getById(id: string): Promise<Song> {
     const song = await this.songRepo.findById(id);
     if (!song || song.deleted)
-      throw AppError.notFound("SONG_NOT_FOUND", "Song does not exist.");
+      throw AppError.notFound("SONG_NOT_FOUND", t(this.locale, "song.not_found"));
     return song;
   }
 
@@ -153,7 +157,7 @@ export class SongService {
     return this.songRepo.create({
       id: uuid(),
       title: input.title,
-      artist: input.artist || "Unknown Artist",
+      artist: input.artist || t(this.locale, "song.unknown_artist"),
       content: input.content || defaultContent(input.title, input.artist),
       folderId: input.folderId,
       song_number: input.song_number,
@@ -164,14 +168,15 @@ export class SongService {
 
   async batchCreate(items: CreateInput[]) {
     const folderIds = items.map((i) => i.folderId!);
+    const varios = t(this.locale, "song.varios");
     const prepared = await Promise.all(
       items.map(async (item) => ({
         id: uuid(),
         title: item.title,
-        artist: item.artist || "Vários",
+        artist: item.artist || varios,
         content:
           item.content ||
-          `{title: ${item.title}}\n{artist: ${item.artist || "Vários"}}\n\n`,
+          `{title: ${item.title}}\n{artist: ${item.artist || varios}}\n\n`,
         folderId: item.folderId ?? null,
         song_number: item.song_number ?? null,
         path: await this.computePath(item.title, item.folderId, item.path),
@@ -217,7 +222,7 @@ export class SongService {
 
   async update(id: string, updatedAt: Date, patch: Partial<CreateInput>) {
     const current = await this.getById(id);
-    assertUnchanged(current, updatedAt);
+    assertUnchanged(current, updatedAt, this.locale);
 
     const data: Prisma.SongUpdateInput = {};
     if (patch.title !== undefined) data.title = patch.title;
@@ -253,7 +258,7 @@ export class SongService {
     newPath?: string,
   ) {
     const current = await this.getById(id);
-    assertUnchanged(current, updatedAt);
+    assertUnchanged(current, updatedAt, this.locale);
     this.invalidateCache();
     if (current.folderId) {
       this.folderRepo.touch(current.folderId);

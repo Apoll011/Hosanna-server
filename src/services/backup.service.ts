@@ -1,4 +1,5 @@
 import type { OrgScopedPrisma } from "../database/prisma.js";
+import { DEFAULT_LOCALE, t } from "../lib/i18n.js";
 import { notifyOrg } from "../utils/notify.js";
 import { AppError } from "../utils/errors.js";
 
@@ -8,6 +9,7 @@ export class BackupService {
   constructor(
     private readonly db: OrgScopedPrisma,
     private readonly orgId: string,
+    private readonly locale: string = DEFAULT_LOCALE,
   ) {}
 
   async export() {
@@ -37,7 +39,7 @@ export class BackupService {
       throw new AppError(
         400,
         "INVALID_BACKUP_FILE",
-        "Backup file is invalid or corrupted.",
+        t(this.locale, "backup.invalid_file"),
       );
     }
     const { folders = [], songs = [], services = [], settings } = backup;
@@ -45,7 +47,7 @@ export class BackupService {
       throw new AppError(
         400,
         "INVALID_BACKUP_FILE",
-        "Backup file is missing expected arrays.",
+        t(this.locale, "backup.missing_arrays"),
       );
     }
 
@@ -113,8 +115,16 @@ export class BackupService {
       organizationId: this.orgId,
       roles: ["owner", "admin"],
       type: "backup.restored",
-      title: "Backup restored — all data replaced",
-      description: `A full restore imported ${folders.length} folder(s), ${songs.length} song(s), and ${services.length} service(s).`,
+      title: t(this.locale, "notification.backup_restored_title"),
+      description: t(
+        this.locale,
+        "notification.backup_restored_description",
+        {
+          folders: folders.length,
+          songs: songs.length,
+          services: services.length,
+        },
+      ),
       // TODO: add href
     });
 

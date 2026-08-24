@@ -18,7 +18,7 @@ serviceRouter.get(
   requirePermission("service.access"),
   validate({ query: serviceListSchema }),
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!, req.orgId!);
+    const service = new ServiceService(req.db!, req.orgId!, req.locale);
     res.json(await service.list(req.query as any));
   }),
 );
@@ -28,7 +28,7 @@ serviceRouter.get(
   requirePermission("service.access"),
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!, req.orgId!);
+    const service = new ServiceService(req.db!, req.orgId!, req.locale);
     res.json(await service.getByIdSerialized(req.params.id));
   }),
 );
@@ -38,7 +38,7 @@ serviceRouter.post(
   requirePermission("service.create"),
   validate({ body: createServiceSchema }),
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!, req.orgId!);
+    const service = new ServiceService(req.db!, req.orgId!, req.locale);
     res.status(201).json(await service.create(req.body));
   }),
 );
@@ -48,7 +48,7 @@ serviceRouter.put(
   requirePermission("service.update"),
   validate({ params: idParamSchema, body: updateServiceSchema }),
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!, req.orgId!);
+    const service = new ServiceService(req.db!, req.orgId!, req.locale);
     const { updatedAt, ...patch } = req.body;
     res.json(await service.update(req.params.id, updatedAt, patch));
   }),
@@ -59,7 +59,7 @@ serviceRouter.delete(
   requirePermission("service.delete"),
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!, req.orgId!);
+    const service = new ServiceService(req.db!, req.orgId!, req.locale);
     await service.delete(req.params.id);
     res.status(204).send();
   }),
@@ -70,7 +70,7 @@ serviceRouter.put(
   requirePermission("service.update"),
   validate({ params: idParamSchema, body: updateServiceElementsSchema }),
   asyncHandler(async (req, res) => {
-    const service = new ServiceService(req.db!, req.orgId!);
+    const service = new ServiceService(req.db!, req.orgId!, req.locale);
     const { updatedAt, elements } = req.body;
     res.json(await service.updateElements(req.params.id, updatedAt, elements));
   }),
