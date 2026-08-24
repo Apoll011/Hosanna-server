@@ -157,6 +157,32 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
+        before: async (user, context) => {
+          if (user.image && typeof user.image === "string") {
+            try {
+              let publicUrl: string | undefined;
+              if (isBase64Image(user.image)) {
+                publicUrl = await uploadBase64Avatar(user.id, user.image);
+              } else if (isExternalImageUrl(user.image)) {
+                publicUrl = await uploadUrlAvatar(user.id, user.image);
+              }
+
+              if (publicUrl) {
+                return {
+                  data: {
+                    ...user,
+                    image: publicUrl,
+                  },
+                };
+              }
+            } catch (err) {
+              console.error(
+                "[auth databaseHook] avatar upload failed on create:",
+                err,
+              );
+            }
+          }
+        },
         after: async (user) => {
           try {
             await sendWelcomeEmail(user.email, {
@@ -164,6 +190,39 @@ export const auth = betterAuth({
             });
           } catch (err) {
             console.error("[auth] Failed to send user welcome email:", err);
+          }
+        },
+      },
+      update: {
+        before: async (user, context) => {
+          if (user.image && typeof user.image === "string") {
+            try {
+              const userId =
+                (user as any).id ??
+                context?.context?.session?.user?.id ??
+                "unknown";
+
+              let publicUrl: string | undefined;
+              if (isBase64Image(user.image)) {
+                publicUrl = await uploadBase64Avatar(userId, user.image);
+              } else if (isExternalImageUrl(user.image)) {
+                publicUrl = await uploadUrlAvatar(userId, user.image);
+              }
+
+              if (publicUrl) {
+                return {
+                  data: {
+                    ...user,
+                    image: publicUrl,
+                  },
+                };
+              }
+            } catch (err) {
+              console.error(
+                "[auth databaseHook] avatar upload failed on update:",
+                err,
+              );
+            }
           }
         },
       },
@@ -382,64 +441,6 @@ export const auth = betterAuth({
           );
         }
       },
-    },
-    hooks: {
-      before: [
-        {
-          matcher: (ctx: any) =>
-            ctx.method === "POST" ||
-            ctx.method === "PATCH" ||
-            ctx.method === "PUT",
-          handler: async (ctx: any) => {
-            const body = ctx.body as Record<string, any> | undefined;
-            if (!body?.image || typeof body.image !== "string") {
-              return { context: ctx };
-            }
-
-            const imageValue: string = body.image;
-            let publicUrl: string | undefined;
-
-            try {
-              if (isBase64Image(imageValue)) {
-                // Determine the user ID from context
-                const userId =
-                  (body as any).id ??
-                  (ctx as any).params?.id ??
-                  (ctx as any).session?.user?.id ??
-                  "unknown";
-                publicUrl = await uploadBase64Avatar(userId, imageValue);
-              } else if (isExternalImageUrl(imageValue)) {
-                const userId =
-                  (body as any).id ??
-                  (ctx as any).params?.id ??
-                  (ctx as any).session?.user?.id ??
-                  "unknown";
-                publicUrl = await uploadUrlAvatar(userId, imageValue);
-              }
-            } catch (err) {
-              console.error(
-                "[auth hook] avatar upload failed, keeping original value:",
-                err,
-              );
-              return { context: ctx };
-            }
-
-            if (publicUrl) {
-              return {
-                context: {
-                  ...ctx,
-                  body: {
-                    ...body,
-                    image: publicUrl,
-                  },
-                },
-              };
-            }
-
-            return { context: ctx };
-          },
-        },
-      ],
     },
   },
   session: {
