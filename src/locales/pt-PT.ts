@@ -49,11 +49,6 @@ const ptPT = {
     not_found: "O culto não existe.",
   },
 
-  // ── settings ────────────────────────────────────────────────────────────
-  settings: {
-    not_found: "Definições não inicializadas para este tenant.",
-  },
-
   // ── backup ──────────────────────────────────────────────────────────────
   backup: {
     restored_successfully: "Backup restaurado com sucesso",
@@ -71,9 +66,6 @@ const ptPT = {
     backup_restored_title: "Backup restaurado — todos os dados substituídos",
     backup_restored_description:
       "Uma restauração completa importou {{folders}} pasta(s), {{songs}} música(s) e {{services}} culto(s).",
-    settings_changed_title: "Definições da organização atualizadas",
-    settings_changed_description:
-      "Um administrador alterou uma ou mais definições do workspace.",
   },
 } as const;
 

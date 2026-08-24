@@ -50,11 +50,6 @@ const es = {
     not_found: "El culto no existe.",
   },
 
-  // ── settings ────────────────────────────────────────────────────────────
-  settings: {
-    not_found: "Configuración no inicializada para este tenant.",
-  },
-
   // ── backup ──────────────────────────────────────────────────────────────
   backup: {
     restored_successfully: "Copia de seguridad restaurada con éxito",
@@ -74,9 +69,6 @@ const es = {
       "Copia de seguridad restaurada — todos los datos reemplazados",
     backup_restored_description:
       "Una restauración completa importó {{folders}} carpeta(s), {{songs}} canción(es) y {{services}} culto(s).",
-    settings_changed_title: "Configuración de la organización actualizada",
-    settings_changed_description:
-      "Un administrador modificó una o más configuraciones del espacio de trabajo.",
   },
 } as const satisfies I18nKeys;
 
