@@ -21,6 +21,15 @@ import {
   sendVerificationEmail,
   sendOtpEmail,
   sendWelcomeEmail,
+  sendChurchInvitationEmail,
+  sendChangeEmailVerificationEmail,
+  sendPasswordResetSuccessEmail,
+  sendAccountLockedEmail,
+  sendEmailChangedSuccessEmail,
+  sendAccountDeletedEmail,
+  sendPromotedToAdminEmail,
+  sendRoleChangedEmail,
+  sendRemovedFromChurchEmail,
 } from "../services/email.service.js";
 
 /*import Stripe from "stripe";
@@ -133,6 +142,41 @@ export const auth = betterAuth({
         console.error("[auth] Failed to send password reset email:", err);
       }
     },
+    onPasswordReset: async ({ user }, request) => {
+      try {
+        await sendPasswordResetSuccessEmail(user.email, {
+          first_name: user.name,
+        });
+      } catch (err) {
+        console.error("[auth] Failed to send password reset success email:", err);
+      }
+    },
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user) => {
+          try {
+            await sendWelcomeEmail(user.email, {
+              first_name: user.name,
+            });
+          } catch (err) {
+            console.error("[auth] Failed to send user welcome email:", err);
+          }
+        },
+      },
+      delete: {
+        after: async (user) => {
+          try {
+            await sendAccountDeletedEmail(user.email, {
+              first_name: user.name,
+            });
+          } catch (err) {
+            console.error("[auth] Failed to send account deleted email:", err);
+          }
+        },
+      },
+    },
   },
   emailVerification: {
     sendOnSignUp: true,
@@ -182,6 +226,19 @@ export const auth = betterAuth({
         maximumTeams: 50,
       },
       roles,
+      sendInvitationEmail: async (data) => {
+        try {
+          const appUrl = process.env.PUBLIC_APP_URL || "https://hosanna.live";
+          const inviteUrl = `${appUrl}/accept-invitation/${data.id}`;
+          await sendChurchInvitationEmail(data.email, {
+            church_name: data.organization.name,
+            inviter_name: data.inviter?.user?.name || "A church leader",
+            invite_link: inviteUrl,
+          });
+        } catch (err) {
+          console.error("[auth] Failed to send church invitation email:", err);
+        }
+      },
       organizationHooks: {
         beforeCreateOrganization: async ({ organization, user }) => {
           return {
@@ -228,7 +285,7 @@ export const auth = betterAuth({
         afterAddMember: async ({ member, user, organization }) => {
           try {
             await sendWelcomeEmail(user.email, {
-              name: user.name,
+              first_name: user.name,
               organizationName: organization.name,
             });
           } catch (err) {
@@ -242,6 +299,38 @@ export const auth = betterAuth({
             title: "Um novo membro entrou!",
             description: `${user.name} agora faz parte da organização`,
           });
+        },
+
+        afterUpdateMemberRole: async ({ member, previousRole, user, organization }) => {
+          try {
+            const appUrl = process.env.PUBLIC_APP_URL || "https://hosanna.live";
+            if (member.role === "admin" || member.role === "owner") {
+              await sendPromotedToAdminEmail(user.email, {
+                first_name: user.name,
+                church_name: organization.name,
+                workspace_settings_url: `${appUrl}/settings`,
+              });
+            } else {
+              await sendRoleChangedEmail(user.email, {
+                first_name: user.name,
+                church_name: organization.name,
+                new_role: member.role,
+              });
+            }
+          } catch (err) {
+            console.error("[auth] Failed to send member role updated email:", err);
+          }
+        },
+
+        afterRemoveMember: async ({ member, user, organization }) => {
+          try {
+            await sendRemovedFromChurchEmail(user.email, {
+              first_name: user.name,
+              church_name: organization.name,
+            });
+          } catch (err) {
+            console.error("[auth] Failed to send removed from church email:", err);
+          }
         },
       },
     }),
@@ -259,6 +348,28 @@ export const auth = betterAuth({
   user: {
     changeEmail: {
       enabled: true,
+      sendChangeEmailVerification: async (
+        {
+          user,
+          newEmail,
+          url,
+          token,
+        }: { user: any; newEmail: string; url: string; token: string },
+        request?: any,
+      ) => {
+        try {
+          await sendChangeEmailVerificationEmail(newEmail, {
+            first_name: user.name,
+            new_email: newEmail,
+            confirm_email_link: url,
+          });
+        } catch (err) {
+          console.error(
+            "[auth] Failed to send change email verification:",
+            err,
+          );
+        }
+      },
     },
     hooks: {
       before: [

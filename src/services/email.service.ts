@@ -59,16 +59,17 @@ export const CARD_LAYOUT = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f8fafc; margin: 0; padding: 40px 20px; line-height: 1.6; }
-    .card { max-width: 500px; margin: 0 auto; background-color: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; }
-    .header { padding: 24px; text-align: center; border-bottom: 1px solid #e2e8f0; }
-    .header h2 { margin: 0; color: #0284c7; font-size: 24px; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 40px 20px; line-height: 1.6; }
+    .card { max-width: 500px; margin: 0 auto; background-color: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+    .header { padding: 24px; text-align: center; border-bottom: 1px solid #e2e8f0; background-color: #ffffff; }
+    .header h2 { margin: 0; color: #0284c7; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
     .content { padding: 32px 24px; }
     .content.centered { text-align: center; }
-    h3 { margin-top: 0; color: #1d1b20; }
-    p { color: #49454f; margin-bottom: 24px; }
-    .footer { padding: 20px; text-align: center; font-size: 13px; color: #79747e; background-color: #f1f5f9; }
+    h3 { margin-top: 0; color: #1d1b20; font-size: 19px; font-weight: 700; }
+    p { color: #49454f; margin-bottom: 24px; font-size: 15px; }
+    .footer { padding: 20px; text-align: center; font-size: 13px; color: #79747e; background-color: #f1f5f9; border-top: 1px solid #e2e8f0; }
   </style>
 </head>
 <body>
