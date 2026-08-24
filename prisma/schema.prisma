@@ -12,7 +12,7 @@ model Folder {
   orgId String
   org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  name String
+  name  String
   color String @default("default")
   icon  String @default("default")
 
@@ -76,34 +76,6 @@ model Service {
   @@index([orgId])
   @@index([orgId, updatedAt, id], map: "services_replication_idx")
   @@map("services")
-}
-
-model Settings {
-  orgId String       @id
-  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  serverName          String  @default("ChordPro Studio Server")
-  defaultKey          String  @default("G")
-  syncIntervalSeconds Int     @default(30)
-  allowPublicRead     Boolean @default(false)
-  autoBackupEnabled   Boolean @default(true)
-  maxUploadMB         Int     @default(10)
-  /// Minimum number of songs that must be deleted in a single operation before
-  /// owners/admins receive a bulk-delete security notification.
-  bulkDeleteThreshold Int     @default(10)
-
-  serviceTemplateId     String @default("service-default")
-  serviceTemplateConfig Json   @default("{}")
-
-  folderTemplateId     String @default("folder-default")
-  folderTemplateConfig Json   @default("{}")
-
-  songTemplateId     String @default("song-default")
-  songTemplateConfig Json   @default("{}")
-
-  updatedAt DateTime @updatedAt
-
-  @@map("settings")
 }
 
 model User {
@@ -222,7 +194,6 @@ model Organization {
   folders     Folder[]
   songs       Song[]
   services    Service[]
-  settings    Settings[]
 
   @@unique([slug])
   @@map("organization")

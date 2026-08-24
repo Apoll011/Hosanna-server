@@ -1,12 +1,17 @@
 import { Prisma } from "@prisma/client";
 import { NextFunction, Request, Response } from "express";
+import { DEFAULT_LOCALE, t } from "../lib/i18n.js";
 import { AppError } from "../utils/errors.js";
 
 export function notFoundHandler(req: Request, res: Response) {
+  const locale = req.locale ?? DEFAULT_LOCALE;
   res.status(404).json({
     error: {
       code: "ROUTE_NOT_FOUND",
-      message: `No route matches ${req.method} ${req.path}`,
+      message: t(locale, "error.route_not_found", {
+        method: req.method,
+        path: req.path,
+      }),
     },
   });
 }
@@ -18,6 +23,8 @@ export function errorHandler(
   res: Response,
   _next: NextFunction,
 ) {
+  const locale = req.locale ?? DEFAULT_LOCALE;
+
   if (err instanceof AppError) {
     res.status(err.status).json({
       error: {
@@ -34,7 +41,7 @@ export function errorHandler(
       res.status(404).json({
         error: {
           code: "NOT_FOUND",
-          message: "Resource does not exist.",
+          message: t(locale, "error.resource_not_found"),
           data: err.cause,
         },
       });
@@ -44,7 +51,7 @@ export function errorHandler(
       res.status(409).json({
         error: {
           code: "DUPLICATE",
-          message: "A resource with this unique value already exists.",
+          message: t(locale, "error.duplicate_resource"),
           data: err.cause,
         },
       });
@@ -56,7 +63,7 @@ export function errorHandler(
   res.status(500).json({
     error: {
       code: "INTERNAL_ERROR",
-      message: "An unexpected error occurred.",
+      message: t(locale, "error.internal_error"),
       data: err,
     },
   });

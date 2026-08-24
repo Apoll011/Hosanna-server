@@ -1,6 +1,7 @@
 import type { OrgScopedPrisma } from "../database/prisma.js";
-import { notifyOrg } from "../utils/notify.js";
+import { DEFAULT_LOCALE, t } from "../lib/i18n.js";
 import { AppError } from "../utils/errors.js";
+import { notifyOrg } from "../utils/notify.js";
 
 const BACKUP_VERSION = "2.1";
 
@@ -8,14 +9,14 @@ export class BackupService {
   constructor(
     private readonly db: OrgScopedPrisma,
     private readonly orgId: string,
+    private readonly locale: string = DEFAULT_LOCALE,
   ) {}
 
   async export() {
-    const [folders, songs, services, settings] = await Promise.all([
+    const [folders, songs, services] = await Promise.all([
       this.db.folder.findMany(),
       this.db.song.findMany(),
       this.db.service.findMany(),
-      this.db.settings.findUnique({ where: { orgId: this.orgId } }),
     ]);
 
     return {
@@ -24,7 +25,6 @@ export class BackupService {
       folders,
       songs,
       services,
-      settings: settings ?? null,
     };
   }
 
@@ -37,7 +37,7 @@ export class BackupService {
       throw new AppError(
         400,
         "INVALID_BACKUP_FILE",
-        "Backup file is invalid or corrupted.",
+        t(this.locale, "backup.invalid_file"),
       );
     }
     const { folders = [], songs = [], services = [], settings } = backup;
@@ -45,7 +45,7 @@ export class BackupService {
       throw new AppError(
         400,
         "INVALID_BACKUP_FILE",
-        "Backup file is missing expected arrays.",
+        t(this.locale, "backup.missing_arrays"),
       );
     }
 
@@ -96,15 +96,6 @@ export class BackupService {
           })),
         });
       }
-
-      if (settings) {
-        const { tenantId, orgId, ...settingsData } = settings;
-        await tx.settings.upsert({
-          where: { orgId: this.orgId },
-          update: settingsData,
-          create: settingsData,
-        });
-      }
     });
 
     // Security notification: backup restore wipes and replaces all tenant data.
@@ -113,8 +104,12 @@ export class BackupService {
       organizationId: this.orgId,
       roles: ["owner", "admin"],
       type: "backup.restored",
-      title: "Backup restored — all data replaced",
-      description: `A full restore imported ${folders.length} folder(s), ${songs.length} song(s), and ${services.length} service(s).`,
+      title: t(this.locale, "notification.backup_restored_title"),
+      description: t(this.locale, "notification.backup_restored_description", {
+        folders: folders.length,
+        songs: songs.length,
+        services: services.length,
+      }),
       // TODO: add href
     });
 

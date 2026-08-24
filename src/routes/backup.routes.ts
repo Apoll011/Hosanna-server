@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requirePermission } from "../middleware/auth.js";
+import { t } from "../lib/i18n.js";
 import { BackupService } from "../services/backup.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
@@ -10,7 +11,7 @@ backupRouter.get(
   "/",
   requirePermission("backup.export"),
   asyncHandler(async (req, res) => {
-    const service = new BackupService(req.db!, req.orgId!);
+    const service = new BackupService(req.db!, req.orgId!, req.locale);
     res.json(await service.export());
   }),
 );
@@ -20,8 +21,11 @@ backupRouter.post(
   "/restore",
   requirePermission("backup.import"),
   asyncHandler(async (req, res) => {
-    const service = new BackupService(req.db!, req.orgId!);
+    const service = new BackupService(req.db!, req.orgId!, req.locale);
     const result = await service.restore(req.body);
-    res.json({ message: "Backup restored successfully", ...result });
+    res.json({
+      message: t(req.locale, "backup.restored_successfully"),
+      ...result,
+    });
   }),
 );

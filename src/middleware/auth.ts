@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { forOrganization, prisma } from "../database/prisma.js";
 import { auth } from "../lib/auth.js";
+import { DEFAULT_LOCALE } from "../lib/i18n.js";
 import {
   AppRole,
   PermissionString,
@@ -259,6 +260,23 @@ export const authenticate = asyncHandler(
     const teamId = (session as any).activeTeamId || undefined;
     const userRole = await resolveUserRole(sessionData, workspaceId);
 
+    // Resolve locale from org metadata (set in auth.ts beforeCreateOrganization).
+    let locale = DEFAULT_LOCALE;
+    try {
+      const org = await prisma.organization.findUnique({
+        where: { id: workspaceId },
+        select: { metadata: true },
+      });
+      const meta = (org?.metadata as any) ?? {};
+      const orgLocale = meta?.settings?.general?.locale ?? meta?.locale;
+      if (typeof orgLocale === "string" && orgLocale.length > 0) {
+        locale = orgLocale;
+      }
+    } catch {
+      // Non-fatal — keep DEFAULT_LOCALE.
+    }
+
+    req.locale = locale;
     req.orgId = workspaceId;
     req.db = forOrganization(workspaceId);
     req.user = {

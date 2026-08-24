@@ -84,7 +84,9 @@ export const CARD_LAYOUT = `<!DOCTYPE html>
 /**
  * Normalizes variables so templates can be called using snake_case or camelCase aliases.
  */
-function normalizeVariables(variables: Record<string, any> = {}): Record<string, any> {
+function normalizeVariables(
+  variables: Record<string, any> = {},
+): Record<string, any> {
   const currentYear = new Date().getFullYear();
   const normalized: Record<string, any> = {
     year: variables.year ?? currentYear,
@@ -115,8 +117,7 @@ function normalizeVariables(variables: Record<string, any> = {}): Record<string,
   }
   if (normalized.workspace_settings_url === undefined) {
     normalized.workspace_settings_url =
-      variables.workspaceSettingsUrl ||
-      `${normalized.workspace_url}/settings`;
+      variables.workspaceSettingsUrl || `${normalized.workspace_url}/settings`;
   }
 
   // Link normalizations
@@ -154,9 +155,7 @@ function normalizeVariables(variables: Record<string, any> = {}): Record<string,
   }
   if (normalized.lockout_minutes === undefined) {
     normalized.lockout_minutes =
-      variables.lockoutMinutes ||
-      variables.lockout_minutes ||
-      "15";
+      variables.lockoutMinutes || variables.lockout_minutes || "15";
   }
 
   // Church / Org normalization
@@ -190,7 +189,9 @@ export function registerEmailTemplate(
   options?: { defaultSubject?: string; wrapWithLayout?: boolean },
 ): void {
   const wrap = options?.wrapWithLayout ?? true;
-  const fullHtml = wrap ? CARD_LAYOUT.replace("{{{body}}}", bodyContent) : bodyContent;
+  const fullHtml = wrap
+    ? CARD_LAYOUT.replace("{{{body}}}", bodyContent)
+    : bodyContent;
 
   rawTemplates.set(name, {
     subject: options?.defaultSubject,
@@ -483,7 +484,10 @@ export function renderEmailTemplate<T extends Record<string, any>>(
     // If not a pre-registered template name, treat templateNameOrHtml as raw Handlebars HTML
     const htmlToCompile = templateNameOrHtml.includes("<html")
       ? templateNameOrHtml
-      : CARD_LAYOUT.replace("{{{body}}}", `<div class="content">${templateNameOrHtml}</div>`);
+      : CARD_LAYOUT.replace(
+          "{{{body}}}",
+          `<div class="content">${templateNameOrHtml}</div>`,
+        );
 
     compiled = Handlebars.compile(htmlToCompile);
   }

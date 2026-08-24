@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import { ZodError, ZodTypeAny } from "zod";
+import { DEFAULT_LOCALE, t } from "../lib/i18n.js";
 import { AppError } from "../utils/errors.js";
 
 interface Schemas {
@@ -31,9 +32,10 @@ export function validate(schemas: Schemas) {
       next();
     } catch (err) {
       if (err instanceof ZodError) {
+        const locale = req.locale ?? DEFAULT_LOCALE;
         next(
           AppError.badRequest(
-            "Request validation failed.",
+            t(locale, "error.validation_failed"),
             err.issues.map((i) => ({
               path: i.path.join("."),
               message: i.message,

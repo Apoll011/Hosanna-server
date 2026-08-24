@@ -8,6 +8,7 @@ import {
 } from "better-auth/plugins";
 import { inbox } from "better-inbox";
 import { prisma } from "../database/prisma.js";
+import { DEFAULT_LOCALE, t } from "./i18n.js";
 import { roles } from "../permissions/index.js";
 import {
   sendAccountDeletedEmail,
@@ -357,8 +358,14 @@ export const auth = betterAuth({
             organizationId: organization.id,
             roles: ["admin", "owner"],
             type: "org.new_member",
-            title: "Um novo membro entrou!",
-            description: `${user.name} agora faz parte da organização`,
+            title: t(DEFAULT_LOCALE, "notification.new_member_title"),
+            description: t(
+              DEFAULT_LOCALE,
+              "notification.new_member_description",
+              {
+                name: user.name,
+              },
+            ),
           });
         },
 

@@ -1,5 +1,6 @@
 import { v4 as uuid } from "uuid";
 import type { OrgScopedPrisma } from "../database/prisma.js";
+import { DEFAULT_LOCALE, t } from "../lib/i18n.js";
 import {
   ServiceRepository,
   ServiceWithSongs,
@@ -8,11 +9,13 @@ import { SongRepository } from "../repositories/song.repository.js";
 import { AppError } from "../utils/errors.js";
 import { syncCache } from "./syncCache.service.js";
 
-function assertUnchanged(current: { updatedAt: Date }, clientUpdatedAt: Date) {
+function assertUnchanged(
+  current: { updatedAt: Date },
+  clientUpdatedAt: Date,
+  locale: string,
+) {
   if (current.updatedAt.getTime() !== clientUpdatedAt.getTime()) {
-    throw AppError.conflict(
-      "This service was modified by someone else since you last loaded it.",
-    );
+    throw AppError.conflict(t(locale, "conflict.service"));
   }
 }
 
@@ -35,6 +38,7 @@ export class ServiceService {
   constructor(
     private readonly db: OrgScopedPrisma,
     private readonly tenantId: string,
+    private readonly locale: string = DEFAULT_LOCALE,
   ) {
     this.serviceRepo = new ServiceRepository(db);
     this.songRepo = new SongRepository(db);
@@ -52,7 +56,10 @@ export class ServiceService {
   async getById(id: string) {
     const service = await this.serviceRepo.findById(id);
     if (!service || service.deleted)
-      throw AppError.notFound("SERVICE_NOT_FOUND", "Service does not exist.");
+      throw AppError.notFound(
+        "SERVICE_NOT_FOUND",
+        t(this.locale, "service.not_found"),
+      );
     return service;
   }
 
@@ -89,7 +96,7 @@ export class ServiceService {
     },
   ) {
     const current = await this.getById(id);
-    assertUnchanged(current, updatedAt);
+    assertUnchanged(current, updatedAt, this.locale);
 
     await this.serviceRepo.update(id, {
       name: patch.name ?? undefined,
@@ -112,7 +119,7 @@ export class ServiceService {
 
   async updateElements(id: string, updatedAt: Date, elements: any) {
     const current = await this.getById(id);
-    assertUnchanged(current, updatedAt);
+    assertUnchanged(current, updatedAt, this.locale);
     const updated = await this.serviceRepo.update(id, { elements });
     this.invalidateCache();
 
