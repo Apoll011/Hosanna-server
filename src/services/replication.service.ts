@@ -12,9 +12,11 @@
  *       `{ newDocumentState, assumedMasterState? }`. Performs conflict
  *       detection and returns conflicting server documents.
  *
- * Deletions use a tombstone approach: `deleted: true` (Prisma) / `_deleted: true`
- * (RxDB wire format) is set on the document so the change propagates through
- * replication.
+ * Deletions go to trash first: `deleted: true` + `purgeAt` (now + 30 days) is
+ * set and pushed/pulled as regular fields so clients can list/restore trashed
+ * items locally. Rows are only hard-removed once `purgeAt` expires (see
+ * cron.routes.ts `/purge-trash`); RxDB's reserved `_deleted` tombstone is
+ * therefore always `false` on the wire for rows returned by pull.
  */
 
 import { v4 as uuid } from "uuid";
@@ -63,7 +65,15 @@ function getDelegate(db: OrgScopedPrisma, collection: ReplicatedCollection) {
   ] as any;
 }
 
-/** Convert a Prisma row to the RxDB wire format (dates → ISO, deleted → _deleted). */
+/**
+ * Convert a Prisma row to the RxDB wire format (dates → ISO).
+ *
+ * Prisma's `deleted` field is a trash flag (soft-deleted, recoverable until
+ * `purgeAt`), not RxDB's reserved tombstone — it is sent through as a plain
+ * `deleted` property. RxDB's own `_deleted` is reserved for rows that are
+ * truly gone; since a purged row is hard-deleted (see cron.routes.ts) and
+ * therefore never returned here, live rows always report `_deleted: false`.
+ */
 function toWireDoc(doc: any, collection: ReplicatedCollection): any {
   let out: any = { ...doc };
   if (out.createdAt instanceof Date)
@@ -71,9 +81,9 @@ function toWireDoc(doc: any, collection: ReplicatedCollection): any {
   if (out.updatedAt instanceof Date)
     out.updatedAt = out.updatedAt.toISOString();
   if (out.date instanceof Date) out.date = out.date.toISOString();
-  // Prisma field "deleted" → RxDB wire field "_deleted"
-  out._deleted = !!out.deleted;
-  delete out.deleted;
+  if (out.purgeAt instanceof Date) out.purgeAt = out.purgeAt.toISOString();
+  out.isDeleted = !!out.deleted;
+  out._deleted = false;
   // Strip server-only fields
   delete out.orgId;
   delete out.org;
@@ -191,7 +201,8 @@ async function pushSongs(
             path: doc.path,
             tags: doc.tags ?? [],
             song_number: doc.song_number ?? null,
-            deleted: false,
+            deleted: !!doc.isDeleted,
+            purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
           },
         });
       }
@@ -206,7 +217,8 @@ async function pushSongs(
           path: doc.path ?? `${doc.title}.pro`,
           tags: doc.tags ?? [],
           song_number: doc.song_number ?? null,
-          deleted: false,
+          deleted: !!doc.isDeleted,
+          purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
         } as any,
       });
     }
@@ -256,7 +268,8 @@ async function pushFolders(
             parentId: doc.parentId ?? null,
             color: doc.color ?? "default",
             icon: doc.icon ?? "default",
-            deleted: false,
+            deleted: !!doc.isDeleted,
+            purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
           },
         });
       }
@@ -268,7 +281,8 @@ async function pushFolders(
           parentId: doc.parentId ?? null,
           color: doc.color ?? "default",
           icon: doc.icon ?? "default",
-          deleted: false,
+          deleted: !!doc.isDeleted,
+          purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
         } as any,
       });
     }
@@ -309,7 +323,8 @@ async function pushServices(
             notes: doc.notes ?? null,
             elements: doc.elements ?? [],
             archived: doc.archived ?? false,
-            deleted: false,
+            deleted: !!doc.isDeleted,
+            purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
           },
         });
       }
@@ -322,7 +337,8 @@ async function pushServices(
           notes: doc.notes ?? "",
           elements: doc.elements ?? [],
           archived: doc.archived ?? false,
-          deleted: false,
+          deleted: !!doc.isDeleted,
+          purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
         } as any,
       });
     }

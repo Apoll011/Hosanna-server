@@ -113,8 +113,23 @@ export class ServiceService {
 
   async delete(id: string) {
     await this.getById(id);
-    await this.serviceRepo.update(id, { deleted: true });
+    const purgeAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await this.serviceRepo.update(id, { deleted: true, purgeAt });
     this.invalidateCache();
+  }
+
+  async restore(id: string) {
+    const service = await this.serviceRepo.findById(id);
+    if (!service || !service.deleted)
+      throw AppError.notFound("SERVICE_NOT_FOUND", t(this.locale, "service.not_found"));
+    await this.serviceRepo.update(id, { deleted: false, purgeAt: null });
+    this.invalidateCache();
+    return serialize((await this.serviceRepo.findById(id))!);
+  }
+
+  async listTrashed() {
+    const services = await this.serviceRepo.findTrashed();
+    return services.map(serialize);
   }
 
   async updateElements(id: string, updatedAt: Date, elements: any) {

@@ -28,6 +28,7 @@ export class BackupService {
     };
   }
 
+  //TODO: Dont restore the ones to be deleted
   /**
    * Fully replaces the tenant database contents with the supplied backup, inside a
    * single transaction (all-or-nothing).

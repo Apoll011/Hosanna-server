@@ -11,6 +11,13 @@ export class ServiceRepository {
     });
   }
 
+  findTrashed() {
+    return this.db.service.findMany({
+      where: { deleted: true },
+      orderBy: { updatedAt: "desc" },
+    });
+  }
+
   findById(id: string) {
     return this.db.service.findUnique({ where: { id } });
   }
