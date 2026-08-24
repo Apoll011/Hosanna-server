@@ -15,6 +15,7 @@ import {
   healthLimiter,
   syncLimiter,
 } from "../middleware/rateLimit.js";
+import { cifraRouter } from "./cifra.route.js";
 
 export const apiRouter = Router();
 
@@ -27,5 +28,6 @@ apiRouter.use("/songs", apiLimiter, songRouter);
 apiRouter.use("/folders", apiLimiter, folderRouter);
 apiRouter.use("/services", apiLimiter, serviceRouter);
 apiRouter.use("/notifications", apiLimiter, notificationsRouter);
+apiRouter.use("/cifra", apiLimiter, cifraRouter);
 
 apiRouter.use("/backup", backupLimiter, backupRouter);
