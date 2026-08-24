@@ -9,6 +9,19 @@ import {
 import { inbox } from "better-inbox";
 import { prisma } from "../database/prisma.js";
 import { roles } from "../permissions/index.js";
+import {
+  sendAccountDeletedEmail,
+  sendChangeEmailVerificationEmail,
+  sendChurchInvitationEmail,
+  sendOtpEmail,
+  sendPasswordResetEmail,
+  sendPasswordResetSuccessEmail,
+  sendPromotedToAdminEmail,
+  sendRemovedFromChurchEmail,
+  sendRoleChangedEmail,
+  sendVerificationEmail,
+  sendWelcomeEmail,
+} from "../services/email.service.js";
 import { notifyOrg } from "../utils/notify.js";
 import {
   isBase64Image,
@@ -16,21 +29,6 @@ import {
   uploadBase64Avatar,
   uploadUrlAvatar,
 } from "./supabase.js";
-import {
-  sendPasswordResetEmail,
-  sendVerificationEmail,
-  sendOtpEmail,
-  sendWelcomeEmail,
-  sendChurchInvitationEmail,
-  sendChangeEmailVerificationEmail,
-  sendPasswordResetSuccessEmail,
-  sendAccountLockedEmail,
-  sendEmailChangedSuccessEmail,
-  sendAccountDeletedEmail,
-  sendPromotedToAdminEmail,
-  sendRoleChangedEmail,
-  sendRemovedFromChurchEmail,
-} from "../services/email.service.js";
 
 /*import Stripe from "stripe";
 
@@ -104,6 +102,7 @@ const secondaryStorage = redisStorage({
     keyPrefix: "better-auth:", // optional, defaults to "better-auth:"
   })
 */
+const appUrl = process.env.STUDIO_URL || "https://studio.hosanna.live";
 export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.PUBLIC_APP_URL,
@@ -132,10 +131,10 @@ export const auth = betterAuth({
 
     sendResetPassword: async ({ user, url, token }, request) => {
       try {
+        const resetUrl = `${appUrl}/reset-password/?token=${token}`;
         await sendPasswordResetEmail(user.email, {
           name: user.name,
-          url,
-          token,
+          url: resetUrl,
           expireMinutes: 60,
         });
       } catch (err) {
@@ -148,7 +147,10 @@ export const auth = betterAuth({
           first_name: user.name,
         });
       } catch (err) {
-        console.error("[auth] Failed to send password reset success email:", err);
+        console.error(
+          "[auth] Failed to send password reset success email:",
+          err,
+        );
       }
     },
   },
@@ -182,10 +184,10 @@ export const auth = betterAuth({
     sendOnSignUp: true,
     sendVerificationEmail: async ({ user, url, token }, request) => {
       try {
+        const resetUrl = `${appUrl}/verify-email/?token=${token}`;
         await sendVerificationEmail(user.email, {
           name: user.name,
-          url,
-          token,
+          url: resetUrl,
           expireMinutes: 60,
         });
       } catch (err) {
@@ -228,8 +230,7 @@ export const auth = betterAuth({
       roles,
       sendInvitationEmail: async (data) => {
         try {
-          const appUrl = process.env.PUBLIC_APP_URL || "https://hosanna.live";
-          const inviteUrl = `${appUrl}/accept-invitation/${data.id}`;
+          const inviteUrl = `${appUrl}/accept-invitation/?id=${data.id}`;
           await sendChurchInvitationEmail(data.email, {
             church_name: data.organization.name,
             inviter_name: data.inviter?.user?.name || "A church leader",
@@ -287,6 +288,7 @@ export const auth = betterAuth({
             await sendWelcomeEmail(user.email, {
               first_name: user.name,
               organizationName: organization.name,
+              dashboardUrl: appUrl,
             });
           } catch (err) {
             console.error("[auth] Failed to send welcome email:", err);
@@ -301,14 +303,18 @@ export const auth = betterAuth({
           });
         },
 
-        afterUpdateMemberRole: async ({ member, previousRole, user, organization }) => {
+        afterUpdateMemberRole: async ({
+          member,
+          previousRole,
+          user,
+          organization,
+        }) => {
           try {
-            const appUrl = process.env.PUBLIC_APP_URL || "https://hosanna.live";
             if (member.role === "admin" || member.role === "owner") {
               await sendPromotedToAdminEmail(user.email, {
                 first_name: user.name,
                 church_name: organization.name,
-                workspace_settings_url: `${appUrl}/settings`,
+                workspace_settings_url: `${appUrl}/${organization.slug}/settings`,
               });
             } else {
               await sendRoleChangedEmail(user.email, {
@@ -318,7 +324,10 @@ export const auth = betterAuth({
               });
             }
           } catch (err) {
-            console.error("[auth] Failed to send member role updated email:", err);
+            console.error(
+              "[auth] Failed to send member role updated email:",
+              err,
+            );
           }
         },
 
@@ -329,7 +338,10 @@ export const auth = betterAuth({
               church_name: organization.name,
             });
           } catch (err) {
-            console.error("[auth] Failed to send removed from church email:", err);
+            console.error(
+              "[auth] Failed to send removed from church email:",
+              err,
+            );
           }
         },
       },
