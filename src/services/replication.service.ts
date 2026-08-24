@@ -87,6 +87,7 @@ function toWireDoc(doc: any, collection: ReplicatedCollection): any {
   // Strip server-only fields
   delete out.orgId;
   delete out.org;
+  delete out.delete;
 
   if (collection === "folders") {
     out = {
