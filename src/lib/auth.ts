@@ -107,6 +107,7 @@ const appUrl = process.env.STUDIO_URL || "https://studio.hosanna.live";
 export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.PUBLIC_APP_URL,
+  appName: "Hosanna",
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
@@ -124,6 +125,7 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,
+    autoSignInAfterVerification: true,
     resetPasswordTokenExpiresIn: 60 * 60,
     revokeSessionsOnPasswordReset: true,
     minPasswordLength: 6,
