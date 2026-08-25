@@ -121,7 +121,10 @@ export class ServiceService {
   async restore(id: string) {
     const service = await this.serviceRepo.findById(id);
     if (!service || !service.deleted)
-      throw AppError.notFound("SERVICE_NOT_FOUND", t(this.locale, "service.not_found"));
+      throw AppError.notFound(
+        "SERVICE_NOT_FOUND",
+        t(this.locale, "service.not_found"),
+      );
     await this.serviceRepo.update(id, { deleted: false, purgeAt: null });
     this.invalidateCache();
     return serialize((await this.serviceRepo.findById(id))!);

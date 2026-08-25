@@ -8,7 +8,8 @@ import { AppError } from "../utils/errors.js";
 export const cronRouter = Router();
 
 function requireCronSecret(req: Request, _res: Response, next: NextFunction) {
-  if (!env.cronSecret) return next(AppError.forbidden("CRON_SECRET not configured."));
+  if (!env.cronSecret)
+    return next(AppError.forbidden("CRON_SECRET not configured."));
   if (req.headers["authorization"] !== `Bearer ${env.cronSecret}`) {
     return next(AppError.forbidden("Invalid cron secret."));
   }

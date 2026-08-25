@@ -258,7 +258,10 @@ export class SongService {
   async restore(id: string) {
     const song = await this.songRepo.findById(id);
     if (!song || !song.deleted)
-      throw AppError.notFound("SONG_NOT_FOUND", t(this.locale, "song.not_found"));
+      throw AppError.notFound(
+        "SONG_NOT_FOUND",
+        t(this.locale, "song.not_found"),
+      );
     await this.songRepo.update(id, { deleted: false, purgeAt: null });
     this.invalidateCache();
     return this.songRepo.findById(id);

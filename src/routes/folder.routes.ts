@@ -85,13 +85,11 @@ folderRouter.delete(
       action === "delete_songs"
         ? await service.deleteWithContent(req.params.id)
         : await service.deleteMovingContentToRoot(req.params.id);
-    res
-      .status(200)
-      .json({
-        message: t(req.locale, "folder.deleted"),
-        actionUsed: action,
-        ...result,
-      });
+    res.status(200).json({
+      message: t(req.locale, "folder.deleted"),
+      actionUsed: action,
+      ...result,
+    });
   }),
 );
 
