@@ -416,7 +416,7 @@ export const auth = betterAuth({
   advanced: {
     cookiePrefix: "hosanna",
     defaultCookieAttributes: {
-      sameSite: "None",
+      sameSite: (process.env.DEV_MODE || "true") === "true" ? "None" : "Lax",
       secure: true,
     },
     crossSubDomainCookies: {
