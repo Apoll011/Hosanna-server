@@ -23,6 +23,9 @@ import { v4 as uuid } from "uuid";
 import type { OrgScopedPrisma } from "../database/prisma.js";
 import { syncCache } from "./syncCache.service.js";
 
+const MAX_LIMIT = 500;
+const DEFAULT_LIMIT = 100;
+
 // ── Checkpoint type ────────────────────────────────────────────────────────
 export interface ReplicationCheckpoint {
   updatedAt: number; // Unix epoch milliseconds
@@ -34,6 +37,17 @@ export interface PullRequest {
   checkpoint: ReplicationCheckpoint | null;
   limit: number;
 }
+
+interface PullAllRequest {
+  checkpoints: MultiPullCheckpoints;
+  limit?: number;
+}
+
+type MultiPullCheckpoints = Partial<
+  Record<ReplicatedCollection, ReplicationCheckpoint | null>
+>;
+type MultiPullLimits = Partial<Record<ReplicatedCollection, number>> | number;
+type MultiPullResponse<T> = Record<ReplicatedCollection, PullResponse<T>>;
 
 export interface PullResponse<T> {
   documents: T[];
@@ -117,7 +131,13 @@ function hasConflict(serverDoc: any, assumed: any): boolean {
 
 // ── Generic pull ───────────────────────────────────────────────────────────
 
-async function pull(
+export const ALL_COLLECTIONS: ReplicatedCollection[] = [
+  "songs",
+  "folders",
+  "services",
+];
+
+async function pullOne(
   db: OrgScopedPrisma,
   collection: ReplicatedCollection,
   checkpoint: ReplicationCheckpoint | null,
@@ -125,49 +145,70 @@ async function pull(
 ): Promise<PullResponse<any>> {
   const delegate = getDelegate(db, collection);
 
-  const where: any = {};
-  if (checkpoint) {
-    const cpDate = new Date(checkpoint.updatedAt);
-    where.OR = [
-      { updatedAt: { gt: cpDate } },
-      { updatedAt: cpDate, id: { gt: checkpoint.id } },
-    ];
-  }
+  const where = checkpoint
+    ? {
+        OR: [
+          { updatedAt: { gt: new Date(checkpoint.updatedAt) } },
+          {
+            updatedAt: new Date(checkpoint.updatedAt),
+            id: { gt: checkpoint.id },
+          },
+        ],
+      }
+    : {};
 
   const docs = await delegate.findMany({
     where,
     orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
     take: limit,
-
     ...(collection === "folders"
-      ? {
-          include: {
-            _count: {
-              select: {
-                songs: true,
-                children: true,
-              },
-            },
-          },
-        }
+      ? { include: { _count: { select: { songs: true, children: true } } } }
       : {}),
   });
 
-  const newCheckpoint: ReplicationCheckpoint | null =
-    docs.length > 0
-      ? {
-          updatedAt: new Date(docs[docs.length - 1].updatedAt).getTime(),
-          id: docs[docs.length - 1].id,
-        }
-      : checkpoint;
+  const last = docs[docs.length - 1];
+  const newCheckpoint: ReplicationCheckpoint | null = last
+    ? { updatedAt: new Date(last.updatedAt).getTime(), id: last.id }
+    : checkpoint;
 
   return {
-    documents: docs.map((doc: any) => {
-      return toWireDoc(doc, collection);
-    }),
+    documents: docs.map((doc: any) => toWireDoc(doc, collection)),
     checkpoint: newCheckpoint,
   };
 }
+
+/**
+ * Pulls all replicated collections in a single round trip (concurrently),
+ * returning per-collection documents + checkpoints.
+ *
+ * Example:
+ *   const result = await pullAll(db, { songs: songCp, folders: folderCp, services: serviceCp }, 50);
+ *   // => { folders: { documents, checkpoint }, songs: { documents, checkpoint }, services: { documents, checkpoint } }
+ */
+export async function pullAll(
+  db: OrgScopedPrisma,
+  checkpoints: MultiPullCheckpoints = {},
+  limits: MultiPullLimits = DEFAULT_LIMIT,
+  collections: ReplicatedCollection[] = ALL_COLLECTIONS,
+): Promise<MultiPullResponse<any>> {
+  const results = await Promise.all(
+    collections.map((collection) => {
+      const limit =
+        typeof limits === "number"
+          ? limits
+          : (limits[collection] ?? DEFAULT_LIMIT);
+      return pullOne(db, collection, checkpoints[collection] ?? null, limit);
+    }),
+  );
+
+  return collections.reduce((acc, collection, i) => {
+    acc[collection] = results[i];
+    return acc;
+  }, {} as MultiPullResponse<any>);
+}
+
+// Keep the old single-collection signature around for callers that still need it
+export const pull = pullOne;
 
 // ── Push: songs ────────────────────────────────────────────────────────────
 
@@ -363,14 +404,23 @@ export class ReplicationService {
   ) {}
 
   pull(collection: ReplicatedCollection, req: PullRequest) {
-    return pull(
+    return pullOne(
       this.db,
       collection,
       req.checkpoint,
-      Math.min(req.limit || 100, 500),
+      Math.min(req.limit || DEFAULT_LIMIT, MAX_LIMIT),
     );
   }
 
+  pullAll(req: PullAllRequest) {
+    const collections = Object.keys(req.checkpoints).length
+      ? (Object.keys(req.checkpoints) as ReplicatedCollection[])
+      : ALL_COLLECTIONS;
+
+    const limit = Math.min(req.limit || DEFAULT_LIMIT, MAX_LIMIT);
+
+    return pullAll(this.db, req.checkpoints, limit, collections);
+  }
   push(collection: ReplicatedCollection, req: PushRequest<any>) {
     return pushHandlers[collection](this.db, this.tenantId, req.changeRows);
   }
