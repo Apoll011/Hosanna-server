@@ -112,8 +112,6 @@ export const auth = betterAuth({
     provider: "postgresql",
   }),
   trustedOrigins: [
-    "https://dashboard-hosanna.duckdns.org",
-    "https://hosana.vercel.app",
     "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost",
