@@ -33,14 +33,13 @@ app.disable("etag");
 app.use(
   cors({
     origin: [
-      "https://dashboard-hosanna.duckdns.org",
-      "https://hosana.vercel.app",
       "http://localhost:3000",
       "http://localhost:5173",
       "http://localhost",
       "https://localhost",
       "capacitor://localhost",
       "https://studio.hosanna.live",
+      "https://dev-studio.hosanna.live",
       "https://hosanna.live",
     ],
     credentials: true,

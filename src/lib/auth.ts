@@ -8,7 +8,6 @@ import {
 } from "better-auth/plugins";
 import { inbox } from "better-inbox";
 import { prisma } from "../database/prisma.js";
-import { DEFAULT_LOCALE, t } from "./i18n.js";
 import { roles } from "../permissions/index.js";
 import {
   sendAccountDeletedEmail,
@@ -24,6 +23,7 @@ import {
   sendWelcomeEmail,
 } from "../services/email.service.js";
 import { notifyOrg } from "../utils/notify.js";
+import { DEFAULT_LOCALE, t } from "./i18n.js";
 import {
   isBase64Image,
   isExternalImageUrl,
@@ -107,12 +107,11 @@ const appUrl = process.env.STUDIO_URL || "https://studio.hosanna.live";
 export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.PUBLIC_APP_URL,
+  appName: "Hosanna",
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
   trustedOrigins: [
-    "https://dashboard-hosanna.duckdns.org",
-    "https://hosana.vercel.app",
     "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost",
@@ -124,6 +123,7 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,
+    autoSignInAfterVerification: true,
     resetPasswordTokenExpiresIn: 60 * 60,
     revokeSessionsOnPasswordReset: true,
     minPasswordLength: 6,
@@ -416,6 +416,7 @@ export const auth = betterAuth({
   advanced: {
     cookiePrefix: "hosanna",
     defaultCookieAttributes: {
+      sameSite: (process.env.DEV_MODE || "true") === "true" ? "None" : "Lax",
       secure: true,
     },
     crossSubDomainCookies: {
@@ -451,7 +452,7 @@ export const auth = betterAuth({
     },
   },
   session: {
-    freshAge: 60 * 15,
+    freshAge: 0,
     expiresIn: 60 * 60 * 24 * 30,
     updateAge: 60 * 60 * 24,
     cookieCache: {

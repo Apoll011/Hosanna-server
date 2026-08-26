@@ -207,7 +207,10 @@ export class FolderService {
   async restore(id: string) {
     const folder = await this.folderRepo.findById(id);
     if (!folder || !folder.deleted)
-      throw AppError.notFound("FOLDER_NOT_FOUND", t(this.locale, "folder.not_found"));
+      throw AppError.notFound(
+        "FOLDER_NOT_FOUND",
+        t(this.locale, "folder.not_found"),
+      );
     await this.folderRepo.update(id, { deleted: false, purgeAt: null });
     this.invalidateCache();
     return this.folderRepo.findById(id);

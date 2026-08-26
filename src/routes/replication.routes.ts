@@ -12,44 +12,24 @@
  */
 
 import { Router } from "express";
-import { z } from "zod";
 import { can } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import {
+  ALL_COLLECTIONS,
   ReplicatedCollection,
   ReplicationService,
 } from "../services/replication.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { AppError } from "../utils/errors.js";
+import {
+  collectionParamSchema,
+  PullAllBody,
+  pullAllBodySchema,
+  pullBodySchema,
+  pushBodySchema,
+} from "../validators/replication.validators.js";
 
 export const replicationRouter = Router();
-
-// ── Validators ─────────────────────────────────────────────────────────────
-
-const collectionParamSchema = z.object({
-  collection: z.enum(["songs", "folders", "services"]),
-});
-
-const pullBodySchema = z.object({
-  checkpoint: z
-    .object({
-      updatedAt: z.number(),
-      id: z.string(),
-    })
-    .nullable()
-    .optional()
-    .default(null),
-  limit: z.number().int().min(1).max(500).optional().default(100),
-});
-
-const changeRowSchema = z.object({
-  newDocumentState: z.record(z.unknown()),
-  assumedMasterState: z.record(z.unknown()).nullable().optional(),
-});
-
-const pushBodySchema = z.object({
-  changeRows: z.array(changeRowSchema).min(1).max(100),
-});
 
 // ── Permission map ─────────────────────────────────────────────────────────
 
@@ -91,6 +71,32 @@ replicationRouter.post(
   }),
 );
 
+replicationRouter.post(
+  "/pull",
+  validate({ body: pullAllBodySchema }),
+  asyncHandler(async (req, res) => {
+    const { checkpoints, limit } = req.body as PullAllBody;
+
+    const requestedCollections = Object.keys(checkpoints).length
+      ? (Object.keys(checkpoints) as ReplicatedCollection[])
+      : ALL_COLLECTIONS;
+
+    // Check permission for every requested collection up front
+    for (const collection of requestedCollections) {
+      const permKey = PULL_PERMISSIONS[collection];
+      if (!permKey)
+        throw AppError.badRequest(`Invalid collection: ${collection}`);
+      if (!req.user || !can(req.user, permKey as any)) {
+        throw AppError.forbidden();
+      }
+    }
+
+    const service = new ReplicationService(req.db!, req.orgId!);
+    const result = await service.pullAll({ checkpoints, limit });
+
+    res.json(result);
+  }),
+);
 // ── Push endpoint ──────────────────────────────────────────────────────────
 
 replicationRouter.post(
