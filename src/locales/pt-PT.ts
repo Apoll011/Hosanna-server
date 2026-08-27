@@ -67,6 +67,117 @@ const ptPT = {
     backup_restored_description:
       "Uma restauração completa importou {{folders}} pasta(s), {{songs}} música(s) e {{services}} culto(s).",
   },
+
+  // ── email templates ─────────────────────────────────────────────────────
+  email: {
+    footer: "© {{year}} Hosanna. Todos os direitos reservados.",
+    welcome: {
+      subject: "Bem-vindo ao Hosanna",
+      heading: "Bem-vindo ao Hosanna{{#if first_name}}, {{first_name}}{{/if}}!",
+      body1: "Estamos muito felizes por te teres juntado à nossa comunidade. O Hosanna foi criado para te ajudar a ligar-te, envolver-te e crescer com a tua família de fé.",
+      body2: "Para começar, podes explorar o teu painel ou configurar o teu perfil.",
+      cta: "Ir para o Painel",
+    },
+    verify_email: {
+      subject: "Verifica o teu endereço de e-mail - Hosanna",
+      heading: "Verifica o teu endereço de e-mail",
+      body1: "Obrigado por te registares no Hosanna! Por favor, clica no botão abaixo para verificar o teu endereço de e-mail e proteger a tua conta.",
+      cta: "Verificar E-mail",
+      ignore: "Se não criaste uma conta, podes ignorar este e-mail com segurança.",
+    },
+    forgot_password: {
+      subject: "Redefine a tua palavra-passe Hosanna",
+      heading: "Redefine a tua palavra-passe",
+      body1: "Recebemos um pedido para redefinir a palavra-passe da tua conta Hosanna. Clica no botão abaixo para escolher uma nova palavra-passe.",
+      cta: "Redefinir Palavra-passe",
+      expiry: "Este link expira em {{expiry_time}} minutos. Se não solicitaste uma redefinição de palavra-passe, não é necessária nenhuma ação.",
+    },
+    otp: {
+      subject: "O teu código de verificação Hosanna",
+      heading: "Aqui está o teu código de acesso Hosanna:",
+      expiry: "Este código expirará em {{expiry_time}} minutos. Se não solicitaste isto, podes ignorar este e-mail.",
+    },
+    password_reset_success: {
+      subject: "Palavra-passe atualizada com sucesso - Hosanna",
+      heading: "Palavra-passe atualizada com sucesso",
+      body1: "A palavra-passe da tua conta Hosanna foi alterada com sucesso.",
+      body2: "Se não fizeste esta alteração, por favor contacta o teu administrador ou o suporte Hosanna imediatamente para proteger a tua conta.",
+    },
+    account_locked: {
+      subject: "Conta temporariamente bloqueada - Hosanna",
+      heading: "Conta temporariamente bloqueada",
+      body1: "Detetámos várias tentativas de login falhadas na tua conta. Para proteger a tua segurança, a tua conta foi temporariamente bloqueada.",
+      body2: "Poderás tentar iniciar sessão novamente em {{lockout_minutes}} minutos.",
+    },
+    change_email_verification: {
+      subject: "Verifica o teu novo endereço de e-mail - Hosanna",
+      heading: "Verifica o teu novo endereço de e-mail",
+      body1: "Solicitaste recentemente a alteração do endereço de e-mail associado à tua conta Hosanna para {{new_email}}.",
+      body2: "Por favor, clica no botão abaixo para confirmar esta alteração.",
+      cta: "Aprovar Alteração de E-mail",
+    },
+    email_changed_success: {
+      subject: "Endereço de e-mail atualizado - Hosanna",
+      heading: "Endereço de e-mail atualizado",
+      body1: "O e-mail da tua conta foi atualizado com sucesso para {{new_email}}. Usarás este novo e-mail para iniciar sessão a partir de agora.",
+    },
+    account_deleted: {
+      subject: "A tua conta Hosanna foi eliminada",
+      heading: "A tua conta foi eliminada",
+      salutation: "Olá{{#if first_name}} {{first_name}}{{/if}},",
+      body1: "Confirmamos que a tua conta Hosanna foi permanentemente eliminada conforme solicitado. Todos os dados associados foram removidos dos nossos sistemas ativos.",
+      body2: "Lamentamos ver-te partir. Se algum dia precisares de nós no futuro, és sempre bem-vindo de volta.",
+    },
+    church_invitation: {
+      subject: "Foste convidado para te juntares a uma Igreja - Hosanna",
+      heading: "Foste convidado para {{church_name}}",
+      body1: "{{inviter_name}} convidou-te para te juntares ao espaço de trabalho no Hosanna.",
+      body2: "Junta-te a {{church_name}} para te ligar à tua comunidade, ver eventos e manteres-te atualizado.",
+      cta: "Aceitar Convite",
+    },
+    join_request_received: {
+      subject: "Pedido de adesão recebido - Hosanna",
+      heading: "Pedido de adesão recebido",
+      salutation: "Olá{{#if first_name}} {{first_name}}{{/if}},",
+      body1: "O teu pedido para te juntares a {{church_name}} foi recebido e está a aguardar aprovação de um administrador.",
+      body2: "Notificar-te-emos por e-mail assim que um administrador analisar o teu pedido.",
+    },
+    join_request_approved: {
+      subject: "Estás dentro! Pedido de adesão aprovado - Hosanna",
+      heading: "Estás dentro! Pedido aprovado",
+      body1: "Ótimas notícias! O teu pedido para te juntares a {{church_name}} foi aprovado por um administrador.",
+      body2: "Podes agora aceder ao espaço de trabalho, ver membros e participar.",
+      cta: "Entrar no Espaço de Trabalho",
+    },
+    join_request_denied: {
+      subject: "Atualização sobre o teu pedido de adesão - Hosanna",
+      heading: "Atualização sobre o teu pedido de adesão",
+      salutation: "Olá{{#if first_name}} {{first_name}}{{/if}},",
+      body1: "O teu pedido para te juntares a {{church_name}} não pôde ser aprovado neste momento.",
+      body2: "Se achas que se trata de um erro, por favor contacta diretamente a administração da igreja.",
+    },
+    promoted_to_admin: {
+      subject: "És agora um Administrador - Hosanna",
+      heading: "És agora um Administrador",
+      salutation: "Olá{{#if first_name}} {{first_name}}{{/if}},",
+      body1: "O teu papel em {{church_name}} foi atualizado. Passaste a ser Administrador.",
+      body2: "Tens agora acesso às definições do espaço de trabalho, gestão de membros e ferramentas administrativas.",
+      cta: "Ver Painel de Administrador",
+    },
+    role_changed: {
+      subject: "O teu papel foi atualizado - Hosanna",
+      heading: "O teu papel foi atualizado",
+      salutation: "Olá{{#if first_name}} {{first_name}}{{/if}},",
+      body1: "O teu papel em {{church_name}} foi alterado para {{new_role}}.",
+      body2: "Se tiveres alguma questão sobre esta alteração, por favor contacta o administrador do teu espaço de trabalho.",
+    },
+    removed_from_church: {
+      subject: "Acesso ao espaço de trabalho removido - Hosanna",
+      heading: "Acesso ao espaço de trabalho removido",
+      salutation: "Olá{{#if first_name}} {{first_name}}{{/if}},",
+      body1: "Foste removido do espaço de trabalho de {{church_name}}. Já não terás acesso ao painel desta comunidade nem às informações dos membros.",
+    },
+  },
 } as const;
 
 type DeepWriteable<T> = {

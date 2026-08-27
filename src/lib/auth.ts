@@ -104,6 +104,27 @@ const secondaryStorage = redisStorage({
   })
 */
 const appUrl = process.env.STUDIO_URL || "https://studio.hosanna.live";
+
+/** Reads the locale configured in an organisation's settings metadata. */
+async function getOrgLocale(organizationId: string): Promise<string> {
+  try {
+    const org = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { metadata: true },
+    });
+    let meta: any = {};
+    if (typeof org?.metadata === "string") {
+      try {
+        meta = JSON.parse(org.metadata);
+      } catch { /* ignore */ }
+    } else if (org?.metadata && typeof org.metadata === "object") {
+      meta = org.metadata as any;
+    }
+    const locale = meta?.settings?.general?.locale ?? meta?.locale;
+    if (typeof locale === "string" && locale.length > 0) return locale;
+  } catch { /* non-fatal */ }
+  return DEFAULT_LOCALE;
+}
 export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.PUBLIC_APP_URL,
@@ -290,11 +311,13 @@ export const auth = betterAuth({
       roles,
       sendInvitationEmail: async (data) => {
         try {
+          const locale = await getOrgLocale(data.organization.id);
           const inviteUrl = `${appUrl}/accept-invitation/?id=${data.id}`;
           await sendChurchInvitationEmail(data.email, {
             church_name: data.organization.name,
             inviter_name: data.inviter?.user?.name || "A church leader",
             invite_link: inviteUrl,
+            locale,
           });
         } catch (err) {
           console.error("[auth] Failed to send church invitation email:", err);
@@ -345,10 +368,12 @@ export const auth = betterAuth({
 
         afterAddMember: async ({ member, user, organization }) => {
           try {
+            const locale = await getOrgLocale(organization.id);
             await sendWelcomeEmail(user.email, {
               first_name: user.name,
               organizationName: organization.name,
               dashboardUrl: appUrl,
+              locale,
             });
           } catch (err) {
             console.error("[auth] Failed to send welcome email:", err);
@@ -376,17 +401,20 @@ export const auth = betterAuth({
           organization,
         }) => {
           try {
+            const locale = await getOrgLocale(organization.id);
             if (member.role === "admin" || member.role === "owner") {
               await sendPromotedToAdminEmail(user.email, {
                 first_name: user.name,
                 church_name: organization.name,
                 workspace_settings_url: `${appUrl}/${organization.slug}/settings`,
+                locale,
               });
             } else {
               await sendRoleChangedEmail(user.email, {
                 first_name: user.name,
                 church_name: organization.name,
                 new_role: member.role,
+                locale,
               });
             }
           } catch (err) {
@@ -399,9 +427,11 @@ export const auth = betterAuth({
 
         afterRemoveMember: async ({ member, user, organization }) => {
           try {
+            const locale = await getOrgLocale(organization.id);
             await sendRemovedFromChurchEmail(user.email, {
               first_name: user.name,
               church_name: organization.name,
+              locale,
             });
           } catch (err) {
             console.error(
