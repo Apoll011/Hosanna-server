@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import {
   bearer,
+  captcha,
   haveIBeenPwned,
   organization,
   twoFactor,
@@ -116,13 +117,17 @@ async function getOrgLocale(organizationId: string): Promise<string> {
     if (typeof org?.metadata === "string") {
       try {
         meta = JSON.parse(org.metadata);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     } else if (org?.metadata && typeof org.metadata === "object") {
       meta = org.metadata as any;
     }
     const locale = meta?.settings?.general?.locale ?? meta?.locale;
     if (typeof locale === "string" && locale.length > 0) return locale;
-  } catch { /* non-fatal */ }
+  } catch {
+    /* non-fatal */
+  }
   return DEFAULT_LOCALE;
 }
 export const auth = betterAuth({
@@ -280,10 +285,10 @@ export const auth = betterAuth({
     inbox(),
     bearer(),
     haveIBeenPwned(),
-    //captcha({
-    //provider: "cloudflare-turnstile",
-    //secretKey:process.env.TURNSTILE_SECRET_KEY!,
-    //}),
+    captcha({
+      provider: "cloudflare-turnstile",
+      secretKey: process.env.TURNSTILE_SECRET_KEY!,
+    }),
     twoFactor({
       issuer: "Hosanna",
 
