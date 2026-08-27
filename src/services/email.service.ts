@@ -1,5 +1,6 @@
 import Handlebars from "handlebars";
 import { env } from "../config/env.js";
+import { DEFAULT_LOCALE, t } from "../lib/i18n.js";
 import { getResendClient } from "../lib/resend.js";
 
 export interface SendEmailOptions {
@@ -28,6 +29,8 @@ export interface SendTemplateEmailOptions<
   to: string | string[];
   template: string;
   variables: T;
+  /** BCP-47 locale tag (e.g. "pt-PT", "en-US"). Defaults to DEFAULT_LOCALE. */
+  locale?: string;
   subject?: string;
   from?: string;
   cc?: string | string[];
@@ -53,7 +56,7 @@ Handlebars.registerHelper("eq", (a, b) => a === b);
 Handlebars.registerHelper("currentYear", () => new Date().getFullYear());
 
 /**
- * Standard Production Card Layout (🟢 Alpha Must-Have)
+ * Standard Production Card Layout
  */
 export const CARD_LAYOUT = `<!DOCTYPE html>
 <html>
@@ -68,7 +71,10 @@ export const CARD_LAYOUT = `<!DOCTYPE html>
     .content { padding: 32px 24px; }
     .content.centered { text-align: center; }
     h3 { margin-top: 0; color: #1d1b20; font-size: 19px; font-weight: 700; }
-    p { color: #49454f; margin-bottom: 24px; font-size: 15px; }
+    p { color: #49454f; margin-bottom: 20px; font-size: 15px; }
+    .btn-wrap { text-align: center; margin: 4px 0 28px; }
+    .btn { display: inline-block; background-color: #0284c7; color: #ffffff !important; text-decoration: none; padding: 13px 28px; border-radius: 8px; font-weight: 600; font-size: 15px; letter-spacing: 0.2px; }
+    .hint { margin-top: 16px; font-size: 13px !important; color: #79747e !important; }
     .footer { padding: 20px; text-align: center; font-size: 13px; color: #79747e; background-color: #f1f5f9; border-top: 1px solid #e2e8f0; }
   </style>
 </head>
@@ -76,16 +82,153 @@ export const CARD_LAYOUT = `<!DOCTYPE html>
   <div class="card">
     <div class="header"><h2>Hosanna</h2></div>
     {{{body}}}
-    <div class="footer">© {{year}} Hosanna. All rights reserved.</div>
+    <div class="footer">{{t_footer}}</div>
   </div>
 </body>
 </html>`;
 
 /**
+ * Compiles a raw translation string as a mini Handlebars template using the
+ * already-normalized variables so that placeholders like {{first_name}} are filled in.
+ */
+function compileTString(raw: string, vars: Record<string, any>): string {
+  try {
+    return Handlebars.compile(raw)(vars);
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * Builds flat t_* translation variables for all email templates.
+ * They are resolved at render time using the provided locale and normalized vars.
+ */
+function buildTranslationVars(
+  locale: string,
+  normVars: Record<string, any>,
+): Record<string, string> {
+  const loc = locale || DEFAULT_LOCALE;
+  const tc = (key: string) => compileTString(t(loc, key as any), normVars);
+
+  return {
+    // Layout
+    t_footer: tc("email.footer"),
+
+    // 1.1 welcome
+    t_welcome_subject: tc("email.welcome.subject"),
+    t_welcome_heading: tc("email.welcome.heading"),
+    t_welcome_body1: tc("email.welcome.body1"),
+    t_welcome_body2: tc("email.welcome.body2"),
+    t_welcome_cta: tc("email.welcome.cta"),
+
+    // 1.2 verify-email
+    t_verify_email_subject: tc("email.verify_email.subject"),
+    t_verify_email_heading: tc("email.verify_email.heading"),
+    t_verify_email_body1: tc("email.verify_email.body1"),
+    t_verify_email_cta: tc("email.verify_email.cta"),
+    t_verify_email_ignore: tc("email.verify_email.ignore"),
+
+    // 1.3 forgot-password
+    t_forgot_password_subject: tc("email.forgot_password.subject"),
+    t_forgot_password_heading: tc("email.forgot_password.heading"),
+    t_forgot_password_body1: tc("email.forgot_password.body1"),
+    t_forgot_password_cta: tc("email.forgot_password.cta"),
+    t_forgot_password_expiry: tc("email.forgot_password.expiry"),
+
+    // 1.4 otp / 2fa
+    t_otp_subject: tc("email.otp.subject"),
+    t_otp_heading: tc("email.otp.heading"),
+    t_otp_expiry: tc("email.otp.expiry"),
+
+    // 1.5 password-reset-success
+    t_password_reset_success_subject: tc("email.password_reset_success.subject"),
+    t_password_reset_success_heading: tc("email.password_reset_success.heading"),
+    t_password_reset_success_body1: tc("email.password_reset_success.body1"),
+    t_password_reset_success_body2: tc("email.password_reset_success.body2"),
+
+    // 1.6 account-locked
+    t_account_locked_subject: tc("email.account_locked.subject"),
+    t_account_locked_heading: tc("email.account_locked.heading"),
+    t_account_locked_body1: tc("email.account_locked.body1"),
+    t_account_locked_body2: tc("email.account_locked.body2"),
+
+    // 2.1 change-email-verification
+    t_change_email_verification_subject: tc("email.change_email_verification.subject"),
+    t_change_email_verification_heading: tc("email.change_email_verification.heading"),
+    t_change_email_verification_body1: tc("email.change_email_verification.body1"),
+    t_change_email_verification_body2: tc("email.change_email_verification.body2"),
+    t_change_email_verification_cta: tc("email.change_email_verification.cta"),
+
+    // 2.2 email-changed-success
+    t_email_changed_success_subject: tc("email.email_changed_success.subject"),
+    t_email_changed_success_heading: tc("email.email_changed_success.heading"),
+    t_email_changed_success_body1: tc("email.email_changed_success.body1"),
+
+    // 2.3 account-deleted
+    t_account_deleted_subject: tc("email.account_deleted.subject"),
+    t_account_deleted_heading: tc("email.account_deleted.heading"),
+    t_account_deleted_salutation: tc("email.account_deleted.salutation"),
+    t_account_deleted_body1: tc("email.account_deleted.body1"),
+    t_account_deleted_body2: tc("email.account_deleted.body2"),
+
+    // 3.1 church-invitation
+    t_church_invitation_subject: tc("email.church_invitation.subject"),
+    t_church_invitation_heading: tc("email.church_invitation.heading"),
+    t_church_invitation_body1: tc("email.church_invitation.body1"),
+    t_church_invitation_body2: tc("email.church_invitation.body2"),
+    t_church_invitation_cta: tc("email.church_invitation.cta"),
+
+    // 3.2 join-request-received
+    t_join_request_received_subject: tc("email.join_request_received.subject"),
+    t_join_request_received_heading: tc("email.join_request_received.heading"),
+    t_join_request_received_salutation: tc("email.join_request_received.salutation"),
+    t_join_request_received_body1: tc("email.join_request_received.body1"),
+    t_join_request_received_body2: tc("email.join_request_received.body2"),
+
+    // 3.3 join-request-approved
+    t_join_request_approved_subject: tc("email.join_request_approved.subject"),
+    t_join_request_approved_heading: tc("email.join_request_approved.heading"),
+    t_join_request_approved_body1: tc("email.join_request_approved.body1"),
+    t_join_request_approved_body2: tc("email.join_request_approved.body2"),
+    t_join_request_approved_cta: tc("email.join_request_approved.cta"),
+
+    // 3.4 join-request-denied
+    t_join_request_denied_subject: tc("email.join_request_denied.subject"),
+    t_join_request_denied_heading: tc("email.join_request_denied.heading"),
+    t_join_request_denied_salutation: tc("email.join_request_denied.salutation"),
+    t_join_request_denied_body1: tc("email.join_request_denied.body1"),
+    t_join_request_denied_body2: tc("email.join_request_denied.body2"),
+
+    // 3.5 promoted-to-admin
+    t_promoted_to_admin_subject: tc("email.promoted_to_admin.subject"),
+    t_promoted_to_admin_heading: tc("email.promoted_to_admin.heading"),
+    t_promoted_to_admin_salutation: tc("email.promoted_to_admin.salutation"),
+    t_promoted_to_admin_body1: tc("email.promoted_to_admin.body1"),
+    t_promoted_to_admin_body2: tc("email.promoted_to_admin.body2"),
+    t_promoted_to_admin_cta: tc("email.promoted_to_admin.cta"),
+
+    // 3.6 role-changed
+    t_role_changed_subject: tc("email.role_changed.subject"),
+    t_role_changed_heading: tc("email.role_changed.heading"),
+    t_role_changed_salutation: tc("email.role_changed.salutation"),
+    t_role_changed_body1: tc("email.role_changed.body1"),
+    t_role_changed_body2: tc("email.role_changed.body2"),
+
+    // 3.7 removed-from-church
+    t_removed_from_church_subject: tc("email.removed_from_church.subject"),
+    t_removed_from_church_heading: tc("email.removed_from_church.heading"),
+    t_removed_from_church_salutation: tc("email.removed_from_church.salutation"),
+    t_removed_from_church_body1: tc("email.removed_from_church.body1"),
+  };
+}
+
+/**
  * Normalizes variables so templates can be called using snake_case or camelCase aliases.
+ * Also injects t_* translation variables for the given locale.
  */
 function normalizeVariables(
   variables: Record<string, any> = {},
+  locale: string = DEFAULT_LOCALE,
 ): Record<string, any> {
   const currentYear = new Date().getFullYear();
   const normalized: Record<string, any> = {
@@ -177,6 +320,10 @@ function normalizeVariables(
     normalized.new_email = variables.newEmail || variables.email || "";
   }
 
+  // Inject translation variables — built after data vars are ready so they can interpolate them
+  const tVars = buildTranslationVars(locale, normalized);
+  Object.assign(normalized, tVars);
+
   return normalized;
 }
 
@@ -217,6 +364,7 @@ export function getRegisteredTemplates(): string[] {
 
 // ---------------------------------------------------------------------------
 // Register 🟢 Alpha (Must Have) Templates
+// All text content is provided via t_* translation variables injected at render time.
 // ---------------------------------------------------------------------------
 
 // 1. Authentication Emails
@@ -225,28 +373,32 @@ export function getRegisteredTemplates(): string[] {
 registerEmailTemplate(
   "welcome",
   `
-    <div class="content">
-      <h3>Welcome to Hosanna{{#if first_name}}, {{first_name}}{{/if}}!</h3>
-      <p>We are thrilled to have you join our community. Hosanna is designed to help you connect, engage, and grow with your church family effortlessly.</p>
-      <p>To get started, you can explore your dashboard or set up your profile.</p>
-      <a href="{{dashboard_url}}" style="display: inline-block; background-color: #0284c7; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600;">Go to Dashboard</a>
+    <div class="content centered">
+      <h3>{{t_welcome_heading}}</h3>
+      <p>{{t_welcome_body1}}</p>
+      <p>{{t_welcome_body2}}</p>
+      <div class="btn-wrap">
+        <a href="{{dashboard_url}}" class="btn">{{t_welcome_cta}}</a>
+      </div>
     </div>
   `,
-  { defaultSubject: "Welcome to Hosanna" },
+  { defaultSubject: "{{t_welcome_subject}}" },
 );
 
 // 1.2 Verify your email address (Action Button)
 registerEmailTemplate(
   "verify-email",
   `
-    <div class="content centered" style="text-align: center;">
-      <h3>Verify your email address</h3>
-      <p>Thanks for signing up for Hosanna! Please click the button below to verify your email address and secure your account.</p>
-      <a href="{{verify_link}}" style="display: inline-block; background-color: #0284c7; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600;">Verify Email</a>
-      <p style="margin-top: 24px; font-size: 13px; color: #79747e;">If you didn't create an account, you can safely ignore this email.</p>
+    <div class="content centered">
+      <h3>{{t_verify_email_heading}}</h3>
+      <p>{{t_verify_email_body1}}</p>
+      <div class="btn-wrap">
+        <a href="{{verify_link}}" class="btn">{{t_verify_email_cta}}</a>
+      </div>
+      <p class="hint">{{t_verify_email_ignore}}</p>
     </div>
   `,
-  { defaultSubject: "Verify your email address - Hosanna" },
+  { defaultSubject: "{{t_verify_email_subject}}" },
 );
 // Register alias
 rawTemplates.set("verification", rawTemplates.get("verify-email")!);
@@ -256,14 +408,16 @@ templateCache.set("verification", templateCache.get("verify-email")!);
 registerEmailTemplate(
   "forgot-password",
   `
-    <div class="content centered" style="text-align: center;">
-      <h3>Reset your password</h3>
-      <p>We received a request to reset the password for your Hosanna account. Click the button below to choose a new password.</p>
-      <a href="{{reset_link}}" style="display: inline-block; background-color: #0284c7; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600;">Reset Password</a>
-      <p style="margin-top: 24px; font-size: 13px; color: #79747e;">This link will expire in {{expiry_time}} minutes. If you did not request a password reset, no further action is required.</p>
+    <div class="content centered">
+      <h3>{{t_forgot_password_heading}}</h3>
+      <p>{{t_forgot_password_body1}}</p>
+      <div class="btn-wrap">
+        <a href="{{reset_link}}" class="btn">{{t_forgot_password_cta}}</a>
+      </div>
+      <p class="hint">{{t_forgot_password_expiry}}</p>
     </div>
   `,
-  { defaultSubject: "Reset your Hosanna password" },
+  { defaultSubject: "{{t_forgot_password_subject}}" },
 );
 // Register alias
 rawTemplates.set("password-reset", rawTemplates.get("forgot-password")!);
@@ -282,12 +436,12 @@ registerEmailTemplate(
   </style>
 </head>
 <body>
-  <p>Here is your Hosanna login code:</p>
+  <p>{{t_otp_heading}}</p>
   <div class="code">{{2fa_code}}</div>
-  <p style="color: #79747e; font-size: 13px;">This code will expire in {{#if expiry_time}}{{expiry_time}}{{else}}10{{/if}} minutes. If you didn't request this, you can ignore this email.</p>
+  <p style="color: #79747e; font-size: 13px;">{{t_otp_expiry}}</p>
 </body>
 </html>`,
-  { defaultSubject: "Your Hosanna verification code", wrapWithLayout: false },
+  { defaultSubject: "{{t_otp_subject}}", wrapWithLayout: false },
 );
 // Register aliases
 rawTemplates.set("otp", rawTemplates.get("2fa-code")!);
@@ -300,12 +454,12 @@ registerEmailTemplate(
   "password-reset-success",
   `
     <div class="content">
-      <h3>Password updated successfully</h3>
-      <p>Your Hosanna account password has been successfully changed.</p>
-      <p>If you did not make this change, please contact your administrator or Hosanna support immediately to secure your account.</p>
+      <h3>{{t_password_reset_success_heading}}</h3>
+      <p>{{t_password_reset_success_body1}}</p>
+      <p>{{t_password_reset_success_body2}}</p>
     </div>
   `,
-  { defaultSubject: "Password updated successfully - Hosanna" },
+  { defaultSubject: "{{t_password_reset_success_subject}}" },
 );
 
 // 1.6 Too many login attempts (Account locked)
@@ -313,12 +467,12 @@ registerEmailTemplate(
   "account-locked",
   `
     <div class="content">
-      <h3>Account temporarily locked</h3>
-      <p>We detected multiple failed login attempts on your account. To protect your security, your account has been temporarily locked.</p>
-      <p>You will be able to try logging in again in <strong>{{lockout_minutes}} minutes</strong>.</p>
+      <h3>{{t_account_locked_heading}}</h3>
+      <p>{{t_account_locked_body1}}</p>
+      <p>{{t_account_locked_body2}}</p>
     </div>
   `,
-  { defaultSubject: "Account temporarily locked - Hosanna" },
+  { defaultSubject: "{{t_account_locked_subject}}" },
 );
 
 // ---------------------------------------------------------------------------
@@ -329,14 +483,16 @@ registerEmailTemplate(
 registerEmailTemplate(
   "change-email-verification",
   `
-    <div class="content">
-      <h3>Verify your new email address</h3>
-      <p>You recently requested to change the email address associated with your Hosanna account to <strong>{{new_email}}</strong>.</p>
-      <p>Please click the button below to confirm this change.</p>
-      <a href="{{confirm_email_link}}" style="display: inline-block; background-color: #0284c7; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600;">Approve Email Change</a>
+    <div class="content centered">
+      <h3>{{t_change_email_verification_heading}}</h3>
+      <p>{{t_change_email_verification_body1}}</p>
+      <p>{{t_change_email_verification_body2}}</p>
+      <div class="btn-wrap">
+        <a href="{{confirm_email_link}}" class="btn">{{t_change_email_verification_cta}}</a>
+      </div>
     </div>
   `,
-  { defaultSubject: "Verify your new email address - Hosanna" },
+  { defaultSubject: "{{t_change_email_verification_subject}}" },
 );
 
 // 2.2 Email changed successfully
@@ -344,11 +500,11 @@ registerEmailTemplate(
   "email-changed-success",
   `
     <div class="content">
-      <h3>Email address updated</h3>
-      <p>Your account email has been successfully updated to <strong>{{new_email}}</strong>. You will use this new email to log in moving forward.</p>
+      <h3>{{t_email_changed_success_heading}}</h3>
+      <p>{{t_email_changed_success_body1}}</p>
     </div>
   `,
-  { defaultSubject: "Email address updated - Hosanna" },
+  { defaultSubject: "{{t_email_changed_success_subject}}" },
 );
 
 // 2.3 Account deleted (Goodbye)
@@ -356,13 +512,13 @@ registerEmailTemplate(
   "account-deleted",
   `
     <div class="content">
-      <h3>Your account has been deleted</h3>
-      <p>Hi{{#if first_name}} {{first_name}}{{/if}},</p>
-      <p>We confirm that your Hosanna account has been permanently deleted as requested. All associated data has been removed from our active systems.</p>
-      <p>We're sad to see you go. If you ever need us in the future, you're always welcome back.</p>
+      <h3>{{t_account_deleted_heading}}</h3>
+      <p>{{t_account_deleted_salutation}}</p>
+      <p>{{t_account_deleted_body1}}</p>
+      <p>{{t_account_deleted_body2}}</p>
     </div>
   `,
-  { defaultSubject: "Your Hosanna account has been deleted" },
+  { defaultSubject: "{{t_account_deleted_subject}}" },
 );
 
 // ---------------------------------------------------------------------------
@@ -373,14 +529,16 @@ registerEmailTemplate(
 registerEmailTemplate(
   "church-invitation",
   `
-    <div class="content">
-      <h3>You've been invited to {{church_name}}</h3>
-      <p><strong>{{inviter_name}}</strong> has invited you to join their workspace on Hosanna.</p>
-      <p>Join {{church_name}} to connect with your community, view events, and stay up to date.</p>
-      <a href="{{invite_link}}" style="display: inline-block; background-color: #0284c7; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; margin-top: 10px;">Accept Invitation</a>
+    <div class="content centered">
+      <h3>{{t_church_invitation_heading}}</h3>
+      <p>{{t_church_invitation_body1}}</p>
+      <p>{{t_church_invitation_body2}}</p>
+      <div class="btn-wrap">
+        <a href="{{invite_link}}" class="btn">{{t_church_invitation_cta}}</a>
+      </div>
     </div>
   `,
-  { defaultSubject: "You've been invited to join a church - Hosanna" },
+  { defaultSubject: "{{t_church_invitation_subject}}" },
 );
 // Register alias
 rawTemplates.set("org-invitation", rawTemplates.get("church-invitation")!);
@@ -391,27 +549,29 @@ registerEmailTemplate(
   "join-request-received",
   `
     <div class="content">
-      <h3>Join request received</h3>
-      <p>Hi{{#if first_name}} {{first_name}}{{/if}},</p>
-      <p>Your request to join <strong>{{church_name}}</strong> has been received and is currently pending admin approval.</p>
-      <p>We will notify you via email as soon as an admin reviews your request.</p>
+      <h3>{{t_join_request_received_heading}}</h3>
+      <p>{{t_join_request_received_salutation}}</p>
+      <p>{{t_join_request_received_body1}}</p>
+      <p>{{t_join_request_received_body2}}</p>
     </div>
   `,
-  { defaultSubject: "Join request received - Hosanna" },
+  { defaultSubject: "{{t_join_request_received_subject}}" },
 );
 
 // 3.3 Your request has been approved (Action Button)
 registerEmailTemplate(
   "join-request-approved",
   `
-    <div class="content">
-      <h3>You're in! Request approved</h3>
-      <p>Great news! Your request to join <strong>{{church_name}}</strong> has been approved by an admin.</p>
-      <p>You can now access the workspace, view members, and get involved.</p>
-      <a href="{{workspace_url}}" style="display: inline-block; background-color: #0284c7; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; margin-top: 10px;">Join Workspace</a>
+    <div class="content centered">
+      <h3>{{t_join_request_approved_heading}}</h3>
+      <p>{{t_join_request_approved_body1}}</p>
+      <p>{{t_join_request_approved_body2}}</p>
+      <div class="btn-wrap">
+        <a href="{{workspace_url}}" class="btn">{{t_join_request_approved_cta}}</a>
+      </div>
     </div>
   `,
-  { defaultSubject: "You're in! Join request approved - Hosanna" },
+  { defaultSubject: "{{t_join_request_approved_subject}}" },
 );
 
 // 3.4 Your request has been denied
@@ -419,28 +579,30 @@ registerEmailTemplate(
   "join-request-denied",
   `
     <div class="content">
-      <h3>Update on your join request</h3>
-      <p>Hi{{#if first_name}} {{first_name}}{{/if}},</p>
-      <p>Your request to join <strong>{{church_name}}</strong> could not be approved at this time.</p>
-      <p>If you believe this was a mistake, please reach out directly to the church administration.</p>
+      <h3>{{t_join_request_denied_heading}}</h3>
+      <p>{{t_join_request_denied_salutation}}</p>
+      <p>{{t_join_request_denied_body1}}</p>
+      <p>{{t_join_request_denied_body2}}</p>
     </div>
   `,
-  { defaultSubject: "Update on your join request - Hosanna" },
+  { defaultSubject: "{{t_join_request_denied_subject}}" },
 );
 
 // 3.5 You've been promoted to Admin
 registerEmailTemplate(
   "promoted-to-admin",
   `
-    <div class="content">
-      <h3>You are now an Admin</h3>
-      <p>Hi{{#if first_name}} {{first_name}}{{/if}},</p>
-      <p>Your role in <strong>{{church_name}}</strong> has been updated. You are now an <strong>Admin</strong>.</p>
-      <p>You now have access to workspace settings, member management, and administrative tools.</p>
-      <a href="{{workspace_settings_url}}" style="display: inline-block; background-color: #0284c7; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; margin-top: 10px;">View Admin Dashboard</a>
+    <div class="content centered">
+      <h3>{{t_promoted_to_admin_heading}}</h3>
+      <p>{{t_promoted_to_admin_salutation}}</p>
+      <p>{{t_promoted_to_admin_body1}}</p>
+      <p>{{t_promoted_to_admin_body2}}</p>
+      <div class="btn-wrap">
+        <a href="{{workspace_settings_url}}" class="btn">{{t_promoted_to_admin_cta}}</a>
+      </div>
     </div>
   `,
-  { defaultSubject: "You are now an Admin - Hosanna" },
+  { defaultSubject: "{{t_promoted_to_admin_subject}}" },
 );
 
 // 3.6 Your role has changed
@@ -448,13 +610,13 @@ registerEmailTemplate(
   "role-changed",
   `
     <div class="content">
-      <h3>Your role has been updated</h3>
-      <p>Hi{{#if first_name}} {{first_name}}{{/if}},</p>
-      <p>Your role in <strong>{{church_name}}</strong> has been changed to <strong>{{new_role}}</strong>.</p>
-      <p>If you have any questions about this change, please contact your workspace administrator.</p>
+      <h3>{{t_role_changed_heading}}</h3>
+      <p>{{t_role_changed_salutation}}</p>
+      <p>{{t_role_changed_body1}}</p>
+      <p>{{t_role_changed_body2}}</p>
     </div>
   `,
-  { defaultSubject: "Your role has been updated - Hosanna" },
+  { defaultSubject: "{{t_role_changed_subject}}" },
 );
 
 // 3.7 You've been removed from the church
@@ -462,12 +624,12 @@ registerEmailTemplate(
   "removed-from-church",
   `
     <div class="content">
-      <h3>Workspace access removed</h3>
-      <p>Hi{{#if first_name}} {{first_name}}{{/if}},</p>
-      <p>You have been removed from the <strong>{{church_name}}</strong> workspace. You will no longer have access to this community's dashboard or member information.</p>
+      <h3>{{t_removed_from_church_heading}}</h3>
+      <p>{{t_removed_from_church_salutation}}</p>
+      <p>{{t_removed_from_church_body1}}</p>
     </div>
   `,
-  { defaultSubject: "Workspace access removed - Hosanna" },
+  { defaultSubject: "{{t_removed_from_church_subject}}" },
 );
 
 /**
@@ -476,8 +638,9 @@ registerEmailTemplate(
 export function renderEmailTemplate<T extends Record<string, any>>(
   templateNameOrHtml: string,
   variables: T,
+  locale: string = DEFAULT_LOCALE,
 ): string {
-  const normVars = normalizeVariables(variables);
+  const normVars = normalizeVariables(variables, locale);
   let compiled = templateCache.get(templateNameOrHtml);
 
   if (!compiled) {
@@ -553,6 +716,7 @@ export async function sendEmail(options: SendEmailOptions) {
  * await sendTemplateEmail({
  *   to: 'user@example.com',
  *   template: 'welcome',
+ *   locale: 'pt-PT',
  *   variables: { first_name: 'Alex', dashboard_url: 'https://hosanna.live' }
  * });
  * ```
@@ -560,7 +724,8 @@ export async function sendEmail(options: SendEmailOptions) {
 export async function sendTemplateEmail<
   T extends Record<string, any> = Record<string, any>,
 >(options: SendTemplateEmailOptions<T>) {
-  const normVars = normalizeVariables(options.variables);
+  const locale = options.locale || DEFAULT_LOCALE;
+  const normVars = normalizeVariables(options.variables, locale);
   const registered = rawTemplates.get(options.template);
 
   // Dynamic subject resolution from template
@@ -572,7 +737,7 @@ export async function sendTemplateEmail<
     subject = (normVars as any).subject || "Hosanna Notification";
   }
 
-  const html = renderEmailTemplate(options.template, normVars);
+  const html = renderEmailTemplate(options.template, normVars, locale);
 
   return sendEmail({
     to: options.to,
@@ -606,12 +771,14 @@ export async function sendWelcomeEmail(
     dashboardUrl?: string;
     organizationName?: string;
     scheduledAt?: string | Date;
+    locale?: string;
   },
 ) {
   return sendTemplateEmail({
     to,
     template: "welcome",
     variables: data,
+    locale: data.locale,
     scheduledAt: data.scheduledAt,
   });
 }
@@ -633,12 +800,14 @@ export async function sendVerificationEmail(
     expiryTime?: number | string;
     expireMinutes?: number | string;
     scheduledAt?: string | Date;
+    locale?: string;
   },
 ) {
   return sendTemplateEmail({
     to,
     template: "verify-email",
     variables: data,
+    locale: data.locale,
     scheduledAt: data.scheduledAt,
   });
 }
@@ -660,12 +829,14 @@ export async function sendPasswordResetEmail(
     firstName?: string;
     name?: string;
     scheduledAt?: string | Date;
+    locale?: string;
   },
 ) {
   return sendTemplateEmail({
     to,
     template: "forgot-password",
     variables: data,
+    locale: data.locale,
     scheduledAt: data.scheduledAt,
   });
 }
@@ -687,12 +858,14 @@ export async function sendOtpEmail(
     firstName?: string;
     name?: string;
     scheduledAt?: string | Date;
+    locale?: string;
   },
 ) {
   return sendTemplateEmail({
     to,
     template: "2fa-code",
     variables: data,
+    locale: data.locale,
     scheduledAt: data.scheduledAt,
   });
 }
@@ -707,12 +880,14 @@ export async function sendPasswordResetSuccessEmail(
     firstName?: string;
     name?: string;
     scheduledAt?: string | Date;
+    locale?: string;
   },
 ) {
   return sendTemplateEmail({
     to,
     template: "password-reset-success",
     variables: data || {},
+    locale: data?.locale,
     scheduledAt: data?.scheduledAt,
   });
 }
@@ -729,12 +904,14 @@ export async function sendAccountLockedEmail(
     firstName?: string;
     name?: string;
     scheduledAt?: string | Date;
+    locale?: string;
   },
 ) {
   return sendTemplateEmail({
     to,
     template: "account-locked",
     variables: data,
+    locale: data.locale,
     scheduledAt: data.scheduledAt,
   });
 }
@@ -754,12 +931,14 @@ export async function sendChangeEmailVerificationEmail(
     firstName?: string;
     name?: string;
     scheduledAt?: string | Date;
+    locale?: string;
   },
 ) {
   return sendTemplateEmail({
     to,
     template: "change-email-verification",
     variables: data,
+    locale: data.locale,
     scheduledAt: data.scheduledAt,
   });
 }
@@ -776,12 +955,14 @@ export async function sendEmailChangedSuccessEmail(
     firstName?: string;
     name?: string;
     scheduledAt?: string | Date;
+    locale?: string;
   },
 ) {
   return sendTemplateEmail({
     to,
     template: "email-changed-success",
     variables: data,
+    locale: data.locale,
     scheduledAt: data.scheduledAt,
   });
 }
@@ -796,12 +977,14 @@ export async function sendAccountDeletedEmail(
     firstName?: string;
     name?: string;
     scheduledAt?: string | Date;
+    locale?: string;
   },
 ) {
   return sendTemplateEmail({
     to,
     template: "account-deleted",
     variables: data,
+    locale: data.locale,
     scheduledAt: data.scheduledAt,
   });
 }
@@ -819,12 +1002,14 @@ export async function sendChurchInvitationEmail(
     invite_link: string;
     inviteLink?: string;
     scheduledAt?: string | Date;
+    locale?: string;
   },
 ) {
   return sendTemplateEmail({
     to,
     template: "church-invitation",
     variables: data,
+    locale: data.locale,
     scheduledAt: data.scheduledAt,
   });
 }
@@ -841,12 +1026,14 @@ export async function sendJoinRequestReceivedEmail(
     firstName?: string;
     name?: string;
     scheduledAt?: string | Date;
+    locale?: string;
   },
 ) {
   return sendTemplateEmail({
     to,
     template: "join-request-received",
     variables: data,
+    locale: data.locale,
     scheduledAt: data.scheduledAt,
   });
 }
@@ -862,12 +1049,14 @@ export async function sendJoinRequestApprovedEmail(
     workspace_url: string;
     workspaceUrl?: string;
     scheduledAt?: string | Date;
+    locale?: string;
   },
 ) {
   return sendTemplateEmail({
     to,
     template: "join-request-approved",
     variables: data,
+    locale: data.locale,
     scheduledAt: data.scheduledAt,
   });
 }
@@ -884,12 +1073,14 @@ export async function sendJoinRequestDeniedEmail(
     firstName?: string;
     name?: string;
     scheduledAt?: string | Date;
+    locale?: string;
   },
 ) {
   return sendTemplateEmail({
     to,
     template: "join-request-denied",
     variables: data,
+    locale: data.locale,
     scheduledAt: data.scheduledAt,
   });
 }
@@ -908,12 +1099,14 @@ export async function sendPromotedToAdminEmail(
     workspace_settings_url: string;
     workspaceSettingsUrl?: string;
     scheduledAt?: string | Date;
+    locale?: string;
   },
 ) {
   return sendTemplateEmail({
     to,
     template: "promoted-to-admin",
     variables: data,
+    locale: data.locale,
     scheduledAt: data.scheduledAt,
   });
 }
@@ -932,12 +1125,14 @@ export async function sendRoleChangedEmail(
     firstName?: string;
     name?: string;
     scheduledAt?: string | Date;
+    locale?: string;
   },
 ) {
   return sendTemplateEmail({
     to,
     template: "role-changed",
     variables: data,
+    locale: data.locale,
     scheduledAt: data.scheduledAt,
   });
 }
@@ -954,12 +1149,14 @@ export async function sendRemovedFromChurchEmail(
     firstName?: string;
     name?: string;
     scheduledAt?: string | Date;
+    locale?: string;
   },
 ) {
   return sendTemplateEmail({
     to,
     template: "removed-from-church",
     variables: data,
+    locale: data.locale,
     scheduledAt: data.scheduledAt,
   });
 }
