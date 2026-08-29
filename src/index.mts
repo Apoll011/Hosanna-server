@@ -33,11 +33,9 @@ app.disable("etag");
 app.use(
   cors({
     origin: [
-      "http://localhost:3000",
       "http://localhost:5173",
       "http://localhost",
-      "https://localhost",
-      "capacitor://localhost",
+      "hosanna://localhost",
       "https://studio.hosanna.live",
       "https://dev-studio.hosanna.live",
       "https://hosanna.live",

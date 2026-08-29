@@ -138,13 +138,11 @@ export const auth = betterAuth({
     provider: "postgresql",
   }),
   trustedOrigins: [
-    "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost",
-    "https://localhost",
     "https://*.hosanna.live",
     "https://hosanna.live",
-    "capacitor://localhost",
+    "hosanna://localhost",
   ],
   emailAndPassword: {
     enabled: true,
