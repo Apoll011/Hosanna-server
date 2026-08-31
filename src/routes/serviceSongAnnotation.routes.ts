@@ -3,9 +3,9 @@ import { Router } from "express";
 import { assertUser } from "../middleware/auth.js";
 import { ServiceSongAnnotationService } from "../services/serviceSongAnnotation.service.js";
 
-const router = Router({ mergeParams: true });
+const anotationRouter = Router({ mergeParams: true });
 
-router.get(
+anotationRouter.get(
   "/services/:serviceId/songs/:songId/annotation",
   assertUser,
   async (req, res) => {
@@ -26,7 +26,7 @@ router.get(
   },
 );
 
-router.put(
+anotationRouter.put(
   "/services/:serviceId/songs/:songId/annotation",
   assertUser,
   async (req, res) => {
@@ -52,4 +52,4 @@ router.put(
   },
 );
 
-export default router;
+export default anotationRouter;
