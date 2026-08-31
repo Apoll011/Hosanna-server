@@ -9,6 +9,7 @@ import {
 } from "better-auth/plugins";
 import { inbox } from "better-inbox";
 import { prisma } from "../database/prisma.js";
+import { RESPONSIBILITIES } from "../locales/responsabilities.js";
 import { roles } from "../permissions/index.js";
 import {
   sendAccountDeletedEmail,
@@ -328,6 +329,8 @@ export const auth = betterAuth({
       },
       organizationHooks: {
         beforeCreateOrganization: async ({ organization, user }) => {
+          const locale =
+            (organization?.metadata?.["locale"] as string) || "pt-PT";
           return {
             data: {
               ...organization,
@@ -343,8 +346,7 @@ export const auth = betterAuth({
                   "",
                 settings: {
                   general: {
-                    locale:
-                      (organization?.metadata?.["locale"] as string) || "pt-PT",
+                    locale,
                     timezone:
                       (organization?.metadata?.["timezone"] as string) ||
                       "Europe/Lisbon",
@@ -362,6 +364,12 @@ export const auth = betterAuth({
                   appearance: {
                     accentColor: "#44e0ff",
                     showBranding: true,
+                  },
+                  agenda: {
+                    responsibilityCategories:
+                      RESPONSIBILITIES[
+                        locale as keyof typeof RESPONSIBILITIES
+                      ] ?? RESPONSIBILITIES["pt-PT"],
                   },
                 },
               },
