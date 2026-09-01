@@ -17,8 +17,8 @@ model Folder {
   icon  String @default("default")
 
   parentId  String?
-  parent    Folder?  @relation("FolderChildren", fields: [parentId], references: [id], onDelete: SetNull)
-  children  Folder[] @relation("FolderChildren")
+  parent    Folder?   @relation("FolderChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Folder[]  @relation("FolderChildren")
   songs     Song[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -40,22 +40,94 @@ model Song {
   title  String
   artist String @default("Unknown Artist")
 
-  content     String   @db.Text
-  folderId    String?
-  folder      Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  path        String
-  tags        String[] @default([])
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  song_number Int?
-  deleted     Boolean   @default(false) @map("_deleted")
-  purgeAt     DateTime? @map("purge_at")
+  content                String                  @db.Text
+  folderId               String?
+  folder                 Folder?                 @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  path                   String
+  tags                   String[]                @default([])
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  song_number            Int?
+  deleted                Boolean                 @default(false) @map("_deleted")
+  purgeAt                DateTime?               @map("purge_at")
+  serviceSongAnnotations ServiceSongAnnotation[]
 
   @@unique([orgId, path])
   @@index([orgId])
   @@index([folderId])
   @@index([orgId, updatedAt, id], map: "songs_replication_idx")
   @@map("songs")
+}
+
+model ServiceSongAnnotation {
+  id String @id @default(uuid())
+
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  serviceId String
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  songId String
+  song   Song   @relation(fields: [songId], references: [id], onDelete: Cascade)
+
+  canvasData Bytes
+
+  updatedById String?
+  updatedBy   User?   @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([serviceId, songId])
+  @@index([orgId])
+  @@index([serviceId])
+  @@index([songId])
+  @@index([orgId, updatedAt, id], map: "service_song_annotations_replication_idx")
+  @@map("service_song_annotations")
+}
+
+model AgendaEvent {
+  id String @id @default(uuid())
+
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  date            String
+  /**
+   * Event title, e.g. "Culto Dominical".
+   */
+  title           String
+  /**
+   * Free-text event type, e.g. "Culto Dominical", "Ensaio de Louvor".
+   */
+  type            String
+  /**
+   * 24h time, "HH:mm".
+   */
+  time            String
+  durationMinutes Int
+  location        String?
+  notes           String? @db.Text
+
+  /**
+   * `ReminderSettings` JSON: { enabled: boolean; label: string }.
+   */
+  reminder Json @default("{\"enabled\":false,\"label\":\"\"}")
+
+  linkedServiceId String?
+  linkedService   Service? @relation(fields: [linkedServiceId], references: [id], onDelete: SetNull)
+
+  responsibilities Json @default("[]")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deleted   Boolean   @default(false) @map("_deleted")
+  purgeAt   DateTime? @map("purge_at")
+
+  @@index([orgId])
+  @@index([orgId, updatedAt, id], map: "agenda_events_replication_idx")
+  @@map("agenda_events")
 }
 
 model Service {
@@ -72,9 +144,11 @@ model Service {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  archived Boolean   @default(false)
-  deleted  Boolean   @default(false) @map("_deleted")
-  purgeAt  DateTime? @map("purge_at")
+  archived               Boolean                 @default(false)
+  deleted                Boolean                 @default(false) @map("_deleted")
+  purgeAt                DateTime?               @map("purge_at")
+  serviceSongAnnotations ServiceSongAnnotation[]
+  agendaEvents           AgendaEvent[]
 
   @@index([orgId])
   @@index([orgId, updatedAt, id], map: "services_replication_idx")
@@ -82,21 +156,22 @@ model Service {
 }
 
 model User {
-  id               String         @id
-  name             String
-  email            String
-  emailVerified    Boolean        @default(false)
-  image            String?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  twoFactorEnabled Boolean?       @default(false)
-  sessions         Session[]
-  accounts         Account[]
-  notifications    Notification[]
-  twofactors       TwoFactor[]
-  teammembers      TeamMember[]
-  members          Member[]
-  invitations      Invitation[]
+  id                     String                  @id
+  name                   String
+  email                  String
+  emailVerified          Boolean                 @default(false)
+  image                  String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  twoFactorEnabled       Boolean?                @default(false)
+  sessions               Session[]
+  accounts               Account[]
+  notifications          Notification[]
+  twofactors             TwoFactor[]
+  teammembers            TeamMember[]
+  members                Member[]
+  invitations            Invitation[]
+  serviceSongAnnotations ServiceSongAnnotation[]
 
   @@unique([email])
   @@map("user")
@@ -185,18 +260,20 @@ model TwoFactor {
 }
 
 model Organization {
-  id          String       @id
-  name        String
-  slug        String
-  logo        String?
-  createdAt   DateTime
-  metadata    String?
-  teams       Team[]
-  members     Member[]
-  invitations Invitation[]
-  folders     Folder[]
-  songs       Song[]
-  services    Service[]
+  id                     String                  @id
+  name                   String
+  slug                   String
+  logo                   String?
+  createdAt              DateTime
+  metadata               String?
+  teams                  Team[]
+  members                Member[]
+  invitations            Invitation[]
+  folders                Folder[]
+  songs                  Song[]
+  services               Service[]
+  agendaEvents           AgendaEvent[]
+  serviceSongAnnotations ServiceSongAnnotation[]
 
   @@unique([slug])
   @@map("organization")

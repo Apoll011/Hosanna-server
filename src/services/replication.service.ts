@@ -2,8 +2,8 @@
  * RxDB Replication Service
  *
  * Implements the server-side logic for RxDB's HTTP pull/push replication
- * protocol. Each collection (songs, folders, services) shares the same
- * checkpoint format: `{ updatedAt: number; id: string }`.
+ * protocol. Each collection (songs, folders, services, agendaEvents) shares
+ * the same checkpoint format: `{ updatedAt: number; id: string }`.
  *
  * Pull: returns documents changed *after* the checkpoint, ordered by
  *       (updatedAt ASC, id ASC), limited to `batchSize`.
@@ -65,18 +65,26 @@ export interface PushRequest<T> {
 }
 
 // ── Collection names we replicate ──────────────────────────────────────────
-export type ReplicatedCollection = "songs" | "folders" | "services";
+export type ReplicatedCollection =
+  | "songs"
+  | "folders"
+  | "services"
+  | "agendaEvents";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+const DELEGATE_BY_COLLECTION: Record<
+  ReplicatedCollection,
+  "song" | "folder" | "service" | "agendaEvent"
+> = {
+  songs: "song",
+  folders: "folder",
+  services: "service",
+  agendaEvents: "agendaEvent",
+};
+
 function getDelegate(db: OrgScopedPrisma, collection: ReplicatedCollection) {
-  return db[
-    collection === "songs"
-      ? "song"
-      : collection === "folders"
-        ? "folder"
-        : "service"
-  ] as any;
+  return db[DELEGATE_BY_COLLECTION[collection]] as any;
 }
 
 /**
@@ -135,6 +143,7 @@ export const ALL_COLLECTIONS: ReplicatedCollection[] = [
   "songs",
   "folders",
   "services",
+  "agendaEvents",
 ];
 
 async function pullOne(
@@ -390,12 +399,85 @@ async function pushServices(
   return conflicts;
 }
 
+// ── Push: agenda events ────────────────────────────────────────────────────
+
+const DEFAULT_REMINDER = { enabled: false, label: "" };
+
+async function pushAgendaEvents(
+  db: OrgScopedPrisma,
+  tenantId: string,
+  rows: ChangeRow<any>[],
+): Promise<any[]> {
+  const conflicts: any[] = [];
+
+  for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
+    const existing = await db.agendaEvent.findUnique({ where: { id: doc.id } });
+
+    if (existing) {
+      if (assumed && hasConflict(existing, assumed)) {
+        conflicts.push(toWireDoc(existing, "agendaEvents"));
+        continue;
+      }
+      if (doc._deleted) {
+        await db.agendaEvent.update({
+          where: { id: doc.id },
+          data: { deleted: true },
+        });
+      } else {
+        await db.agendaEvent.update({
+          where: { id: doc.id },
+          data: {
+            date: doc.date,
+            title: doc.title,
+            type: doc.type,
+            time: doc.time,
+            durationMinutes: doc.durationMinutes,
+            location: doc.location ?? null,
+            notes: doc.notes ?? null,
+            reminder: doc.reminder ?? DEFAULT_REMINDER,
+            linkedServiceId: doc.linkedServiceId ?? null,
+            responsibilities: doc.responsibilities ?? [],
+            deleted: !!doc.isDeleted,
+            purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
+          },
+        });
+      }
+    } else if (!doc._deleted) {
+      await db.agendaEvent.create({
+        data: {
+          id: doc.id || uuid(),
+          date: doc.date,
+          title: doc.title,
+          type: doc.type,
+          time: doc.time,
+          durationMinutes: doc.durationMinutes,
+          location: doc.location ?? null,
+          notes: doc.notes ?? null,
+          reminder: doc.reminder ?? DEFAULT_REMINDER,
+          linkedServiceId: doc.linkedServiceId ?? null,
+          responsibilities: doc.responsibilities ?? [],
+          deleted: !!doc.isDeleted,
+          purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
+        } as any,
+      });
+    }
+  }
+
+  syncCache.invalidate(tenantId);
+  return conflicts;
+}
+
 // ── Public API ─────────────────────────────────────────────────────────────
 
 const pushHandlers: Record<
   ReplicatedCollection,
   (db: OrgScopedPrisma, tid: string, rows: ChangeRow<any>[]) => Promise<any[]>
-> = { songs: pushSongs, folders: pushFolders, services: pushServices };
+> = {
+  songs: pushSongs,
+  folders: pushFolders,
+  services: pushServices,
+  agendaEvents: pushAgendaEvents,
+};
 
 export class ReplicationService {
   constructor(

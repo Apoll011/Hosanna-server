@@ -6,7 +6,13 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-const ORG_SCOPED_MODELS = new Set(["Folder", "Song", "Service", "Settings"]);
+const ORG_SCOPED_MODELS = new Set([
+  "Folder",
+  "Song",
+  "Service",
+  "AgendaEvent",
+  "Settings",
+]);
 
 export function forOrganization<T extends { $extends: typeof prisma.$extends }>(
   orgId: string,

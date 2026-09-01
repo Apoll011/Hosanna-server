@@ -18,6 +18,7 @@ import {
   syncLimiter,
 } from "../middleware/rateLimit.js";
 import { cifraRouter } from "./cifra.route.js";
+import anotationRouter from "./serviceSongAnnotation.routes.js";
 
 export const apiRouter = Router();
 
@@ -33,5 +34,6 @@ apiRouter.use("/services", apiLimiter, serviceRouter);
 apiRouter.use("/notifications", apiLimiter, notificationsRouter);
 apiRouter.use("/cifra", apiLimiter, cifraRouter);
 apiRouter.use("/trash", apiLimiter, trashRouter);
+apiRouter.use("/annotation", apiLimiter, anotationRouter);
 
 apiRouter.use("/backup", backupLimiter, backupRouter);
