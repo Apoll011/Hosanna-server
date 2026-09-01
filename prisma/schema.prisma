@@ -93,18 +93,19 @@ model AgendaEvent {
   orgId String
   org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
+  date            String
   /**
-   * ISO date string, yyyy-mm-dd, in local time (matches the client
-   * `AgendaEvent.date` type). Stored as text, NOT DateTime, so the local
-   * calendar date survives round-trips without timezone shifting.
+   * Event title, e.g. "Culto Dominical".
    */
-  date String
-  /** Event title, e.g. "Culto Dominical". */
-  title String
-  /** Free-text event type, e.g. "Culto Dominical", "Ensaio de Louvor". */
-  type String
-  /** 24h time, "HH:mm". */
-  time String
+  title           String
+  /**
+   * Free-text event type, e.g. "Culto Dominical", "Ensaio de Louvor".
+   */
+  type            String
+  /**
+   * 24h time, "HH:mm".
+   */
+  time            String
   durationMinutes Int
   location        String?
   notes           String? @db.Text
@@ -114,22 +115,14 @@ model AgendaEvent {
    */
   reminder Json @default("{\"enabled\":false,\"label\":\"\"}")
 
-  /**
-   * Optional link to an order-of-worship `Service.id` (a real FK — set to
-   * jump straight to `ServiceDetailPage` from the Agenda). `SetNull` keeps
-   * the calendar entry alive when the linked service is purged.
-   */
   linkedServiceId String?
   linkedService   Service? @relation(fields: [linkedServiceId], references: [id], onDelete: SetNull)
 
-  /**
-   * `Responsibility[]` JSON, embedded — no `eventId` needed.
-   */
   responsibilities Json @default("[]")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  deleted   Boolean  @default(false) @map("_deleted")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deleted   Boolean   @default(false) @map("_deleted")
   purgeAt   DateTime? @map("purge_at")
 
   @@index([orgId])
