@@ -23,7 +23,7 @@ cronRouter.post(
   asyncHandler(async (_req, res) => {
     const now = new Date();
 
-    const [songs, folders, services] = await Promise.all([
+    const [songs, folders, services, agendaEvents] = await Promise.all([
       prisma.song.deleteMany({
         where: { deleted: true, purgeAt: { lte: now } },
       }),
@@ -33,6 +33,9 @@ cronRouter.post(
       prisma.service.deleteMany({
         where: { deleted: true, purgeAt: { lte: now } },
       }),
+      prisma.agendaEvent.deleteMany({
+        where: { deleted: true, purgeAt: { lte: now } },
+      }),
     ]);
 
     res.json({
@@ -40,6 +43,7 @@ cronRouter.post(
         songs: songs.count,
         folders: folders.count,
         services: services.count,
+        agendaEvents: agendaEvents.count,
       },
     });
   }),

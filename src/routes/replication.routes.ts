@@ -1,8 +1,8 @@
 /**
  * RxDB Replication Routes
  *
- * Provides pull and push endpoints for RxDB HTTP replication for three
- * collections: songs, folders, services.
+ * Provides pull and push endpoints for RxDB HTTP replication for four
+ * collections: songs, folders, services, agendaEvents.
  *
  * Pull:  POST /api/replication/:collection/pull
  * Push:  POST /api/replication/:collection/push
@@ -37,12 +37,14 @@ const PULL_PERMISSIONS: Record<ReplicatedCollection, string> = {
   songs: "song.access",
   folders: "folder.access",
   services: "service.access",
+  agendaEvents: "agenda.access",
 };
 
 const PUSH_PERMISSIONS: Record<ReplicatedCollection, string> = {
   songs: "song.create",
   folders: "folder.create",
   services: "service.create",
+  agendaEvents: "agenda.create",
 };
 
 // ── Pull endpoint ──────────────────────────────────────────────────────────

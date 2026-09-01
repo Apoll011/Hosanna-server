@@ -87,6 +87,56 @@ model ServiceSongAnnotation {
   @@map("service_song_annotations")
 }
 
+model AgendaEvent {
+  id String @id @default(uuid())
+
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  /**
+   * ISO date string, yyyy-mm-dd, in local time (matches the client
+   * `AgendaEvent.date` type). Stored as text, NOT DateTime, so the local
+   * calendar date survives round-trips without timezone shifting.
+   */
+  date String
+  /** Event title, e.g. "Culto Dominical". */
+  title String
+  /** Free-text event type, e.g. "Culto Dominical", "Ensaio de Louvor". */
+  type String
+  /** 24h time, "HH:mm". */
+  time String
+  durationMinutes Int
+  location        String?
+  notes           String? @db.Text
+
+  /**
+   * `ReminderSettings` JSON: { enabled: boolean; label: string }.
+   */
+  reminder Json @default("{\"enabled\":false,\"label\":\"\"}")
+
+  /**
+   * Optional link to an order-of-worship `Service.id` (a real FK — set to
+   * jump straight to `ServiceDetailPage` from the Agenda). `SetNull` keeps
+   * the calendar entry alive when the linked service is purged.
+   */
+  linkedServiceId String?
+  linkedService   Service? @relation(fields: [linkedServiceId], references: [id], onDelete: SetNull)
+
+  /**
+   * `Responsibility[]` JSON, embedded — no `eventId` needed.
+   */
+  responsibilities Json @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deleted   Boolean  @default(false) @map("_deleted")
+  purgeAt   DateTime? @map("purge_at")
+
+  @@index([orgId])
+  @@index([orgId, updatedAt, id], map: "agenda_events_replication_idx")
+  @@map("agenda_events")
+}
+
 model Service {
   id String @id @default(uuid())
 
@@ -105,6 +155,7 @@ model Service {
   deleted                Boolean                 @default(false) @map("_deleted")
   purgeAt                DateTime?               @map("purge_at")
   serviceSongAnnotations ServiceSongAnnotation[]
+  agendaEvents           AgendaEvent[]
 
   @@index([orgId])
   @@index([orgId, updatedAt, id], map: "services_replication_idx")
@@ -228,6 +279,7 @@ model Organization {
   folders                Folder[]
   songs                  Song[]
   services               Service[]
+  agendaEvents           AgendaEvent[]
   serviceSongAnnotations ServiceSongAnnotation[]
 
   @@unique([slug])
