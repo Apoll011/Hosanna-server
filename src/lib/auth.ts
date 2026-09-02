@@ -1,3 +1,4 @@
+import { dash } from "@better-auth/infra";
 import { stripe } from "@better-auth/stripe";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -114,7 +115,10 @@ async function isOrgOwner(userId: string, organizationId: string) {
 async function getOrgRecipients(
   organizationId: string,
   roles: string[],
-): Promise<{ churchName: string; recipients: Array<{ email: string; name: string }> }> {
+): Promise<{
+  churchName: string;
+  recipients: Array<{ email: string; name: string }>;
+}> {
   const org = await prisma.organization.findUnique({
     where: { id: organizationId },
     select: {
@@ -281,6 +285,7 @@ export const auth = betterAuth({
     },
   },
   plugins: [
+    dash(),
     inbox(),
     bearer(),
     haveIBeenPwned(),
@@ -561,10 +566,7 @@ export const auth = betterAuth({
                   organizationId: subscription.referenceId,
                   roles: ["owner"],
                   type: "billing.trial_expired",
-                  title: t(
-                    DEFAULT_LOCALE,
-                    "notification.trial_expired_title",
-                  ),
+                  title: t(DEFAULT_LOCALE, "notification.trial_expired_title"),
                   description: t(
                     DEFAULT_LOCALE,
                     "notification.trial_expired_description",
