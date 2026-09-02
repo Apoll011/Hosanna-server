@@ -1,3 +1,4 @@
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -93,26 +94,15 @@ model AgendaEvent {
   orgId String
   org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  date            String
-  /**
-   * Event title, e.g. "Culto Dominical".
-   */
-  title           String
-  /**
-   * Free-text event type, e.g. "Culto Dominical", "Ensaio de Louvor".
-   */
-  type            String
-  /**
-   * 24h time, "HH:mm".
-   */
+  date  String
+  title String
+  type  String
+
   time            String
   durationMinutes Int
   location        String?
   notes           String? @db.Text
 
-  /**
-   * `ReminderSettings` JSON: { enabled: boolean; label: string }.
-   */
   reminder Json @default("{\"enabled\":false,\"label\":\"\"}")
 
   linkedServiceId String?
@@ -173,6 +163,8 @@ model User {
   invitations            Invitation[]
   serviceSongAnnotations ServiceSongAnnotation[]
 
+  stripeCustomerId String?
+
   @@unique([email])
   @@map("user")
 }
@@ -211,8 +203,11 @@ model Account {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
+  issuer String
+
   @@index([userId])
   @@map("account")
+  @@unique([issuer, accountId], map: "account_issuer_accountId_uidx")
 }
 
 model Verification {
@@ -275,6 +270,8 @@ model Organization {
   agendaEvents           AgendaEvent[]
   serviceSongAnnotations ServiceSongAnnotation[]
 
+  stripeCustomerId String?
+
   @@unique([slug])
   @@map("organization")
 }
@@ -288,6 +285,8 @@ model Team {
   updatedAt      DateTime?    @updatedAt
   teammembers    TeamMember[]
 
+  memberCount Int @default(0)
+
   @@index([organizationId])
   @@map("team")
 }
@@ -300,9 +299,12 @@ model TeamMember {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime?
 
+  membershipKey String?
+
   @@index([teamId])
   @@index([userId])
   @@map("teamMember")
+  @@unique([membershipKey])
 }
 
 model Member {
@@ -335,4 +337,26 @@ model Invitation {
   @@index([organizationId])
   @@index([email])
   @@map("invitation")
+}
+
+model Subscription {
+  id                   String    @id
+  plan                 String
+  referenceId          String
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  status               String    @default("incomplete")
+  periodStart          DateTime?
+  periodEnd            DateTime?
+  trialStart           DateTime?
+  trialEnd             DateTime?
+  cancelAtPeriodEnd    Boolean?  @default(false)
+  cancelAt             DateTime?
+  canceledAt           DateTime?
+  endedAt              DateTime?
+  seats                Int?
+  billingInterval      String?
+  stripeScheduleId     String?
+
+  @@map("subscription")
 }

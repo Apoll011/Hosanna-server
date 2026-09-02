@@ -1,3 +1,5 @@
+import { dash } from "@better-auth/infra";
+import { stripe } from "@better-auth/stripe";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import {
@@ -8,11 +10,13 @@ import {
   twoFactor,
 } from "better-auth/plugins";
 import { inbox } from "better-inbox";
+import Stripe from "stripe";
 import { prisma } from "../database/prisma.js";
 import { RESPONSIBILITIES } from "../locales/responsabilities.js";
 import { roles } from "../permissions/index.js";
 import {
   sendAccountDeletedEmail,
+  sendCanceledEmail,
   sendChangeEmailVerificationEmail,
   sendChurchInvitationEmail,
   sendOtpEmail,
@@ -21,6 +25,10 @@ import {
   sendPromotedToAdminEmail,
   sendRemovedFromChurchEmail,
   sendRoleChangedEmail,
+  sendSubscribedEmail,
+  sendTrialEndedEmail,
+  sendTrialExpiredEmail,
+  sendTrialStartedEmail,
   sendVerificationEmail,
   sendWelcomeEmail,
 } from "../services/email.service.js";
@@ -33,50 +41,10 @@ import {
   uploadUrlAvatar,
 } from "./supabase.js";
 
-/*import Stripe from "stripe";
-
 const stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2026-06-24.dahlia", // Latest API version as of Stripe SDK v22.0.0
+  apiVersion: "2026-08-26.dahlia", // Latest API version as of Stripe SDK v22.0.0
 });
 
-const stripePlugin =     stripe({
-      stripeClient,
-      stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET!,
-      createCustomerOnSignUp: false,
-      subscription: {
-        enabled: true,
-        authorizeReference: async ({ user, session, referenceId, action }) => {
-          if (
-            action === "upgrade-subscription" ||
-            action === "cancel-subscription" ||
-            action === "restore-subscription"
-          ) {
-            const org = await prismaAdapter.member.findFirst({
-              where: {
-                organizationId: referenceId,
-                userId: user.id,
-              },
-            });
-            return org?.role === "owner";
-          }
-          return true;
-        },
-        plans: [
-          {
-            name: "Hosanna",
-            priceId: "...",
-            annualDiscountPriceId: "...",
-            freeTrial: {
-              days: 14,
-            },
-          },
-        ],
-      },
-      organization: {
-        enabled: true,
-      },
-    }),
-*/
 /*
   socialProviders: {
     google: {
@@ -131,6 +99,42 @@ async function getOrgLocale(organizationId: string): Promise<string> {
   }
   return DEFAULT_LOCALE;
 }
+
+async function isOrgOwner(userId: string, organizationId: string) {
+  const member = await prisma.member.findFirst({
+    where: { organizationId, userId },
+    select: { role: true },
+  });
+  return member?.role === "owner";
+}
+
+/**
+ * Returns the org display name plus the emails/names of members with the
+ * given roles, used to fan out billing emails to the org leadership.
+ */
+async function getOrgRecipients(
+  organizationId: string,
+  roles: string[],
+): Promise<{
+  churchName: string;
+  recipients: Array<{ email: string; name: string }>;
+}> {
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: {
+      name: true,
+      members: {
+        where: { role: { in: roles } },
+        select: { user: { select: { email: true, name: true } } },
+      },
+    },
+  });
+  return {
+    churchName: org?.name ?? "Hosanna",
+    recipients: org?.members?.map((m) => m.user) ?? [],
+  };
+}
+
 export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.PUBLIC_APP_URL,
@@ -281,6 +285,7 @@ export const auth = betterAuth({
     },
   },
   plugins: [
+    dash(),
     inbox(),
     bearer(),
     haveIBeenPwned(),
@@ -451,6 +456,203 @@ export const auth = betterAuth({
             );
           }
         },
+      },
+    }),
+    stripe({
+      stripeClient,
+      stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET!,
+      createCustomerOnSignUp: false,
+      subscription: {
+        enabled: true,
+        plans: [
+          {
+            name: "cloud",
+            priceId: "price_1U8VA3RpLrnXO63sBlJexS4p",
+            annualDiscountPriceId: "price_1UB1xcRpLrnXO63soQj5HG4Y",
+            freeTrial: {
+              days: 14,
+              onTrialStart: async (subscription) => {
+                try {
+                  const locale = await getOrgLocale(subscription.referenceId);
+                  const { churchName, recipients } = await getOrgRecipients(
+                    subscription.referenceId,
+                    ["owner"],
+                  );
+                  await Promise.all(
+                    recipients.map((r) =>
+                      sendTrialStartedEmail(r.email, {
+                        first_name: r.name,
+                        church_name: churchName,
+                        plan: subscription.plan,
+                        locale,
+                      }),
+                    ),
+                  );
+                } catch (err) {
+                  console.error(
+                    "[auth] Failed to send trial started email:",
+                    err,
+                  );
+                }
+                notifyOrg({
+                  organizationId: subscription.referenceId,
+                  roles: ["owner"],
+                  type: "billing.trial_started",
+                  title: t(DEFAULT_LOCALE, "notification.trial_started_title"),
+                  description: t(
+                    DEFAULT_LOCALE,
+                    "notification.trial_started_description",
+                  ),
+                });
+              },
+              onTrialEnd: async ({ subscription }) => {
+                try {
+                  const locale = await getOrgLocale(subscription.referenceId);
+                  const { churchName, recipients } = await getOrgRecipients(
+                    subscription.referenceId,
+                    ["owner"],
+                  );
+                  await Promise.all(
+                    recipients.map((r) =>
+                      sendTrialEndedEmail(r.email, {
+                        first_name: r.name,
+                        church_name: churchName,
+                        plan: subscription.plan,
+                        locale,
+                      }),
+                    ),
+                  );
+                } catch (err) {
+                  console.error(
+                    "[auth] Failed to send trial ended email:",
+                    err,
+                  );
+                }
+                notifyOrg({
+                  organizationId: subscription.referenceId,
+                  roles: ["owner"],
+                  type: "billing.trial_ended",
+                  title: t(DEFAULT_LOCALE, "notification.trial_ended_title"),
+                  description: t(
+                    DEFAULT_LOCALE,
+                    "notification.trial_ended_description",
+                  ),
+                });
+              },
+              onTrialExpired: async (subscription) => {
+                try {
+                  const locale = await getOrgLocale(subscription.referenceId);
+                  const { churchName, recipients } = await getOrgRecipients(
+                    subscription.referenceId,
+                    ["owner"],
+                  );
+                  await Promise.all(
+                    recipients.map((r) =>
+                      sendTrialExpiredEmail(r.email, {
+                        first_name: r.name,
+                        church_name: churchName,
+                        plan: subscription.plan,
+                        locale,
+                      }),
+                    ),
+                  );
+                } catch (err) {
+                  console.error(
+                    "[auth] Failed to send trial expired email:",
+                    err,
+                  );
+                }
+                notifyOrg({
+                  organizationId: subscription.referenceId,
+                  roles: ["owner"],
+                  type: "billing.trial_expired",
+                  title: t(DEFAULT_LOCALE, "notification.trial_expired_title"),
+                  description: t(
+                    DEFAULT_LOCALE,
+                    "notification.trial_expired_description",
+                  ),
+                });
+              },
+            },
+          },
+        ],
+        // We only ever bill organizations (referenceId === organization id),
+        // so every action is authorized against org-owner membership.
+        authorizeReference: async ({ user, referenceId }) => {
+          return isOrgOwner(user.id, referenceId);
+        },
+        onSubscriptionComplete: async ({ subscription, plan }) => {
+          try {
+            const locale = await getOrgLocale(subscription.referenceId);
+            const { churchName, recipients } = await getOrgRecipients(
+              subscription.referenceId,
+              ["owner", "admin"],
+            );
+            await Promise.all(
+              recipients.map((r) =>
+                sendSubscribedEmail(r.email, {
+                  first_name: r.name,
+                  church_name: churchName,
+                  plan: plan.name,
+                  locale,
+                }),
+              ),
+            );
+            notifyOrg({
+              organizationId: subscription.referenceId,
+              roles: ["owner", "admin"],
+              type: "billing.subscribed",
+              title: t(DEFAULT_LOCALE, "notification.subscribed_title"),
+              description: t(
+                DEFAULT_LOCALE,
+                "notification.subscribed_description",
+                { plan: plan.name },
+              ),
+            });
+          } catch (err) {
+            console.error(
+              "[auth] Failed to notify org after subscription complete:",
+              err,
+            );
+          }
+        },
+        onSubscriptionCancel: async ({ subscription }) => {
+          try {
+            const locale = await getOrgLocale(subscription.referenceId);
+            const { churchName, recipients } = await getOrgRecipients(
+              subscription.referenceId,
+              ["owner", "admin"],
+            );
+            await Promise.all(
+              recipients.map((r) =>
+                sendCanceledEmail(r.email, {
+                  first_name: r.name,
+                  church_name: churchName,
+                  plan: subscription.plan,
+                  locale,
+                }),
+              ),
+            );
+            notifyOrg({
+              organizationId: subscription.referenceId,
+              roles: ["owner", "admin"],
+              type: "billing.canceled",
+              title: t(DEFAULT_LOCALE, "notification.canceled_title"),
+              description: t(
+                DEFAULT_LOCALE,
+                "notification.canceled_description",
+              ),
+            });
+          } catch (err) {
+            console.error(
+              "[auth] Failed to notify org after subscription cancel:",
+              err,
+            );
+          }
+        },
+      },
+      organization: {
+        enabled: true,
       },
     }),
   ],
