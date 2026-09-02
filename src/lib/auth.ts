@@ -1,3 +1,4 @@
+import { stripe } from "@better-auth/stripe";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import {
@@ -8,6 +9,7 @@ import {
   twoFactor,
 } from "better-auth/plugins";
 import { inbox } from "better-inbox";
+import Stripe from "stripe";
 import { prisma } from "../database/prisma.js";
 import { RESPONSIBILITIES } from "../locales/responsabilities.js";
 import { roles } from "../permissions/index.js";
@@ -33,50 +35,10 @@ import {
   uploadUrlAvatar,
 } from "./supabase.js";
 
-/*import Stripe from "stripe";
-
 const stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2026-06-24.dahlia", // Latest API version as of Stripe SDK v22.0.0
+  apiVersion: "2026-08-26.dahlia", // Latest API version as of Stripe SDK v22.0.0
 });
 
-const stripePlugin =     stripe({
-      stripeClient,
-      stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET!,
-      createCustomerOnSignUp: false,
-      subscription: {
-        enabled: true,
-        authorizeReference: async ({ user, session, referenceId, action }) => {
-          if (
-            action === "upgrade-subscription" ||
-            action === "cancel-subscription" ||
-            action === "restore-subscription"
-          ) {
-            const org = await prismaAdapter.member.findFirst({
-              where: {
-                organizationId: referenceId,
-                userId: user.id,
-              },
-            });
-            return org?.role === "owner";
-          }
-          return true;
-        },
-        plans: [
-          {
-            name: "Hosanna",
-            priceId: "...",
-            annualDiscountPriceId: "...",
-            freeTrial: {
-              days: 14,
-            },
-          },
-        ],
-      },
-      organization: {
-        enabled: true,
-      },
-    }),
-*/
 /*
   socialProviders: {
     google: {
@@ -451,6 +413,27 @@ export const auth = betterAuth({
             );
           }
         },
+      },
+    }),
+    stripe({
+      stripeClient,
+      stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET!,
+      createCustomerOnSignUp: false,
+      subscription: {
+        enabled: true,
+        plans: [
+          {
+            name: "Hosanna Cloud",
+            priceId: "price_1U8VA3RpLrnXO63sBlJexS4p",
+            annualDiscountPriceId: "price_1UB1xcRpLrnXO63soQj5HG4Y",
+            freeTrial: {
+              days: 14,
+            },
+          },
+        ],
+      },
+      organization: {
+        enabled: true,
       },
     }),
   ],
