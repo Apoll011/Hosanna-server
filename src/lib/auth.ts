@@ -666,6 +666,9 @@ export const auth = betterAuth({
       enabled: true,
       domain: "hosanna.live",
     },
+    database: {
+      joins: true,
+    },
   },
   user: {
     changeEmail: {
