@@ -65,6 +65,20 @@ const en = {
     backup_restored_title: "Backup restored — all data replaced",
     backup_restored_description:
       "A full restore imported {{folders}} folder(s), {{songs}} song(s), and {{services}} service(s).",
+    trial_started_title: "Free trial started",
+    trial_started_description:
+      "Your free trial has started. Enjoy all Hosanna features!",
+    trial_ended_title: "Free trial ended",
+    trial_ended_description:
+      "Your trial has ended and your subscription is now active.",
+    trial_expired_title: "Free trial expired",
+    trial_expired_description:
+      "Your trial expired without payment. Renew your subscription to keep access.",
+    subscribed_title: "Subscription active",
+    subscribed_description: "Your {{plan}} subscription is now active.",
+    canceled_title: "Subscription canceled",
+    canceled_description:
+      "Your subscription has been canceled. Access remains available until the end of the billing period.",
   },
 
   // ── email templates ─────────────────────────────────────────────────────
@@ -175,6 +189,38 @@ const en = {
       heading: "Workspace access removed",
       salutation: "Hi{{#if first_name}} {{first_name}}{{/if}},",
       body1: "You have been removed from the {{church_name}} workspace. You will no longer have access to this community's dashboard or member information.",
+    },
+
+    // ── 4. billing / subscription ─────────────────────────────────────────
+    billing_trial_started: {
+      subject: "Your free trial has started - Hosanna",
+      heading: "Your free trial has started",
+      body1: "Your free trial of the {{plan}} plan is now active for {{church_name}}.",
+      body2: "Explore all Hosanna features during your trial period.",
+    },
+    billing_trial_ended: {
+      subject: "Your free trial has ended - Hosanna",
+      heading: "Your free trial has ended",
+      body1: "The trial period for {{church_name}} has ended and your {{plan}} subscription is now active.",
+      body2: "You can manage your subscription from the workspace settings.",
+    },
+    billing_trial_expired: {
+      subject: "Your free trial has expired - Hosanna",
+      heading: "Your free trial has expired",
+      body1: "The trial period for {{church_name}} has expired without a valid payment method.",
+      body2: "To keep access, please renew your subscription from the workspace settings.",
+    },
+    billing_subscribed: {
+      subject: "Subscription active - Hosanna",
+      heading: "Subscription active",
+      body1: "The {{church_name}} subscription to the {{plan}} plan is now active.",
+      body2: "Thank you for choosing Hosanna!",
+    },
+    billing_canceled: {
+      subject: "Subscription canceled - Hosanna",
+      heading: "Subscription canceled",
+      body1: "The {{church_name}} subscription has been canceled.",
+      body2: "Access will remain available until the end of the billing period. If you change your mind, you can reactivate your subscription at any time.",
     },
   },
 } as const satisfies I18nKeys;

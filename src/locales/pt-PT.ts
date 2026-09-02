@@ -66,6 +66,21 @@ const ptPT = {
     backup_restored_title: "Backup restaurado — todos os dados substituídos",
     backup_restored_description:
       "Uma restauração completa importou {{folders}} pasta(s), {{songs}} música(s) e {{services}} culto(s).",
+    trial_started_title: "Período de avaliação iniciado",
+    trial_started_description:
+      "O teu período de avaliação gratuito começou. Desfruta de todas as funcionalidades do Hosanna!",
+    trial_ended_title: "Período de avaliação terminou",
+    trial_ended_description:
+      "O teu período de avaliação terminou e a tua subscrição está agora ativa.",
+    trial_expired_title: "Período de avaliação expirou",
+    trial_expired_description:
+      "O teu período de avaliação expirou sem pagamento. Renova a tua subscrição para continuar a ter acesso.",
+    subscribed_title: "Subscrição ativa",
+    subscribed_description:
+      "A tua subscrição ao plano {{plan}} está agora ativa.",
+    canceled_title: "Subscrição cancelada",
+    canceled_description:
+      "A tua subscrição foi cancelada. O acesso continuará disponível até ao fim do período faturado.",
   },
 
   // ── email templates ─────────────────────────────────────────────────────
@@ -176,6 +191,38 @@ const ptPT = {
       heading: "Acesso ao espaço de trabalho removido",
       salutation: "Olá{{#if first_name}} {{first_name}}{{/if}},",
       body1: "Foste removido do espaço de trabalho de {{church_name}}. Já não terás acesso ao painel desta comunidade nem às informações dos membros.",
+    },
+
+    // ── 4. billing / subscription ─────────────────────────────────────────
+    billing_trial_started: {
+      subject: "O teu período de avaliação começou - Hosanna",
+      heading: "O teu período de avaliação começou",
+      body1: "A tua avaliação gratuita do plano {{plan}} está agora ativa para {{church_name}}.",
+      body2: "Explora todas as funcionalidades do Hosanna durante o teu período de avaliação.",
+    },
+    billing_trial_ended: {
+      subject: "O teu período de avaliação terminou - Hosanna",
+      heading: "O teu período de avaliação terminou",
+      body1: "O período de avaliação de {{church_name}} terminou e a tua subscrição ao plano {{plan}} está agora ativa.",
+      body2: "Podes gerir a tua subscrição nas definições do espaço de trabalho.",
+    },
+    billing_trial_expired: {
+      subject: "O teu período de avaliação expirou - Hosanna",
+      heading: "O teu período de avaliação expirou",
+      body1: "O período de avaliação de {{church_name}} expirou sem um método de pagamento válido.",
+      body2: "Para continuar a ter acesso, renova a tua subscrição nas definições do espaço de trabalho.",
+    },
+    billing_subscribed: {
+      subject: "Subscrição ativa - Hosanna",
+      heading: "Subscrição ativa",
+      body1: "A subscrição de {{church_name}} ao plano {{plan}} está agora ativa.",
+      body2: "Obrigado por escolheres o Hosanna!",
+    },
+    billing_canceled: {
+      subject: "Subscrição cancelada - Hosanna",
+      heading: "Subscrição cancelada",
+      body1: "A subscrição de {{church_name}} foi cancelada.",
+      body2: "O acesso continuará disponível até ao fim do período faturado. Se mudares de ideias, podes reativar a subscrição a qualquer momento.",
     },
   },
 } as const;

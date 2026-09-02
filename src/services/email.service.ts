@@ -219,6 +219,36 @@ function buildTranslationVars(
     t_removed_from_church_heading: tc("email.removed_from_church.heading"),
     t_removed_from_church_salutation: tc("email.removed_from_church.salutation"),
     t_removed_from_church_body1: tc("email.removed_from_church.body1"),
+
+    // 4.1 billing-trial-started
+    t_billing_trial_started_subject: tc("email.billing_trial_started.subject"),
+    t_billing_trial_started_heading: tc("email.billing_trial_started.heading"),
+    t_billing_trial_started_body1: tc("email.billing_trial_started.body1"),
+    t_billing_trial_started_body2: tc("email.billing_trial_started.body2"),
+
+    // 4.2 billing-trial-ended
+    t_billing_trial_ended_subject: tc("email.billing_trial_ended.subject"),
+    t_billing_trial_ended_heading: tc("email.billing_trial_ended.heading"),
+    t_billing_trial_ended_body1: tc("email.billing_trial_ended.body1"),
+    t_billing_trial_ended_body2: tc("email.billing_trial_ended.body2"),
+
+    // 4.3 billing-trial-expired
+    t_billing_trial_expired_subject: tc("email.billing_trial_expired.subject"),
+    t_billing_trial_expired_heading: tc("email.billing_trial_expired.heading"),
+    t_billing_trial_expired_body1: tc("email.billing_trial_expired.body1"),
+    t_billing_trial_expired_body2: tc("email.billing_trial_expired.body2"),
+
+    // 4.4 billing-subscribed
+    t_billing_subscribed_subject: tc("email.billing_subscribed.subject"),
+    t_billing_subscribed_heading: tc("email.billing_subscribed.heading"),
+    t_billing_subscribed_body1: tc("email.billing_subscribed.body1"),
+    t_billing_subscribed_body2: tc("email.billing_subscribed.body2"),
+
+    // 4.5 billing-canceled
+    t_billing_canceled_subject: tc("email.billing_canceled.subject"),
+    t_billing_canceled_heading: tc("email.billing_canceled.heading"),
+    t_billing_canceled_body1: tc("email.billing_canceled.body1"),
+    t_billing_canceled_body2: tc("email.billing_canceled.body2"),
   };
 }
 
@@ -318,6 +348,11 @@ function normalizeVariables(
   }
   if (normalized.new_email === undefined) {
     normalized.new_email = variables.newEmail || variables.email || "";
+  }
+
+  // Plan normalization (billing emails)
+  if (normalized.plan === undefined) {
+    normalized.plan = variables.planName || variables.plan || "Hosanna";
   }
 
   // Inject translation variables — built after data vars are ready so they can interpolate them
@@ -630,6 +665,75 @@ registerEmailTemplate(
     </div>
   `,
   { defaultSubject: "{{t_removed_from_church_subject}}" },
+);
+
+// ---------------------------------------------------------------------------
+// 4. Billing / Subscription Emails
+// ---------------------------------------------------------------------------
+
+// 4.1 Free trial started
+registerEmailTemplate(
+  "billing-trial-started",
+  `
+    <div class="content">
+      <h3>{{t_billing_trial_started_heading}}</h3>
+      <p>{{t_billing_trial_started_body1}}</p>
+      <p>{{t_billing_trial_started_body2}}</p>
+    </div>
+  `,
+  { defaultSubject: "{{t_billing_trial_started_subject}}" },
+);
+
+// 4.2 Free trial ended (subscription now active)
+registerEmailTemplate(
+  "billing-trial-ended",
+  `
+    <div class="content">
+      <h3>{{t_billing_trial_ended_heading}}</h3>
+      <p>{{t_billing_trial_ended_body1}}</p>
+      <p>{{t_billing_trial_ended_body2}}</p>
+    </div>
+  `,
+  { defaultSubject: "{{t_billing_trial_ended_subject}}" },
+);
+
+// 4.3 Free trial expired (no valid payment method)
+registerEmailTemplate(
+  "billing-trial-expired",
+  `
+    <div class="content">
+      <h3>{{t_billing_trial_expired_heading}}</h3>
+      <p>{{t_billing_trial_expired_body1}}</p>
+      <p>{{t_billing_trial_expired_body2}}</p>
+    </div>
+  `,
+  { defaultSubject: "{{t_billing_trial_expired_subject}}" },
+);
+
+// 4.4 Subscription active
+registerEmailTemplate(
+  "billing-subscribed",
+  `
+    <div class="content">
+      <h3>{{t_billing_subscribed_heading}}</h3>
+      <p>{{t_billing_subscribed_body1}}</p>
+      <p>{{t_billing_subscribed_body2}}</p>
+    </div>
+  `,
+  { defaultSubject: "{{t_billing_subscribed_subject}}" },
+);
+
+// 4.5 Subscription canceled
+registerEmailTemplate(
+  "billing-canceled",
+  `
+    <div class="content">
+      <h3>{{t_billing_canceled_heading}}</h3>
+      <p>{{t_billing_canceled_body1}}</p>
+      <p>{{t_billing_canceled_body2}}</p>
+    </div>
+  `,
+  { defaultSubject: "{{t_billing_canceled_subject}}" },
 );
 
 /**
@@ -1161,6 +1265,131 @@ export async function sendRemovedFromChurchEmail(
   });
 }
 
+/**
+ * 4.1 Free trial started
+ */
+export async function sendTrialStartedEmail(
+  to: string | string[],
+  data: {
+    church_name: string;
+    churchName?: string;
+    plan: string;
+    first_name?: string;
+    firstName?: string;
+    name?: string;
+    scheduledAt?: string | Date;
+    locale?: string;
+  },
+) {
+  return sendTemplateEmail({
+    to,
+    template: "billing-trial-started",
+    variables: data,
+    locale: data.locale,
+    scheduledAt: data.scheduledAt,
+  });
+}
+
+/**
+ * 4.2 Free trial ended (subscription now active)
+ */
+export async function sendTrialEndedEmail(
+  to: string | string[],
+  data: {
+    church_name: string;
+    churchName?: string;
+    plan: string;
+    first_name?: string;
+    firstName?: string;
+    name?: string;
+    scheduledAt?: string | Date;
+    locale?: string;
+  },
+) {
+  return sendTemplateEmail({
+    to,
+    template: "billing-trial-ended",
+    variables: data,
+    locale: data.locale,
+    scheduledAt: data.scheduledAt,
+  });
+}
+
+/**
+ * 4.3 Free trial expired (no valid payment method)
+ */
+export async function sendTrialExpiredEmail(
+  to: string | string[],
+  data: {
+    church_name: string;
+    churchName?: string;
+    plan: string;
+    first_name?: string;
+    firstName?: string;
+    name?: string;
+    scheduledAt?: string | Date;
+    locale?: string;
+  },
+) {
+  return sendTemplateEmail({
+    to,
+    template: "billing-trial-expired",
+    variables: data,
+    locale: data.locale,
+    scheduledAt: data.scheduledAt,
+  });
+}
+
+/**
+ * 4.4 Subscription active
+ */
+export async function sendSubscribedEmail(
+  to: string | string[],
+  data: {
+    church_name: string;
+    churchName?: string;
+    plan: string;
+    first_name?: string;
+    firstName?: string;
+    name?: string;
+    scheduledAt?: string | Date;
+    locale?: string;
+  },
+) {
+  return sendTemplateEmail({
+    to,
+    template: "billing-subscribed",
+    variables: data,
+    locale: data.locale,
+    scheduledAt: data.scheduledAt,
+  });
+}
+
+/**
+ * 4.5 Subscription canceled
+ */
+export async function sendCanceledEmail(
+  to: string | string[],
+  data: {
+    church_name: string;
+    churchName?: string;
+    plan: string;
+    first_name?: string;
+    firstName?: string;
+    name?: string;
+    scheduledAt?: string | Date;
+    locale?: string;
+  },
+) {
+  return sendTemplateEmail({
+    to,
+    template: "billing-canceled",
+    variables: data,
+    locale: data.locale,
+    scheduledAt: data.scheduledAt,
+  });
+}
+
 export const emailService = {
   sendEmail,
   sendTemplateEmail,
@@ -1187,6 +1416,12 @@ export const emailService = {
   sendPromotedToAdminEmail,
   sendRoleChangedEmail,
   sendRemovedFromChurchEmail,
+  // 4. Billing / Subscription
+  sendTrialStartedEmail,
+  sendTrialEndedEmail,
+  sendTrialExpiredEmail,
+  sendSubscribedEmail,
+  sendCanceledEmail,
 };
 
 export default emailService;
