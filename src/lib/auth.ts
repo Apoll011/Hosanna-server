@@ -1,8 +1,9 @@
-import { dash } from "@better-auth/infra";
+import { dash, sentinel } from "@better-auth/infra";
 import { stripe } from "@better-auth/stripe";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import {
+  admin,
   bearer,
   captcha,
   haveIBeenPwned,
@@ -286,9 +287,44 @@ export const auth = betterAuth({
   },
   plugins: [
     dash(),
+    admin(),
     inbox(),
     bearer(),
     haveIBeenPwned(),
+    sentinel({
+      apiKey: process.env.BETTER_AUTH_API_KEY,
+      security: {
+        credentialStuffing: {
+          enabled: true,
+          thresholds: {
+            challenge: 3,
+            block: 5,
+          },
+          windowSeconds: 3600,
+          cooldownSeconds: 900,
+        },
+        freeTrialAbuse: {
+          enabled: true,
+          thresholds: {
+            challenge: 2,
+            block: 3,
+          },
+          maxAccountsPerVisitor: 3,
+          action: "block",
+        },
+        suspiciousIpBlocking: {
+          action: "block",
+        },
+        emailValidation: {
+          enabled: true,
+          strictness: "medium", // "low", "medium", or "high"
+          action: "block",
+        },
+        emailNormalization: {
+          enabled: true,
+        },
+      },
+    }),
     captcha({
       provider: "cloudflare-turnstile",
       secretKey: process.env.TURNSTILE_SECRET_KEY!,
@@ -297,6 +333,7 @@ export const auth = betterAuth({
       issuer: "Hosanna",
 
       otpOptions: {
+        storeOTP: "hashed",
         sendOTP: async ({ user, otp }) => {
           try {
             await sendOtpEmail(user.email, {
@@ -657,6 +694,9 @@ export const auth = betterAuth({
     }),
   ],
   advanced: {
+    ipAddress: {
+      ipAddressHeaders: ["cf-connecting-ip", "x-forwarded-for"],
+    },
     cookiePrefix: "hosanna",
     defaultCookieAttributes: {
       sameSite: (process.env.DEV_MODE || "true") === "true" ? "None" : "Lax",
@@ -665,6 +705,9 @@ export const auth = betterAuth({
     crossSubDomainCookies: {
       enabled: true,
       domain: "hosanna.live",
+    },
+    database: {
+      joins: true,
     },
   },
   user: {
@@ -700,6 +743,7 @@ export const auth = betterAuth({
     updateAge: 60 * 60 * 24,
     cookieCache: {
       enabled: true,
+      strategy: "jwe",
       maxAge: 15 * 60,
       version: () => {
         return "1";
