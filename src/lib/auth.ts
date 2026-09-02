@@ -93,6 +93,15 @@ async function getOrgLocale(organizationId: string): Promise<string> {
   }
   return DEFAULT_LOCALE;
 }
+
+async function isOrgOwner(userId: string, organizationId: string) {
+  const member = await prisma.member.findFirst({
+    where: { organizationId, userId },
+    select: { role: true },
+  });
+  return member?.role === "owner";
+}
+
 export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.PUBLIC_APP_URL,
@@ -428,9 +437,89 @@ export const auth = betterAuth({
             annualDiscountPriceId: "price_1UB1xcRpLrnXO63soQj5HG4Y",
             freeTrial: {
               days: 14,
+              onTrialStart: async (subscription) => {
+                notifyOrg({
+                  organizationId: subscription.referenceId,
+                  roles: ["owner"],
+                  type: "billing.trial_started",
+                  title: t(DEFAULT_LOCALE, "notification.trial_started_title"),
+                  description: t(
+                    DEFAULT_LOCALE,
+                    "notification.trial_started_description",
+                  ),
+                });
+              },
+              onTrialEnd: async ({ subscription }) => {
+                notifyOrg({
+                  organizationId: subscription.referenceId,
+                  roles: ["owner"],
+                  type: "billing.trial_ended",
+                  title: t(DEFAULT_LOCALE, "notification.trial_ended_title"),
+                  description: t(
+                    DEFAULT_LOCALE,
+                    "notification.trial_ended_description",
+                  ),
+                });
+              },
+              onTrialExpired: async (subscription) => {
+                notifyOrg({
+                  organizationId: subscription.referenceId,
+                  roles: ["owner"],
+                  type: "billing.trial_expired",
+                  title: t(DEFAULT_LOCALE, "notification.trial_expired_title"),
+                  description: t(
+                    DEFAULT_LOCALE,
+                    "notification.trial_expired_description",
+                  ),
+                });
+              },
             },
           },
         ],
+        // We only ever bill organizations (referenceId === organization id),
+        // so every action is authorized against org-owner membership.
+        authorizeReference: async ({ user, referenceId }) => {
+          return isOrgOwner(user.id, referenceId);
+        },
+        onSubscriptionComplete: async ({ subscription, plan }) => {
+          try {
+            notifyOrg({
+              organizationId: subscription.referenceId,
+              roles: ["owner", "admin"],
+              type: "billing.subscribed",
+              title: t(DEFAULT_LOCALE, "notification.subscribed_title"),
+              description: t(
+                DEFAULT_LOCALE,
+                "notification.subscribed_description",
+                { plan: plan.name },
+              ),
+            });
+          } catch (err) {
+            console.error(
+              "[auth] Failed to notify org after subscription complete:",
+              err,
+            );
+          }
+        },
+        onSubscriptionCancel: async ({ subscription }) => {
+          try {
+            notifyOrg({
+              organizationId: subscription.referenceId,
+              roles: ["owner", "admin"],
+              type: "billing.canceled",
+              title: t(DEFAULT_LOCALE, "notification.canceled_title"),
+              description: t(
+                DEFAULT_LOCALE,
+                "notification.canceled_description",
+              ),
+            });
+          } catch (err) {
+            console.error(
+              "[auth] Failed to notify org after subscription cancel:",
+              err,
+            );
+          }
+        },
       },
       organization: {
         enabled: true,
