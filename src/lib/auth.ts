@@ -297,6 +297,7 @@ export const auth = betterAuth({
       issuer: "Hosanna",
 
       otpOptions: {
+        storeOTP: "hashed",
         sendOTP: async ({ user, otp }) => {
           try {
             await sendOtpEmail(user.email, {
@@ -703,6 +704,7 @@ export const auth = betterAuth({
     updateAge: 60 * 60 * 24,
     cookieCache: {
       enabled: true,
+      strategy: "jwe",
       maxAge: 15 * 60,
       version: () => {
         return "1";
