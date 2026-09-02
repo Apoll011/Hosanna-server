@@ -423,7 +423,7 @@ export const auth = betterAuth({
         enabled: true,
         plans: [
           {
-            name: "Hosanna Cloud",
+            name: "cloud",
             priceId: "price_1U8VA3RpLrnXO63sBlJexS4p",
             annualDiscountPriceId: "price_1UB1xcRpLrnXO63soQj5HG4Y",
             freeTrial: {
