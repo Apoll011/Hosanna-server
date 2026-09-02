@@ -613,6 +613,14 @@ export const auth = betterAuth({
             },
           },
         ],
+        // Show the "Discount code" field on the hosted Stripe Checkout page so
+        // customers can apply coupon / promotion codes created in the Stripe
+        // dashboard (the Stripe API flags sessions, not prices).
+        getCheckoutSessionParams: async () => ({
+          params: {
+            allow_promotion_codes: true,
+          },
+        }),
         // We only ever bill organizations (referenceId === organization id),
         // so every action is authorized against org-owner membership.
         authorizeReference: async ({ user, referenceId }) => {
