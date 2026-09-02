@@ -2,6 +2,7 @@ export type ErrorCode =
   | "VALIDATION_ERROR"
   | "UNAUTHORIZED"
   | "FORBIDDEN"
+  | "SUBSCRIPTION_REQUIRED"
   | "SONG_NOT_FOUND"
   | "FOLDER_NOT_FOUND"
   | "SERVICE_NOT_FOUND"
@@ -56,6 +57,16 @@ export class AppError extends Error {
     message = "You do not have permission to perform this action.",
   ) {
     return new AppError(403, "FORBIDDEN", message);
+  }
+
+  /**
+   * The organization has no active subscription and is not on a trial, so
+   * mutating requests are refused (read-only mode).
+   */
+  static subscriptionRequired(
+    message = "An active subscription or trial is required to perform this action.",
+  ) {
+    return new AppError(403, "SUBSCRIPTION_REQUIRED", message);
   }
 
   static conflict(

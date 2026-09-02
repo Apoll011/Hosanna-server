@@ -16,6 +16,8 @@ const ptPT = {
     unauthorized_session: "Sessão de autenticação inválida ou ausente.",
     workspace_required:
       "É necessário um contexto de workspace/organização ativo.",
+    subscription_required:
+      "A organização não tem uma subscrição ativa nem um período de avaliação em curso. Só é permitida a leitura.",
     rate_limit_exceeded:
       "Demasiados pedidos. Por favor, tente novamente mais tarde.",
   },

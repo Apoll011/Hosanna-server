@@ -13,6 +13,7 @@
 
 import { Router } from "express";
 import { can } from "../middleware/auth.js";
+import { requireSubscription } from "../middleware/subscription.js";
 import { validate } from "../middleware/validate.js";
 import {
   ALL_COLLECTIONS,
@@ -103,6 +104,7 @@ replicationRouter.post(
 
 replicationRouter.post(
   "/:collection/push",
+  requireSubscription,
   validate({ params: collectionParamSchema, body: pushBodySchema }),
   asyncHandler(async (req, res) => {
     const collection = req.params.collection as ReplicatedCollection;

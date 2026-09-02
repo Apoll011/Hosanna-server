@@ -16,6 +16,8 @@ const en = {
     forbidden_default: "You do not have permission to perform this action.",
     unauthorized_session: "Invalid or missing authentication session.",
     workspace_required: "An active workspace/organization context is required.",
+    subscription_required:
+      "The organization has no active subscription or ongoing trial. Only read access is allowed.",
     rate_limit_exceeded: "Too many requests. Please try again later.",
   },
 
