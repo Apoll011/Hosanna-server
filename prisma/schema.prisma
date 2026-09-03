@@ -343,6 +343,7 @@ model Invitation {
 
   @@index([organizationId])
   @@index([email])
+  @@index([email, organizationId])
   @@map("invitation")
 }
 
