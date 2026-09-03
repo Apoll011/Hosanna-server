@@ -33,10 +33,7 @@ export const pullAllBodySchema = z.object({
 
 export const changeRowSchema = z.object({
   newDocumentState: z.record(z.string(), z.unknown()),
-  assumedMasterState: z
-    .record(z.string(), z.unknown())
-    .nullable()
-    .optional(),
+  assumedMasterState: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 export const pushBodySchema = z.object({
