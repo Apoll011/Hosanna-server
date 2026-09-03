@@ -927,4 +927,17 @@ export const auth = betterAuth({
     window: 60,
     max: 100,
   },
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      mapProfileToUser: (profile) => {
+        return {
+          email: profile.email,
+          name: profile.name || profile.email.split("@")[0],
+          image: profile.picture,
+        };
+      },
+    },
+  },
 });
