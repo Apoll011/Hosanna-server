@@ -27,15 +27,39 @@ export function isEntitledSubscription(sub: {
   return !sub.trialEnd || sub.trialEnd.getTime() > Date.now();
 }
 
+// ── Short-lived subscription cache ─────────────────────────────────────────
+// Avoids a DB round-trip on every write request. TTL is intentionally short
+// (30 s) so a newly-activated subscription is recognised quickly.
+const SUB_CACHE_TTL_MS = 30_000;
+interface CacheEntry {
+  result: boolean;
+  expiresAt: number;
+}
+const subCache = new Map<string, CacheEntry>();
+
 /** True when the organization has an active subscription or is on a trial. */
 export async function hasActiveSubscription(
   organizationId: string,
 ): Promise<boolean> {
+  const now = Date.now();
+  const cached = subCache.get(organizationId);
+  if (cached && cached.expiresAt > now) return cached.result;
+
   const subscriptions = await prisma.subscription.findMany({
     where: { referenceId: organizationId },
     select: { status: true, trialEnd: true },
   });
-  return subscriptions.some(isEntitledSubscription);
+  const result = subscriptions.some(isEntitledSubscription);
+
+  // Evict stale entries to prevent unbounded growth.
+  if (subCache.size > 1024) {
+    for (const [key, entry] of subCache) {
+      if (entry.expiresAt <= now) subCache.delete(key);
+    }
+  }
+
+  subCache.set(organizationId, { result, expiresAt: now + SUB_CACHE_TTL_MS });
+  return result;
 }
 
 /**
