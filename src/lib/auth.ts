@@ -48,7 +48,6 @@ const stripeClient = new Stripe(env.stripeSecretKey, {
   apiVersion: "2026-08-26.dahlia", // Latest API version as of Stripe SDK v22.0.0
 });
 
-
 /*
 import { redisStorage } from "@better-auth/redis-storage";
 
@@ -681,10 +680,9 @@ export const auth = betterAuth({
               onTrialStart: async (subscription) => {
                 try {
                   const { churchName, recipients, locale } =
-                    await getOrgRecipientsWithLocale(
-                      subscription.referenceId,
-                      ["owner"],
-                    );
+                    await getOrgRecipientsWithLocale(subscription.referenceId, [
+                      "owner",
+                    ]);
                   await Promise.all(
                     recipients.map((r) =>
                       sendTrialStartedEmail(r.email, {
@@ -715,10 +713,9 @@ export const auth = betterAuth({
               onTrialEnd: async ({ subscription }) => {
                 try {
                   const { churchName, recipients, locale } =
-                    await getOrgRecipientsWithLocale(
-                      subscription.referenceId,
-                      ["owner"],
-                    );
+                    await getOrgRecipientsWithLocale(subscription.referenceId, [
+                      "owner",
+                    ]);
                   await Promise.all(
                     recipients.map((r) =>
                       sendTrialEndedEmail(r.email, {
@@ -749,10 +746,9 @@ export const auth = betterAuth({
               onTrialExpired: async (subscription) => {
                 try {
                   const { churchName, recipients, locale } =
-                    await getOrgRecipientsWithLocale(
-                      subscription.referenceId,
-                      ["owner"],
-                    );
+                    await getOrgRecipientsWithLocale(subscription.referenceId, [
+                      "owner",
+                    ]);
                   await Promise.all(
                     recipients.map((r) =>
                       sendTrialExpiredEmail(r.email, {
@@ -914,6 +910,12 @@ export const auth = betterAuth({
             err,
           );
         }
+      },
+    },
+    additionalFields: {
+      metadata: {
+        type: "string",
+        required: false,
       },
     },
   },
