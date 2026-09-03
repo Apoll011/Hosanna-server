@@ -824,7 +824,7 @@ export const auth = betterAuth({
             );
           }
         },
-        onSubscriptionCancel: async ({ subscription }) => {
+        onSubscriptionCancel: async ({ subscription, event }) => {
           try {
             const locale = await getOrgLocale(subscription.referenceId);
             const { churchName, recipients } = await getOrgRecipients(
