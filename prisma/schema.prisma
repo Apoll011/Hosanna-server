@@ -170,6 +170,8 @@ model User {
   banReason  String?
   banExpires DateTime?
 
+  metadata String?
+
   @@unique([email])
   @@map("user")
 }
