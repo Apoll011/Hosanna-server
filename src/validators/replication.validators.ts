@@ -25,15 +25,18 @@ export const replicatedCollectionSchema = z.enum([
 
 export const pullAllBodySchema = z.object({
   checkpoints: z
-    .record(replicatedCollectionSchema, checkpointSchema)
+    .partialRecord(replicatedCollectionSchema, checkpointSchema)
     .optional()
     .default({}),
   limit: z.number().int().min(1).max(500).optional().default(100),
 });
 
 export const changeRowSchema = z.object({
-  newDocumentState: z.record(z.unknown()),
-  assumedMasterState: z.record(z.unknown()).nullable().optional(),
+  newDocumentState: z.record(z.string(), z.unknown()),
+  assumedMasterState: z
+    .record(z.string(), z.unknown())
+    .nullable()
+    .optional(),
 });
 
 export const pushBodySchema = z.object({
