@@ -124,7 +124,8 @@ const pluginLocaleOverrides = {
   pt: {
     ORGANIZATION_NOT_FOUND: "Organização não encontrada",
     ORGANIZATION_ALREADY_EXISTS: "A organização já existe",
-    ORGANIZATION_SLUG_ALREADY_TAKEN: "O identificador da organização já está em uso",
+    ORGANIZATION_SLUG_ALREADY_TAKEN:
+      "O identificador da organização já está em uso",
     YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION:
       "Não tem permissão para criar uma nova organização",
     YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS:
@@ -133,8 +134,7 @@ const pluginLocaleOverrides = {
       "O utilizador não é membro da organização",
     YOU_ARE_NOT_ALLOWED_TO_ACCESS_THIS_ORGANIZATION:
       "Não tem permissão para aceder a esta organização como proprietário",
-    YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION:
-      "Não é membro desta organização",
+    YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION: "Não é membro desta organização",
     TEAM_NOT_FOUND: "Equipa não encontrada",
     TEAM_ALREADY_EXISTS: "A equipa já existe",
     INVITATION_NOT_FOUND: "Convite não encontrado",
@@ -155,7 +155,8 @@ const pluginLocaleOverrides = {
       "Forneça exatamente um de userId ou organizationId",
     ORGANIZATION_PLUGIN_REQUIRED:
       "organizationId requer o plugin da organização",
-    ORGANIZATION_HAS_NO_MEMBERS: "A organização não tem membros correspondentes",
+    ORGANIZATION_HAS_NO_MEMBERS:
+      "A organização não tem membros correspondentes",
     FAN_OUT_LIMIT_EXCEEDED: "O número de membros excede o máximo permitido",
     USER_ALREADY_EXISTS: "O utilizador já existe",
     FAILED_TO_CREATE_USER: "Falha ao criar utilizador",
@@ -167,7 +168,8 @@ const pluginLocaleOverrides = {
   es: {
     ORGANIZATION_NOT_FOUND: "No se encontró la organización",
     ORGANIZATION_ALREADY_EXISTS: "La organización ya existe",
-    ORGANIZATION_SLUG_ALREADY_TAKEN: "El identificador de la organización ya está en uso",
+    ORGANIZATION_SLUG_ALREADY_TAKEN:
+      "El identificador de la organización ya está en uso",
     YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION:
       "No tienes permiso para crear una nueva organización",
     YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS:
@@ -181,11 +183,13 @@ const pluginLocaleOverrides = {
     TEAM_NOT_FOUND: "Equipo no encontrado",
     TEAM_ALREADY_EXISTS: "El equipo ya existe",
     INVITATION_NOT_FOUND: "Invitación no encontrada",
-    INVALID_TWO_FACTOR_COOKIE: "Cookie de autenticación de dos factores no válido",
+    INVALID_TWO_FACTOR_COOKIE:
+      "Cookie de autenticación de dos factores no válido",
     OTP_NOT_ENABLED: "OTP no está habilitado",
     OTP_HAS_EXPIRED: "El código OTP ha expirado",
     TOTP_NOT_ENABLED: "TOTP no está habilitado",
-    TWO_FACTOR_NOT_ENABLED: "La autenticación de dos factores no está habilitada",
+    TWO_FACTOR_NOT_ENABLED:
+      "La autenticación de dos factores no está habilitada",
     INVALID_BACKUP_CODE: "Código de recuperación no válido",
     INVALID_CODE: "Código no válido",
     SUBSCRIPTION_NOT_FOUND: "Suscripción no encontrada",
@@ -198,7 +202,8 @@ const pluginLocaleOverrides = {
       "Proporciona exactamente uno de userId u organizationId",
     ORGANIZATION_PLUGIN_REQUIRED:
       "organizationId requiere el plugin de organización",
-    ORGANIZATION_HAS_NO_MEMBERS: "La organización no tiene miembros coincidentes",
+    ORGANIZATION_HAS_NO_MEMBERS:
+      "La organización no tiene miembros coincidentes",
     FAN_OUT_LIMIT_EXCEEDED: "El número de miembros excede el máximo permitido",
     USER_ALREADY_EXISTS: "El usuario ya existe",
     FAILED_TO_CREATE_USER: "No se pudo crear el usuario",
