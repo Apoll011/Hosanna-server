@@ -256,29 +256,51 @@ async function isOrgMember(userId: string, organizationId: string) {
 }
 
 /**
- * Returns the org display name plus the emails/names of members with the
- * given roles, used to fan out billing emails to the org leadership.
+ * Returns the org display name, locale, and emails/names of members with the
+ * given roles in a single DB query, used to fan out billing emails.
  */
-async function getOrgRecipients(
+async function getOrgRecipientsWithLocale(
   organizationId: string,
-  roles: string[],
+  memberRoles: string[],
 ): Promise<{
   churchName: string;
   recipients: Array<{ email: string; name: string }>;
+  locale: string;
 }> {
   const org = await prisma.organization.findUnique({
     where: { id: organizationId },
     select: {
       name: true,
+      metadata: true,
       members: {
-        where: { role: { in: roles } },
+        where: { role: { in: memberRoles } },
         select: { user: { select: { email: true, name: true } } },
       },
     },
   });
+
+  let locale = DEFAULT_LOCALE;
+  try {
+    let meta: any = {};
+    if (typeof org?.metadata === "string") {
+      try {
+        meta = JSON.parse(org.metadata);
+      } catch {
+        /* ignore */
+      }
+    } else if (org?.metadata && typeof org.metadata === "object") {
+      meta = org.metadata as any;
+    }
+    const parsed = meta?.settings?.general?.locale ?? meta?.locale;
+    if (typeof parsed === "string" && parsed.length > 0) locale = parsed;
+  } catch {
+    /* non-fatal */
+  }
+
   return {
     churchName: org?.name ?? "Hosanna",
     recipients: org?.members?.map((m) => m.user) ?? [],
+    locale,
   };
 }
 
@@ -302,7 +324,7 @@ export const auth = betterAuth({
     autoSignInAfterVerification: true,
     resetPasswordTokenExpiresIn: 60 * 60,
     revokeSessionsOnPasswordReset: true,
-    minPasswordLength: 6,
+    minPasswordLength: 8,
     maxPasswordLength: 128,
     autoSignIn: false,
 
@@ -671,11 +693,11 @@ export const auth = betterAuth({
               days: 14,
               onTrialStart: async (subscription) => {
                 try {
-                  const locale = await getOrgLocale(subscription.referenceId);
-                  const { churchName, recipients } = await getOrgRecipients(
-                    subscription.referenceId,
-                    ["owner"],
-                  );
+                  const { churchName, recipients, locale } =
+                    await getOrgRecipientsWithLocale(
+                      subscription.referenceId,
+                      ["owner"],
+                    );
                   await Promise.all(
                     recipients.map((r) =>
                       sendTrialStartedEmail(r.email, {
@@ -705,11 +727,11 @@ export const auth = betterAuth({
               },
               onTrialEnd: async ({ subscription }) => {
                 try {
-                  const locale = await getOrgLocale(subscription.referenceId);
-                  const { churchName, recipients } = await getOrgRecipients(
-                    subscription.referenceId,
-                    ["owner"],
-                  );
+                  const { churchName, recipients, locale } =
+                    await getOrgRecipientsWithLocale(
+                      subscription.referenceId,
+                      ["owner"],
+                    );
                   await Promise.all(
                     recipients.map((r) =>
                       sendTrialEndedEmail(r.email, {
@@ -739,11 +761,11 @@ export const auth = betterAuth({
               },
               onTrialExpired: async (subscription) => {
                 try {
-                  const locale = await getOrgLocale(subscription.referenceId);
-                  const { churchName, recipients } = await getOrgRecipients(
-                    subscription.referenceId,
-                    ["owner"],
-                  );
+                  const { churchName, recipients, locale } =
+                    await getOrgRecipientsWithLocale(
+                      subscription.referenceId,
+                      ["owner"],
+                    );
                   await Promise.all(
                     recipients.map((r) =>
                       sendTrialExpiredEmail(r.email, {
@@ -791,11 +813,11 @@ export const auth = betterAuth({
         },
         onSubscriptionComplete: async ({ subscription, plan }) => {
           try {
-            const locale = await getOrgLocale(subscription.referenceId);
-            const { churchName, recipients } = await getOrgRecipients(
-              subscription.referenceId,
-              ["owner", "admin"],
-            );
+            const { churchName, recipients, locale } =
+              await getOrgRecipientsWithLocale(subscription.referenceId, [
+                "owner",
+                "admin",
+              ]);
             await Promise.all(
               recipients.map((r) =>
                 sendSubscribedEmail(r.email, {
@@ -826,11 +848,11 @@ export const auth = betterAuth({
         },
         onSubscriptionCancel: async ({ subscription, event }) => {
           try {
-            const locale = await getOrgLocale(subscription.referenceId);
-            const { churchName, recipients } = await getOrgRecipients(
-              subscription.referenceId,
-              ["owner", "admin"],
-            );
+            const { churchName, recipients, locale } =
+              await getOrgRecipientsWithLocale(subscription.referenceId, [
+                "owner",
+                "admin",
+              ]);
             await Promise.all(
               recipients.map((r) =>
                 sendCanceledEmail(r.email, {
@@ -870,7 +892,7 @@ export const auth = betterAuth({
     },
     cookiePrefix: "hosanna",
     defaultCookieAttributes: {
-      sameSite: (process.env.DEV_MODE || "true") === "true" ? "None" : "Lax",
+      sameSite: process.env.DEV_MODE === "true" ? "None" : "Lax",
       secure: true,
     },
     crossSubDomainCookies: {
@@ -916,9 +938,7 @@ export const auth = betterAuth({
       enabled: true,
       strategy: "jwe",
       maxAge: 15 * 60,
-      version: () => {
-        return "1";
-      },
+      version: "1",
     },
   },
   rateLimit: {
