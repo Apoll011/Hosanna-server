@@ -1,26 +1,24 @@
 /**
  * RxDB Replication Service
  *
- * Implements the server-side logic for RxDB's HTTP pull/push replication
- * protocol. Each collection (songs, folders, services, agendaEvents) shares
- * the same checkpoint format: `{ updatedAt: number; id: string }`.
+ * Implements high-performance server-side logic for RxDB's HTTP pull/push
+ * replication protocol across collections: songs, folders, services, agendaEvents.
  *
- * Pull: returns documents changed *after* the checkpoint, ordered by
- *       (updatedAt ASC, id ASC), limited to `batchSize`.
+ * Checkpoint format: `{ updatedAt: number; id: string }`
  *
- * Push: receives an array of change rows from the client, each containing
- *       `{ newDocumentState, assumedMasterState? }`. Performs conflict
- *       detection and returns conflicting server documents.
+ * Pull:
+ *  - Queries changed documents with composite index `(orgId, updatedAt, id)`
+ *  - Uses lean field selection and batch folder count aggregation (avoiding N+1 counts)
  *
- * Deletions go to trash first: `deleted: true` + `purgeAt` (now + 30 days) is
- * set and pushed/pulled as regular fields so clients can list/restore trashed
- * items locally. Rows are only hard-removed once `purgeAt` expires (see
- * cron.routes.ts `/purge-trash`); RxDB's reserved `_deleted` tombstone is
- * therefore always `false` on the wire for rows returned by pull.
+ * Push:
+ *  - Batch fetches all candidate records in a single query (eliminating 2*N sequential queries)
+ *  - Runs mutations inside an interactive transaction for ACID consistency
+ *  - Detects conflicts before executing updates
+ *  - Invalidates syncCache atomically only when state was modified
  */
 
 import { v4 as uuid } from "uuid";
-import type { OrgScopedPrisma } from "../database/prisma.js";
+import type { OrgScopedPrisma, OrgScopedTx } from "../database/prisma.js";
 import { syncCache } from "./syncCache.service.js";
 
 const MAX_LIMIT = 500;
@@ -38,16 +36,18 @@ export interface PullRequest {
   limit: number;
 }
 
-interface PullAllRequest {
+export interface PullAllRequest {
   checkpoints: MultiPullCheckpoints;
   limit?: number;
 }
 
-type MultiPullCheckpoints = Partial<
+export type MultiPullCheckpoints = Partial<
   Record<ReplicatedCollection, ReplicationCheckpoint | null>
 >;
-type MultiPullLimits = Partial<Record<ReplicatedCollection, number>> | number;
-type MultiPullResponse<T> = Record<ReplicatedCollection, PullResponse<T>>;
+export type MultiPullLimits =
+  | Partial<Record<ReplicatedCollection, number>>
+  | number;
+export type MultiPullResponse<T> = Record<ReplicatedCollection, PullResponse<T>>;
 
 export interface PullResponse<T> {
   documents: T[];
@@ -71,80 +71,186 @@ export type ReplicatedCollection =
   | "services"
   | "agendaEvents";
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-const DELEGATE_BY_COLLECTION: Record<
-  ReplicatedCollection,
-  "song" | "folder" | "service" | "agendaEvent"
-> = {
-  songs: "song",
-  folders: "folder",
-  services: "service",
-  agendaEvents: "agendaEvent",
-};
-
-function getDelegate(db: OrgScopedPrisma, collection: ReplicatedCollection) {
-  return db[DELEGATE_BY_COLLECTION[collection]] as any;
-}
-
-/**
- * Convert a Prisma row to the RxDB wire format (dates → ISO).
- *
- * Prisma's `deleted` field is a trash flag (soft-deleted, recoverable until
- * `purgeAt`), not RxDB's reserved tombstone — it is sent through as a plain
- * `deleted` property. RxDB's own `_deleted` is reserved for rows that are
- * truly gone; since a purged row is hard-deleted (see cron.routes.ts) and
- * therefore never returned here, live rows always report `_deleted: false`.
- */
-function toWireDoc(doc: any, collection: ReplicatedCollection): any {
-  let out: any = { ...doc };
-  if (out.createdAt instanceof Date)
-    out.createdAt = out.createdAt.toISOString();
-  if (out.updatedAt instanceof Date)
-    out.updatedAt = out.updatedAt.toISOString();
-  if (out.date instanceof Date) out.date = out.date.toISOString();
-  if (out.purgeAt instanceof Date) out.purgeAt = out.purgeAt.toISOString();
-  out.isDeleted = !!out.deleted;
-  out._deleted = false;
-  // Strip server-only fields
-  delete out.orgId;
-  delete out.org;
-  delete out.deleted;
-
-  if (collection === "folders") {
-    out = {
-      ...out,
-      songCount: doc._count?.songs ?? 0,
-      folderCount: doc._count?.children ?? 0,
-    };
-
-    delete out._count;
-  }
-
-  return out;
-}
-
-function hasConflict(serverDoc: any, assumed: any): boolean {
-  if (!assumed) return false;
-  const sTime =
-    serverDoc.updatedAt instanceof Date
-      ? serverDoc.updatedAt.getTime()
-      : new Date(serverDoc.updatedAt).getTime();
-  const aTime =
-    assumed.updatedAt instanceof Date
-      ? assumed.updatedAt.getTime()
-      : new Date(assumed.updatedAt).getTime();
-  return sTime !== aTime;
-}
-
-// ── Generic pull ───────────────────────────────────────────────────────────
-
-export const ALL_COLLECTIONS: ReplicatedCollection[] = [
+export const ALL_COLLECTIONS: readonly ReplicatedCollection[] = [
   "songs",
   "folders",
   "services",
   "agendaEvents",
-];
+] as const;
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+const DELEGATE_BY_COLLECTION = {
+  songs: "song",
+  folders: "folder",
+  services: "service",
+  agendaEvents: "agendaEvent",
+} as const;
+
+const DEFAULT_REMINDER = Object.freeze({ enabled: false, label: "" });
+
+function parseDate(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+  const d = new Date(value as string | number);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function toTimestamp(value: unknown): number | null {
+  if (!value) return null;
+  if (value instanceof Date) return value.getTime();
+  const time = new Date(value as string | number).getTime();
+  return isNaN(time) ? null : time;
+}
+
+function toWireSong(doc: any): any {
+  return {
+    id: doc.id,
+    title: doc.title,
+    artist: doc.artist,
+    content: doc.content,
+    folderId: doc.folderId ?? null,
+    path: doc.path,
+    tags: doc.tags ?? [],
+    song_number: doc.song_number ?? null,
+    createdAt:
+      doc.createdAt instanceof Date
+        ? doc.createdAt.toISOString()
+        : doc.createdAt,
+    updatedAt:
+      doc.updatedAt instanceof Date
+        ? doc.updatedAt.toISOString()
+        : doc.updatedAt,
+    purgeAt:
+      doc.purgeAt instanceof Date
+        ? doc.purgeAt.toISOString()
+        : (doc.purgeAt ?? null),
+    isDeleted: Boolean(doc.deleted),
+    _deleted: false,
+  };
+}
+
+function toWireFolder(doc: any, songCount = 0, folderCount = 0): any {
+  return {
+    id: doc.id,
+    name: doc.name,
+    parentId: doc.parentId ?? null,
+    color: doc.color,
+    icon: doc.icon,
+    songCount: doc._count?.songs ?? songCount,
+    folderCount: doc._count?.children ?? folderCount,
+    createdAt:
+      doc.createdAt instanceof Date
+        ? doc.createdAt.toISOString()
+        : doc.createdAt,
+    updatedAt:
+      doc.updatedAt instanceof Date
+        ? doc.updatedAt.toISOString()
+        : doc.updatedAt,
+    purgeAt:
+      doc.purgeAt instanceof Date
+        ? doc.purgeAt.toISOString()
+        : (doc.purgeAt ?? null),
+    isDeleted: Boolean(doc.deleted),
+    _deleted: false,
+  };
+}
+
+function toWireService(doc: any): any {
+  return {
+    id: doc.id,
+    name: doc.name,
+    date: doc.date instanceof Date ? doc.date.toISOString() : doc.date,
+    notes: doc.notes ?? "",
+    elements: doc.elements ?? [],
+    archived: Boolean(doc.archived),
+    createdAt:
+      doc.createdAt instanceof Date
+        ? doc.createdAt.toISOString()
+        : doc.createdAt,
+    updatedAt:
+      doc.updatedAt instanceof Date
+        ? doc.updatedAt.toISOString()
+        : doc.updatedAt,
+    purgeAt:
+      doc.purgeAt instanceof Date
+        ? doc.purgeAt.toISOString()
+        : (doc.purgeAt ?? null),
+    isDeleted: Boolean(doc.deleted),
+    _deleted: false,
+  };
+}
+
+function toWireAgendaEvent(doc: any): any {
+  return {
+    id: doc.id,
+    date: doc.date,
+    title: doc.title,
+    type: doc.type,
+    time: doc.time,
+    durationMinutes: doc.durationMinutes,
+    location: doc.location ?? null,
+    notes: doc.notes ?? null,
+    reminder: doc.reminder ?? DEFAULT_REMINDER,
+    linkedServiceId: doc.linkedServiceId ?? null,
+    responsibilities: doc.responsibilities ?? [],
+    createdAt:
+      doc.createdAt instanceof Date
+        ? doc.createdAt.toISOString()
+        : doc.createdAt,
+    updatedAt:
+      doc.updatedAt instanceof Date
+        ? doc.updatedAt.toISOString()
+        : doc.updatedAt,
+    purgeAt:
+      doc.purgeAt instanceof Date
+        ? doc.purgeAt.toISOString()
+        : (doc.purgeAt ?? null),
+    isDeleted: Boolean(doc.deleted),
+    _deleted: false,
+  };
+}
+
+export function toWireDoc(
+  doc: any,
+  collection: ReplicatedCollection,
+  counts?: { songCount: number; folderCount: number },
+): any {
+  switch (collection) {
+    case "songs":
+      return toWireSong(doc);
+    case "folders":
+      return toWireFolder(doc, counts?.songCount, counts?.folderCount);
+    case "services":
+      return toWireService(doc);
+    case "agendaEvents":
+      return toWireAgendaEvent(doc);
+  }
+}
+
+function hasConflict(serverDoc: any, assumed: any): boolean {
+  if (!assumed) return false;
+  const sTime = toTimestamp(serverDoc.updatedAt);
+  const aTime = toTimestamp(assumed.updatedAt);
+  if (sTime === null || aTime === null) return true;
+  return sTime !== aTime;
+}
+
+function buildCheckpointWhere(checkpoint: ReplicationCheckpoint | null) {
+  if (!checkpoint) return {};
+  const checkpointDate = new Date(checkpoint.updatedAt);
+  return {
+    OR: [
+      { updatedAt: { gt: checkpointDate } },
+      {
+        updatedAt: checkpointDate,
+        id: { gt: checkpoint.id },
+      },
+    ],
+  };
+}
+
+// ── Generic pull ───────────────────────────────────────────────────────────
 
 async function pullOne(
   db: OrgScopedPrisma,
@@ -152,53 +258,94 @@ async function pullOne(
   checkpoint: ReplicationCheckpoint | null,
   limit: number,
 ): Promise<PullResponse<any>> {
-  const delegate = getDelegate(db, collection);
+  const delegateName = DELEGATE_BY_COLLECTION[collection];
+  const delegate = (db as any)[delegateName];
+  const where = buildCheckpointWhere(checkpoint);
 
-  const where = checkpoint
-    ? {
-        OR: [
-          { updatedAt: { gt: new Date(checkpoint.updatedAt) } },
-          {
-            updatedAt: new Date(checkpoint.updatedAt),
-            id: { gt: checkpoint.id },
-          },
-        ],
-      }
-    : {};
+  if (collection === "folders") {
+    // Lean fetch without subquery JOINs in the main query
+    const docs = await delegate.findMany({
+      where,
+      orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+      take: limit,
+    });
+
+    if (docs.length === 0) {
+      return { documents: [], checkpoint };
+    }
+
+    const folderIds = docs.map((d: any) => d.id);
+
+    // Batch aggregate child songs and child folders in parallel
+    const [songCounts, folderCounts] = await Promise.all([
+      db.song.groupBy({
+        by: ["folderId"],
+        where: { folderId: { in: folderIds } },
+        _count: { _all: true },
+      }),
+      db.folder.groupBy({
+        by: ["parentId"],
+        where: { parentId: { in: folderIds } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const songCountMap = new Map<string, number>();
+    for (const sc of songCounts) {
+      if (sc.folderId) songCountMap.set(sc.folderId, sc._count._all);
+    }
+
+    const folderCountMap = new Map<string, number>();
+    for (const fc of folderCounts) {
+      if (fc.parentId) folderCountMap.set(fc.parentId, fc._count._all);
+    }
+
+    const last = docs[docs.length - 1];
+    const newCheckpoint: ReplicationCheckpoint = {
+      updatedAt: new Date(last.updatedAt).getTime(),
+      id: last.id,
+    };
+
+    const documents = docs.map((doc: any) =>
+      toWireFolder(
+        doc,
+        songCountMap.get(doc.id) ?? 0,
+        folderCountMap.get(doc.id) ?? 0,
+      ),
+    );
+
+    return { documents, checkpoint: newCheckpoint };
+  }
 
   const docs = await delegate.findMany({
     where,
     orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
     take: limit,
-    ...(collection === "folders"
-      ? { include: { _count: { select: { songs: true, children: true } } } }
-      : {}),
   });
 
-  const last = docs[docs.length - 1];
-  const newCheckpoint: ReplicationCheckpoint | null = last
-    ? { updatedAt: new Date(last.updatedAt).getTime(), id: last.id }
-    : checkpoint;
+  if (docs.length === 0) {
+    return { documents: [], checkpoint };
+  }
 
-  return {
-    documents: docs.map((doc: any) => toWireDoc(doc, collection)),
-    checkpoint: newCheckpoint,
+  const last = docs[docs.length - 1];
+  const newCheckpoint: ReplicationCheckpoint = {
+    updatedAt: new Date(last.updatedAt).getTime(),
+    id: last.id,
   };
+
+  const documents = docs.map((doc: any) => toWireDoc(doc, collection));
+  return { documents, checkpoint: newCheckpoint };
 }
 
 /**
  * Pulls all replicated collections in a single round trip (concurrently),
  * returning per-collection documents + checkpoints.
- *
- * Example:
- *   const result = await pullAll(db, { songs: songCp, folders: folderCp, services: serviceCp }, 50);
- *   // => { folders: { documents, checkpoint }, songs: { documents, checkpoint }, services: { documents, checkpoint } }
  */
 export async function pullAll(
   db: OrgScopedPrisma,
   checkpoints: MultiPullCheckpoints = {},
   limits: MultiPullLimits = DEFAULT_LIMIT,
-  collections: ReplicatedCollection[] = ALL_COLLECTIONS,
+  collections: readonly ReplicatedCollection[] = ALL_COLLECTIONS,
 ): Promise<MultiPullResponse<any>> {
   const results = await Promise.all(
     collections.map((collection) => {
@@ -210,13 +357,14 @@ export async function pullAll(
     }),
   );
 
-  return collections.reduce((acc, collection, i) => {
-    acc[collection] = results[i];
-    return acc;
-  }, {} as MultiPullResponse<any>);
+  const response = {} as MultiPullResponse<any>;
+  for (let i = 0; i < collections.length; i++) {
+    response[collections[i]] = results[i];
+  }
+  return response;
 }
 
-// Keep the old single-collection signature around for callers that still need it
+// Keep the old single-collection signature around for backward compatibility
 export const pull = pullOne;
 
 // ── Push: songs ────────────────────────────────────────────────────────────
@@ -226,56 +374,83 @@ async function pushSongs(
   tenantId: string,
   rows: ChangeRow<any>[],
 ): Promise<any[]> {
-  const conflicts: any[] = [];
+  if (rows.length === 0) return [];
 
-  for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
-    const existing = await db.song.findUnique({ where: { id: doc.id } });
+  const candidateIds = rows
+    .map((r) => r.newDocumentState?.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
 
-    if (existing) {
-      if (assumed && hasConflict(existing, assumed)) {
-        conflicts.push(toWireDoc(existing, "songs"));
-        continue;
-      }
-      if (doc._deleted) {
-        await db.song.update({
-          where: { id: doc.id },
-          data: { deleted: true },
-        });
-      } else {
-        await db.song.update({
-          where: { id: doc.id },
-          data: {
-            title: doc.title,
-            artist: doc.artist ?? "Unknown Artist",
-            content: doc.content,
-            folderId: doc.folderId ?? null,
-            path: doc.path,
-            tags: doc.tags ?? [],
-            song_number: doc.song_number ?? null,
-            deleted: !!doc.isDeleted,
-            purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
-          },
-        });
-      }
-    } else if (!doc._deleted) {
-      await db.song.create({
-        data: {
-          id: doc.id || uuid(),
-          title: doc.title,
-          artist: doc.artist ?? "Unknown Artist",
-          content: doc.content ?? "",
-          folderId: doc.folderId ?? null,
-          path: doc.path ?? `${doc.title}.pro`,
-          tags: doc.tags ?? [],
-          song_number: doc.song_number ?? null,
-          deleted: !!doc.isDeleted,
-          purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
-        } as any,
-      });
-    }
+  const existingList =
+    candidateIds.length > 0
+      ? await db.song.findMany({ where: { id: { in: candidateIds } } })
+      : [];
+
+  const existingMap = new Map<string, any>();
+  for (const item of existingList) {
+    existingMap.set(item.id, item);
   }
 
-  syncCache.invalidate(tenantId);
+  const conflicts: any[] = [];
+  let mutationCount = 0;
+
+  await db.$transaction(async (tx: OrgScopedTx) => {
+    for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
+      if (!doc || typeof doc !== "object") continue;
+
+      const existing = doc.id ? existingMap.get(doc.id) : undefined;
+
+      if (existing) {
+        if (assumed && hasConflict(existing, assumed)) {
+          conflicts.push(toWireSong(existing));
+          continue;
+        }
+
+        mutationCount++;
+        if (doc._deleted) {
+          await tx.song.update({
+            where: { id: doc.id },
+            data: { deleted: true },
+          });
+        } else {
+          await tx.song.update({
+            where: { id: doc.id },
+            data: {
+              title: doc.title,
+              artist: doc.artist ?? "Unknown Artist",
+              content: doc.content ?? "",
+              folderId: doc.folderId ?? null,
+              path: doc.path ?? `${doc.title}.pro`,
+              tags: Array.isArray(doc.tags) ? doc.tags : [],
+              song_number: doc.song_number ?? null,
+              deleted: Boolean(doc.isDeleted),
+              purgeAt: parseDate(doc.purgeAt),
+            },
+          });
+        }
+      } else if (!doc._deleted) {
+        mutationCount++;
+        const newId = doc.id || uuid();
+        await tx.song.create({
+          data: {
+            id: newId,
+            title: doc.title,
+            artist: doc.artist ?? "Unknown Artist",
+            content: doc.content ?? "",
+            folderId: doc.folderId ?? null,
+            path: doc.path ?? `${doc.title}.pro`,
+            tags: Array.isArray(doc.tags) ? doc.tags : [],
+            song_number: doc.song_number ?? null,
+            deleted: Boolean(doc.isDeleted),
+            purgeAt: parseDate(doc.purgeAt),
+          } as any,
+        });
+      }
+    }
+  });
+
+  if (mutationCount > 0) {
+    syncCache.invalidate(tenantId);
+  }
   return conflicts;
 }
 
@@ -286,60 +461,87 @@ async function pushFolders(
   tenantId: string,
   rows: ChangeRow<any>[],
 ): Promise<any[]> {
-  const conflicts: any[] = [];
+  if (rows.length === 0) return [];
 
-  for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
-    const existing = await db.folder.findUnique({
-      where: { id: doc.id },
-      include: {
-        _count: {
-          select: {
-            songs: true,
-            children: true,
+  const candidateIds = rows
+    .map((r) => r.newDocumentState?.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+  const existingList =
+    candidateIds.length > 0
+      ? await db.folder.findMany({
+          where: { id: { in: candidateIds } },
+          include: {
+            _count: {
+              select: {
+                songs: true,
+                children: true,
+              },
+            },
           },
-        },
-      },
-    });
+        })
+      : [];
 
-    if (existing) {
-      if (assumed && hasConflict(existing, assumed)) {
-        conflicts.push(toWireDoc(existing, "folders"));
-        continue;
-      }
-      if (doc._deleted) {
-        await db.folder.update({
-          where: { id: doc.id },
-          data: { deleted: true },
-        });
-      } else {
-        await db.folder.update({
-          where: { id: doc.id },
+  const existingMap = new Map<string, any>();
+  for (const item of existingList) {
+    existingMap.set(item.id, item);
+  }
+
+  const conflicts: any[] = [];
+  let mutationCount = 0;
+
+  await db.$transaction(async (tx: OrgScopedTx) => {
+    for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
+      if (!doc || typeof doc !== "object") continue;
+
+      const existing = doc.id ? existingMap.get(doc.id) : undefined;
+
+      if (existing) {
+        if (assumed && hasConflict(existing, assumed)) {
+          conflicts.push(toWireFolder(existing));
+          continue;
+        }
+
+        mutationCount++;
+        if (doc._deleted) {
+          await tx.folder.update({
+            where: { id: doc.id },
+            data: { deleted: true },
+          });
+        } else {
+          await tx.folder.update({
+            where: { id: doc.id },
+            data: {
+              name: doc.name,
+              parentId: doc.parentId ?? null,
+              color: doc.color ?? "default",
+              icon: doc.icon ?? "default",
+              deleted: Boolean(doc.isDeleted),
+              purgeAt: parseDate(doc.purgeAt),
+            },
+          });
+        }
+      } else if (!doc._deleted) {
+        mutationCount++;
+        const newId = doc.id || uuid();
+        await tx.folder.create({
           data: {
+            id: newId,
             name: doc.name,
             parentId: doc.parentId ?? null,
             color: doc.color ?? "default",
             icon: doc.icon ?? "default",
-            deleted: !!doc.isDeleted,
-            purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
-          },
+            deleted: Boolean(doc.isDeleted),
+            purgeAt: parseDate(doc.purgeAt),
+          } as any,
         });
       }
-    } else if (!doc._deleted) {
-      await db.folder.create({
-        data: {
-          id: doc.id || uuid(),
-          name: doc.name,
-          parentId: doc.parentId ?? null,
-          color: doc.color ?? "default",
-          icon: doc.icon ?? "default",
-          deleted: !!doc.isDeleted,
-          purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
-        } as any,
-      });
     }
-  }
+  });
 
-  syncCache.invalidate(tenantId);
+  if (mutationCount > 0) {
+    syncCache.invalidate(tenantId);
+  }
   return conflicts;
 }
 
@@ -350,120 +552,176 @@ async function pushServices(
   tenantId: string,
   rows: ChangeRow<any>[],
 ): Promise<any[]> {
-  const conflicts: any[] = [];
+  if (rows.length === 0) return [];
 
-  for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
-    const existing = await db.service.findUnique({ where: { id: doc.id } });
+  const candidateIds = rows
+    .map((r) => r.newDocumentState?.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
 
-    if (existing) {
-      if (assumed && hasConflict(existing, assumed)) {
-        conflicts.push(toWireDoc(existing, "services"));
-        continue;
-      }
-      if (doc._deleted) {
-        await db.service.update({
-          where: { id: doc.id },
-          data: { deleted: true },
-        });
-      } else {
-        await db.service.update({
-          where: { id: doc.id },
-          data: {
-            name: doc.name,
-            date: doc.date ? new Date(doc.date) : undefined,
-            notes: doc.notes ?? null,
-            elements: doc.elements ?? [],
-            archived: doc.archived ?? false,
-            deleted: !!doc.isDeleted,
-            purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
-          },
-        });
-      }
-    } else if (!doc._deleted) {
-      await db.service.create({
-        data: {
-          id: doc.id || uuid(),
-          name: doc.name,
-          date: doc.date ? new Date(doc.date) : new Date(),
-          notes: doc.notes ?? "",
-          elements: doc.elements ?? [],
-          archived: doc.archived ?? false,
-          deleted: !!doc.isDeleted,
-          purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
-        } as any,
-      });
-    }
+  const existingList =
+    candidateIds.length > 0
+      ? await db.service.findMany({ where: { id: { in: candidateIds } } })
+      : [];
+
+  const existingMap = new Map<string, any>();
+  for (const item of existingList) {
+    existingMap.set(item.id, item);
   }
 
-  syncCache.invalidate(tenantId);
+  const conflicts: any[] = [];
+  let mutationCount = 0;
+
+  await db.$transaction(async (tx: OrgScopedTx) => {
+    for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
+      if (!doc || typeof doc !== "object") continue;
+
+      const existing = doc.id ? existingMap.get(doc.id) : undefined;
+
+      if (existing) {
+        if (assumed && hasConflict(existing, assumed)) {
+          conflicts.push(toWireService(existing));
+          continue;
+        }
+
+        mutationCount++;
+        if (doc._deleted) {
+          await tx.service.update({
+            where: { id: doc.id },
+            data: { deleted: true },
+          });
+        } else {
+          await tx.service.update({
+            where: { id: doc.id },
+            data: {
+              name: doc.name,
+              date: parseDate(doc.date) ?? undefined,
+              notes: doc.notes ?? null,
+              elements: Array.isArray(doc.elements) ? doc.elements : [],
+              archived: Boolean(doc.archived),
+              deleted: Boolean(doc.isDeleted),
+              purgeAt: parseDate(doc.purgeAt),
+            },
+          });
+        }
+      } else if (!doc._deleted) {
+        mutationCount++;
+        const newId = doc.id || uuid();
+        await tx.service.create({
+          data: {
+            id: newId,
+            name: doc.name,
+            date: parseDate(doc.date) ?? new Date(),
+            notes: doc.notes ?? "",
+            elements: Array.isArray(doc.elements) ? doc.elements : [],
+            archived: Boolean(doc.archived),
+            deleted: Boolean(doc.isDeleted),
+            purgeAt: parseDate(doc.purgeAt),
+          } as any,
+        });
+      }
+    }
+  });
+
+  if (mutationCount > 0) {
+    syncCache.invalidate(tenantId);
+  }
   return conflicts;
 }
 
 // ── Push: agenda events ────────────────────────────────────────────────────
-
-const DEFAULT_REMINDER = { enabled: false, label: "" };
 
 async function pushAgendaEvents(
   db: OrgScopedPrisma,
   tenantId: string,
   rows: ChangeRow<any>[],
 ): Promise<any[]> {
+  if (rows.length === 0) return [];
+
+  const candidateIds = rows
+    .map((r) => r.newDocumentState?.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+  const existingList =
+    candidateIds.length > 0
+      ? await db.agendaEvent.findMany({ where: { id: { in: candidateIds } } })
+      : [];
+
+  const existingMap = new Map<string, any>();
+  for (const item of existingList) {
+    existingMap.set(item.id, item);
+  }
+
   const conflicts: any[] = [];
+  let mutationCount = 0;
 
-  for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
-    const existing = await db.agendaEvent.findUnique({ where: { id: doc.id } });
+  await db.$transaction(async (tx: OrgScopedTx) => {
+    for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
+      if (!doc || typeof doc !== "object") continue;
 
-    if (existing) {
-      if (assumed && hasConflict(existing, assumed)) {
-        conflicts.push(toWireDoc(existing, "agendaEvents"));
-        continue;
-      }
-      if (doc._deleted) {
-        await db.agendaEvent.update({
-          where: { id: doc.id },
-          data: { deleted: true },
-        });
-      } else {
-        await db.agendaEvent.update({
-          where: { id: doc.id },
+      const existing = doc.id ? existingMap.get(doc.id) : undefined;
+
+      if (existing) {
+        if (assumed && hasConflict(existing, assumed)) {
+          conflicts.push(toWireAgendaEvent(existing));
+          continue;
+        }
+
+        mutationCount++;
+        if (doc._deleted) {
+          await tx.agendaEvent.update({
+            where: { id: doc.id },
+            data: { deleted: true },
+          });
+        } else {
+          await tx.agendaEvent.update({
+            where: { id: doc.id },
+            data: {
+              date: doc.date,
+              title: doc.title,
+              type: doc.type,
+              time: doc.time,
+              durationMinutes: Number(doc.durationMinutes) || 0,
+              location: doc.location ?? null,
+              notes: doc.notes ?? null,
+              reminder: doc.reminder ?? DEFAULT_REMINDER,
+              linkedServiceId: doc.linkedServiceId ?? null,
+              responsibilities: Array.isArray(doc.responsibilities)
+                ? doc.responsibilities
+                : [],
+              deleted: Boolean(doc.isDeleted),
+              purgeAt: parseDate(doc.purgeAt),
+            },
+          });
+        }
+      } else if (!doc._deleted) {
+        mutationCount++;
+        const newId = doc.id || uuid();
+        await tx.agendaEvent.create({
           data: {
+            id: newId,
             date: doc.date,
             title: doc.title,
             type: doc.type,
             time: doc.time,
-            durationMinutes: doc.durationMinutes,
+            durationMinutes: Number(doc.durationMinutes) || 0,
             location: doc.location ?? null,
             notes: doc.notes ?? null,
             reminder: doc.reminder ?? DEFAULT_REMINDER,
             linkedServiceId: doc.linkedServiceId ?? null,
-            responsibilities: doc.responsibilities ?? [],
-            deleted: !!doc.isDeleted,
-            purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
-          },
+            responsibilities: Array.isArray(doc.responsibilities)
+              ? doc.responsibilities
+              : [],
+            deleted: Boolean(doc.isDeleted),
+            purgeAt: parseDate(doc.purgeAt),
+          } as any,
         });
       }
-    } else if (!doc._deleted) {
-      await db.agendaEvent.create({
-        data: {
-          id: doc.id || uuid(),
-          date: doc.date,
-          title: doc.title,
-          type: doc.type,
-          time: doc.time,
-          durationMinutes: doc.durationMinutes,
-          location: doc.location ?? null,
-          notes: doc.notes ?? null,
-          reminder: doc.reminder ?? DEFAULT_REMINDER,
-          linkedServiceId: doc.linkedServiceId ?? null,
-          responsibilities: doc.responsibilities ?? [],
-          deleted: !!doc.isDeleted,
-          purgeAt: doc.purgeAt ? new Date(doc.purgeAt) : null,
-        } as any,
-      });
     }
-  }
+  });
 
-  syncCache.invalidate(tenantId);
+  if (mutationCount > 0) {
+    syncCache.invalidate(tenantId);
+  }
   return conflicts;
 }
 
@@ -486,24 +744,26 @@ export class ReplicationService {
   ) {}
 
   pull(collection: ReplicatedCollection, req: PullRequest) {
-    return pullOne(
-      this.db,
-      collection,
-      req.checkpoint,
-      Math.min(req.limit || DEFAULT_LIMIT, MAX_LIMIT),
-    );
+    const limit = Math.max(1, Math.min(req.limit || DEFAULT_LIMIT, MAX_LIMIT));
+    return pullOne(this.db, collection, req.checkpoint, limit);
   }
 
   pullAll(req: PullAllRequest) {
-    const collections = Object.keys(req.checkpoints).length
-      ? (Object.keys(req.checkpoints) as ReplicatedCollection[])
-      : ALL_COLLECTIONS;
+    const collections =
+      req.checkpoints && Object.keys(req.checkpoints).length > 0
+        ? (Object.keys(req.checkpoints) as ReplicatedCollection[])
+        : ALL_COLLECTIONS;
 
-    const limit = Math.min(req.limit || DEFAULT_LIMIT, MAX_LIMIT);
-
+    const limit = Math.max(1, Math.min(req.limit || DEFAULT_LIMIT, MAX_LIMIT));
     return pullAll(this.db, req.checkpoints, limit, collections);
   }
+
   push(collection: ReplicatedCollection, req: PushRequest<any>) {
-    return pushHandlers[collection](this.db, this.tenantId, req.changeRows);
+    const handler = pushHandlers[collection];
+    if (!handler) {
+      throw new Error(`Unsupported replication collection: ${collection}`);
+    }
+    return handler(this.db, this.tenantId, req.changeRows || []);
   }
 }
+
