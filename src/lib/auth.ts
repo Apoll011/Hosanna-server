@@ -109,6 +109,14 @@ async function isOrgOwner(userId: string, organizationId: string) {
   return member?.role === "owner";
 }
 
+async function isOrgMember(userId: string, organizationId: string) {
+  const member = await prisma.member.findFirst({
+    where: { organizationId, userId },
+    select: { id: true },
+  });
+  return member !== null;
+}
+
 /**
  * Returns the org display name plus the emails/names of members with the
  * given roles, used to fan out billing emails to the org leadership.
@@ -622,7 +630,10 @@ export const auth = betterAuth({
             mode: "subscription",
           },
         }),
-        authorizeReference: async ({ user, referenceId }) => {
+        authorizeReference: async ({ user, referenceId, action }) => {
+          if (action === "list-subscription") {
+            return isOrgMember(user.id, referenceId);
+          }
           return isOrgOwner(user.id, referenceId);
         },
         onSubscriptionComplete: async ({ subscription, plan }) => {
