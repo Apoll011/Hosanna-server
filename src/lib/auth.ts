@@ -13,6 +13,7 @@ import {
 } from "better-auth/plugins";
 import { inbox } from "better-inbox";
 import Stripe from "stripe";
+import { env } from "../config/env.js";
 import { prisma } from "../database/prisma.js";
 import { RESPONSIBILITIES } from "../locales/responsabilities.js";
 import { roles } from "../permissions/index.js";
@@ -43,25 +44,11 @@ import {
   uploadUrlAvatar,
 } from "./supabase.js";
 
-const stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+const stripeClient = new Stripe(env.stripeSecretKey, {
   apiVersion: "2026-08-26.dahlia", // Latest API version as of Stripe SDK v22.0.0
 });
 
-/*
-  socialProviders: {
-    google: {
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    },
-    apple: {
-      clientId: process.env.APPLE_CLIENT_ID!,
-      clientSecret: process.env.APPLE_CLIENT_SECRET!,
-      mapProfileToUser: (profile) => ({
-        email: profile.email ?? `${profile.sub}@apple.placeholder.local`,
-      }),
-    },
-  },
- */
+
 /*
 import { redisStorage } from "@better-auth/redis-storage";
 
@@ -75,7 +62,7 @@ const secondaryStorage = redisStorage({
     keyPrefix: "better-auth:", // optional, defaults to "better-auth:"
   })
 */
-const appUrl = process.env.STUDIO_URL || "https://studio.hosanna.live";
+const appUrl = env.studioUrl;
 
 const pluginLocaleOverrides = {
   en: {
@@ -305,8 +292,8 @@ async function getOrgRecipientsWithLocale(
 }
 
 export const auth = betterAuth({
-  secret: process.env.BETTER_AUTH_SECRET,
-  baseURL: process.env.PUBLIC_APP_URL,
+  secret: env.betterAuthSecret,
+  baseURL: env.publicAppUrl,
   appName: "Hosanna",
   database: prismaAdapter(prisma, {
     provider: "postgresql",
@@ -475,7 +462,7 @@ export const auth = betterAuth({
     bearer(),
     haveIBeenPwned(),
     sentinel({
-      apiKey: process.env.BETTER_AUTH_API_KEY,
+      apiKey: env.betterAuthApiKey,
       security: {
         credentialStuffing: {
           enabled: true,
@@ -510,7 +497,7 @@ export const auth = betterAuth({
     }),
     captcha({
       provider: "cloudflare-turnstile",
-      secretKey: process.env.TURNSTILE_SECRET_KEY!,
+      secretKey: env.turnstileSecretKey,
     }),
     twoFactor({
       issuer: "Hosanna",
@@ -680,7 +667,7 @@ export const auth = betterAuth({
     }),
     stripe({
       stripeClient,
-      stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET!,
+      stripeWebhookSecret: env.stripeWebhookSecret,
       createCustomerOnSignUp: false,
       subscription: {
         enabled: true,
@@ -892,7 +879,7 @@ export const auth = betterAuth({
     },
     cookiePrefix: "hosanna",
     defaultCookieAttributes: {
-      sameSite: process.env.DEV_MODE === "true" ? "None" : "Lax",
+      sameSite: env.devMode ? "None" : "Lax",
       secure: true,
     },
     crossSubDomainCookies: {
@@ -949,8 +936,8 @@ export const auth = betterAuth({
   },
   socialProviders: {
     google: {
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      clientId: env.googleClientId,
+      clientSecret: env.googleClientSecret,
       mapProfileToUser: (profile) => {
         return {
           email: profile.email,

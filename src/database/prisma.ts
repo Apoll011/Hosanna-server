@@ -1,11 +1,12 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
+import { env } from "../config/env.js";
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: env.databaseUrl,
   // Keep at most 20 open connections; tune per your DB plan.
-  max: parseInt(process.env.DB_POOL_MAX ?? "20"),
+  max: env.dbPoolMax,
   // Return idle connections to the server after 30 s.
   idleTimeoutMillis: 30_000,
   // Kill a connection that takes more than 10 s to establish.

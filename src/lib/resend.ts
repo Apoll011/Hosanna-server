@@ -9,7 +9,7 @@ let resendClient: Resend | null = null;
  */
 export function getResendClient(): Resend {
   if (!resendClient) {
-    const apiKey = env.resendApiKey || process.env.RESEND_API_KEY;
+    const apiKey = env.resendApiKey;
     if (!apiKey) {
       console.warn(
         "[resend] RESEND_API_KEY is not set. Email sending will fail until an API key is configured.",
