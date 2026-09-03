@@ -1,8 +1,8 @@
 import { i18n, locales } from "@better-auth/i18n";
 import { dash, sentinel } from "@better-auth/infra";
 import { stripe } from "@better-auth/stripe";
-import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
+import { betterAuth } from "better-auth/minimal";
 import {
   admin,
   bearer,
