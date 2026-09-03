@@ -170,6 +170,8 @@ model User {
   banReason  String?
   banExpires DateTime?
 
+  metadata String?
+
   @@unique([email])
   @@map("user")
 }
@@ -343,6 +345,7 @@ model Invitation {
 
   @@index([organizationId])
   @@index([email])
+  @@index([email, organizationId])
   @@map("invitation")
 }
 

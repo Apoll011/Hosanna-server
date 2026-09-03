@@ -12,24 +12,34 @@ import { apiRouter } from "./routes/index.js";
 
 const app = express();
 
-// ── Global rate limiter ────────────────────────────────────────────────────
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 1000,
-  standardHeaders: "draft-7",
-  legacyHeaders: false,
-  message: {
-    error: {
-      code: "TOO_MANY_REQUESTS",
-      message: t(DEFAULT_LOCALE, "error.rate_limit_exceeded"),
-    },
-  },
-  skip: () => env.nodeEnv !== "production",
+app.set("trust proxy", 1);
+
+// ── HTTPS redirect — must run before anything else ─────────────────────────
+// Runs first so we don't waste CPU on parsing/compressing requests that will
+// immediately be redirected.
+app.use((req, res, next) => {
+  if (env.nodeEnv === "production" && !req.secure) {
+    return res.redirect(301, `https://${req.header("host")}${req.url}`);
+  }
+  next();
 });
 
-app.set("trust proxy", 1);
-app.disable("etag");
+// ── Security headers ────────────────────────────────────────────────────────
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    hsts:
+      env.nodeEnv === "production"
+        ? { maxAge: 31_536_000, includeSubDomains: true, preload: true }
+        : false,
+    noSniff: true,
+    frameguard: { action: "deny" },
+    xssFilter: true,
+    hidePoweredBy: true,
+  }),
+);
 
+// ── CORS ────────────────────────────────────────────────────────────────────
 app.use(
   cors({
     origin: [
@@ -45,12 +55,31 @@ app.use(
   }),
 );
 
-app.use((req, res, next) => {
+// ── Compression — only for responses ≥ 1 KB, skip already-compressed types ─
+app.use(
+  compression({
+    // Don't bother compressing tiny responses — overhead outweighs savings.
+    threshold: 1024,
+    filter: (req, res) => {
+      // Skip if the client explicitly asked for no compression.
+      if (req.headers["x-no-compression"]) return false;
+      return compression.filter(req, res);
+    },
+  }),
+);
+
+// ── Body parsing ─────────────────────────────────────────────────────────────
+// Keep the limit tight per route type; 5 MB was too generous for most routes.
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+
+// ── Cache-Control — private APIs must not be cached by shared proxies ───────
+app.use((_req, res, next) => {
   res.setHeader("Cache-Control", "private, no-store");
   next();
 });
 
-// ── Default locale ──────────────────────────────────────────────────────
+// ── Default locale ──────────────────────────────────────────────────────────
 // Ensures req.locale is always defined. The authenticate middleware overwrites
 // this with the org-specific locale for authenticated routes.
 app.use((req, _res, next) => {
@@ -58,56 +87,40 @@ app.use((req, _res, next) => {
   next();
 });
 
-// ── Security headers ────────────────────────────────────────────────────
-app.use(
-  helmet({
-    crossOriginResourcePolicy: {
-      policy: "cross-origin",
+// ── Global rate limiter ─────────────────────────────────────────────────────
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 1000,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    error: {
+      code: "TOO_MANY_REQUESTS",
+      message: t(DEFAULT_LOCALE, "error.rate_limit_exceeded"),
     },
-    hsts:
-      env.nodeEnv === "production"
-        ? {
-            maxAge: 31_536_000,
-            includeSubDomains: true,
-            preload: true,
-          }
-        : false,
-    noSniff: true,
-    frameguard: { action: "deny" },
-    xssFilter: true,
-    hidePoweredBy: true,
-  }),
-);
-
-// ── Better Auth ────────────────────────────────────────────────────────
-app.all("/api/auth/*", toNodeHandler(auth));
-
-// ── Compression ────────────────────────────────────────────────────────
-app.use(compression());
-
-// ── Body parsing ───────────────────────────────────────────────────────
-app.use(express.json({ limit: "5mb" }));
-app.use(express.urlencoded({ extended: true, limit: "5mb" }));
-
-// ── HTTPS redirect ─────────────────────────────────────────────────────
-app.use((req, res, next) => {
-  if (env.nodeEnv === "production" && !req.secure) {
-    return res.redirect(301, `https://${req.header("host")}${req.url}`);
-  }
-
-  next();
+  },
+  skip: () => env.nodeEnv !== "production",
 });
 
-// ── API routes ─────────────────────────────────────────────────────────
+// ── Better Auth ─────────────────────────────────────────────────────────────
+app.all("/api/auth/*", toNodeHandler(auth));
+
+// ── API routes ──────────────────────────────────────────────────────────────
 app.use("/api", globalLimiter, apiRouter);
 
-// ── Error handling ─────────────────────────────────────────────────────
+// ── Error handling ──────────────────────────────────────────────────────────
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-// ── Start ──────────────────────────────────────────────────────────────────
-app.listen(env.port, "0.0.0.0", () => {
+// ── Start ───────────────────────────────────────────────────────────────────
+const server = app.listen(env.port, "0.0.0.0", () => {
   console.log(
     `Hosanna API listening on http://0.0.0.0:${env.port} (${env.nodeEnv})`,
   );
 });
+
+// Keep idle keep-alive connections alive for 65 s (slightly above typical
+// load-balancer 60 s timeout to avoid race-condition RST packets).
+server.keepAliveTimeout = 65_000;
+// Give headers an extra 5 s on top of keep-alive to arrive fully.
+server.headersTimeout = 70_000;

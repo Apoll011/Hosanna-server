@@ -17,6 +17,7 @@ import {
   healthLimiter,
   syncLimiter,
 } from "../middleware/rateLimit.js";
+import { requireSubscription } from "../middleware/subscription.js";
 import { cifraRouter } from "./cifra.route.js";
 import anotationRouter from "./serviceSongAnnotation.routes.js";
 
@@ -28,12 +29,12 @@ apiRouter.use("/cron", cronRouter);
 apiRouter.use(authenticate);
 apiRouter.use("/replication", syncLimiter, replicationRouter);
 
-apiRouter.use("/songs", apiLimiter, songRouter);
-apiRouter.use("/folders", apiLimiter, folderRouter);
-apiRouter.use("/services", apiLimiter, serviceRouter);
+apiRouter.use("/songs", requireSubscription, apiLimiter, songRouter);
+apiRouter.use("/folders", requireSubscription, apiLimiter, folderRouter);
+apiRouter.use("/services", requireSubscription, apiLimiter, serviceRouter);
+apiRouter.use("/cifra", requireSubscription, apiLimiter, cifraRouter);
+apiRouter.use("/backup", requireSubscription, backupLimiter, backupRouter);
+
 apiRouter.use("/notifications", apiLimiter, notificationsRouter);
-apiRouter.use("/cifra", apiLimiter, cifraRouter);
 apiRouter.use("/trash", apiLimiter, trashRouter);
 apiRouter.use("/annotation", apiLimiter, anotationRouter);
-
-apiRouter.use("/backup", backupLimiter, backupRouter);

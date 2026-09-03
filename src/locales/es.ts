@@ -17,6 +17,8 @@ const es = {
     unauthorized_session: "Sesión de autenticación inválida o ausente.",
     workspace_required:
       "Se requiere un contexto de espacio de trabajo/organización activo.",
+    subscription_required:
+      "La organización no tiene una suscripción activa ni un período de prueba en curso. Solo se permite el acceso de lectura.",
     rate_limit_exceeded:
       "Demasiadas solicitudes. Por favor, inténtelo de nuevo más tarde.",
   },

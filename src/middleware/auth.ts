@@ -215,29 +215,37 @@ async function resolveSession(req: Request): Promise<SessionResult | null> {
   return getSessionFromBearerToken(req);
 }
 
+/** Parse locale out of an org's JSON metadata blob. */
+function parseLocaleFromMeta(metadata: unknown): string | null {
+  try {
+    let meta: any =
+      typeof metadata === "string" ? JSON.parse(metadata) : metadata;
+    const locale = meta?.settings?.general?.locale ?? meta?.locale;
+    if (typeof locale === "string" && locale.length > 0) return locale;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 async function resolveUserRole(
   sessionData: NonNullable<SessionResult>,
   workspaceId: string,
 ): Promise<string> {
   const { user, session } = sessionData;
 
-  let userRole =
+  const roleFromSession =
     (session as any).role ||
     (sessionData as any).member?.role ||
     (user as any).role;
 
-  if (!userRole) {
-    const member = await prisma.member.findFirst({
-      where: {
-        organizationId: workspaceId,
-        userId: user.id,
-      },
-      select: { role: true },
-    });
-    userRole = member?.role;
-  }
+  if (roleFromSession) return roleFromSession;
 
-  return userRole || "guest";
+  const member = await prisma.member.findFirst({
+    where: { organizationId: workspaceId, userId: user.id },
+    select: { role: true },
+  });
+  return member?.role ?? "guest";
 }
 
 export const authenticate = asyncHandler(
@@ -258,41 +266,35 @@ export const authenticate = asyncHandler(
     }
 
     const teamId = (session as any).activeTeamId || undefined;
-    const userRole = await resolveUserRole(sessionData, workspaceId);
 
-    // Resolve locale from org metadata (set in auth.ts beforeCreateOrganization).
-    let locale = DEFAULT_LOCALE;
-    try {
-      const org = await prisma.organization.findUnique({
+    // Run role lookup and org locale fetch in parallel — saves one round-trip.
+    const roleFromSession =
+      (session as any).role ||
+      (sessionData as any).member?.role ||
+      (user as any).role;
+
+    const [resolvedRole, org] = await Promise.all([
+      roleFromSession
+        ? Promise.resolve(roleFromSession as string)
+        : prisma.member
+            .findFirst({
+              where: { organizationId: workspaceId, userId: user.id },
+              select: { role: true },
+            })
+            .then((m) => m?.role ?? "guest"),
+      prisma.organization.findUnique({
         where: { id: workspaceId },
         select: { metadata: true },
-      });
+      }),
+    ]);
 
-      let meta: any = {};
-
-      if (typeof org?.metadata === "string") {
-        try {
-          meta = JSON.parse(org.metadata);
-        } catch {
-          meta = {};
-        }
-      }
-
-      const orgLocale = meta?.settings?.general?.locale ?? meta?.locale;
-
-      if (typeof orgLocale === "string" && orgLocale.length > 0) {
-        locale = orgLocale;
-      }
-    } catch {
-      // Non-fatal — keep DEFAULT_LOCALE.
-    }
-    req.locale = locale;
+    req.locale = parseLocaleFromMeta(org?.metadata) ?? DEFAULT_LOCALE;
     req.orgId = workspaceId;
     req.db = forOrganization(workspaceId);
     req.user = {
       id: user.id,
       workspaceId,
-      role: userRole,
+      role: resolvedRole,
       teamId,
     };
 
