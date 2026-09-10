@@ -1,10 +1,10 @@
 import { Router } from "express";
+import { t } from "../lib/i18n.js";
 import {
   requireAllPermissions,
   requirePermission,
 } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
-import { t } from "../lib/i18n.js";
 import { FolderService } from "../services/folder.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { idParamSchema } from "../validators/common.validators.js";
@@ -21,7 +21,7 @@ folderRouter.get(
   requirePermission("folder.access"),
   asyncHandler(async (req, res) => {
     const service = new FolderService(req.db!, req.orgId!, req.locale);
-    res.json(await service.listWithCounts());
+    res.json(await service.listFlat());
   }),
 );
 
