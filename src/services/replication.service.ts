@@ -68,12 +68,14 @@ export interface PushRequest<T> {
 export type ReplicatedCollection =
   | "songs"
   | "folders"
+  | "collections"
   | "services"
   | "agendaEvents";
 
 export const ALL_COLLECTIONS: readonly ReplicatedCollection[] = [
   "songs",
   "folders",
+  "collections",
   "services",
   "agendaEvents",
 ] as const;
@@ -83,6 +85,7 @@ export const ALL_COLLECTIONS: readonly ReplicatedCollection[] = [
 const DELEGATE_BY_COLLECTION = {
   songs: "song",
   folders: "folder",
+  collections: "collection",
   services: "service",
   agendaEvents: "agendaEvent",
 } as const;
@@ -139,6 +142,32 @@ function toWireFolder(doc: any, songCount = 0, folderCount = 0): any {
     icon: doc.icon,
     songCount: doc._count?.songs ?? songCount,
     folderCount: doc._count?.children ?? folderCount,
+    createdAt:
+      doc.createdAt instanceof Date
+        ? doc.createdAt.toISOString()
+        : doc.createdAt,
+    updatedAt:
+      doc.updatedAt instanceof Date
+        ? doc.updatedAt.toISOString()
+        : doc.updatedAt,
+    purgeAt:
+      doc.purgeAt instanceof Date
+        ? doc.purgeAt.toISOString()
+        : (doc.purgeAt ?? null),
+    isDeleted: Boolean(doc.deleted),
+    _deleted: false,
+  };
+}
+
+function toWireCollection(doc: any, songCount = 0): any {
+  return {
+    id: doc.id,
+    name: doc.name,
+    description: doc.description ?? null,
+    color: doc.color,
+    icon: doc.icon,
+    image: doc.image ?? null,
+    songCount: doc._count?.songs ?? songCount,
     createdAt:
       doc.createdAt instanceof Date
         ? doc.createdAt.toISOString()
@@ -214,13 +243,15 @@ function toWireAgendaEvent(doc: any): any {
 export function toWireDoc(
   doc: any,
   collection: ReplicatedCollection,
-  counts?: { songCount: number; folderCount: number },
+  counts?: { songCount: number; folderCount?: number },
 ): any {
   switch (collection) {
     case "songs":
       return toWireSong(doc);
     case "folders":
       return toWireFolder(doc, counts?.songCount, counts?.folderCount);
+    case "collections":
+      return toWireCollection(doc, counts?.songCount);
     case "services":
       return toWireService(doc);
     case "agendaEvents":
@@ -314,6 +345,34 @@ async function pullOne(
       ),
     );
 
+    return { documents, checkpoint: newCheckpoint };
+  }
+
+  if (collection === "collections") {
+    const docs = await delegate.findMany({
+      where,
+      include: {
+        _count: {
+          select: {
+            songs: true,
+          },
+        },
+      },
+      orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+      take: limit,
+    });
+
+    if (docs.length === 0) {
+      return { documents: [], checkpoint };
+    }
+
+    const last = docs[docs.length - 1];
+    const newCheckpoint: ReplicationCheckpoint = {
+      updatedAt: new Date(last.updatedAt).getTime(),
+      id: last.id,
+    };
+
+    const documents = docs.map((doc: any) => toWireCollection(doc));
     return { documents, checkpoint: newCheckpoint };
   }
 
@@ -412,27 +471,7 @@ async function pushSongs(
             data: { deleted: true },
           });
         } else {
-          await tx.song.update({
-            where: { id: doc.id },
-            data: {
-              title: doc.title,
-              artist: doc.artist ?? "Unknown Artist",
-              content: doc.content ?? "",
-              folderId: doc.folderId ?? null,
-              path: doc.path ?? `${doc.title}.pro`,
-              tags: Array.isArray(doc.tags) ? doc.tags : [],
-              song_number: doc.song_number ?? null,
-              deleted: Boolean(doc.isDeleted),
-              purgeAt: parseDate(doc.purgeAt),
-            },
-          });
-        }
-      } else if (!doc._deleted) {
-        mutationCount++;
-        const newId = doc.id || uuid();
-        await tx.song.create({
-          data: {
-            id: newId,
+          const songData: any = {
             title: doc.title,
             artist: doc.artist ?? "Unknown Artist",
             content: doc.content ?? "",
@@ -442,7 +481,39 @@ async function pushSongs(
             song_number: doc.song_number ?? null,
             deleted: Boolean(doc.isDeleted),
             purgeAt: parseDate(doc.purgeAt),
-          } as any,
+          };
+          if (Array.isArray(doc.collectionIds)) {
+            songData.collections = {
+              set: doc.collectionIds.map((id: string) => ({ id })),
+            };
+          }
+          await tx.song.update({
+            where: { id: doc.id },
+            data: songData,
+          });
+        }
+      } else if (!doc._deleted) {
+        mutationCount++;
+        const newId = doc.id || uuid();
+        const createSongData: any = {
+          id: newId,
+          title: doc.title,
+          artist: doc.artist ?? "Unknown Artist",
+          content: doc.content ?? "",
+          folderId: doc.folderId ?? null,
+          path: doc.path ?? `${doc.title}.pro`,
+          tags: Array.isArray(doc.tags) ? doc.tags : [],
+          song_number: doc.song_number ?? null,
+          deleted: Boolean(doc.isDeleted),
+          purgeAt: parseDate(doc.purgeAt),
+        };
+        if (Array.isArray(doc.collectionIds)) {
+          createSongData.collections = {
+            connect: doc.collectionIds.map((id: string) => ({ id })),
+          };
+        }
+        await tx.song.create({
+          data: createSongData as any,
         });
       }
     }
@@ -534,6 +605,110 @@ async function pushFolders(
             deleted: Boolean(doc.isDeleted),
             purgeAt: parseDate(doc.purgeAt),
           } as any,
+        });
+      }
+    }
+  });
+
+  if (mutationCount > 0) {
+    syncCache.invalidate(tenantId);
+  }
+  return conflicts;
+}
+
+// ── Push: collections ──────────────────────────────────────────────────────
+
+async function pushCollections(
+  db: OrgScopedPrisma,
+  tenantId: string,
+  rows: ChangeRow<any>[],
+): Promise<any[]> {
+  if (rows.length === 0) return [];
+
+  const candidateIds = rows
+    .map((r) => r.newDocumentState?.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+  const existingList =
+    candidateIds.length > 0
+      ? await db.collection.findMany({
+          where: { id: { in: candidateIds } },
+          include: {
+            _count: {
+              select: {
+                songs: true,
+              },
+            },
+          },
+        })
+      : [];
+
+  const existingMap = new Map<string, any>();
+  for (const item of existingList) {
+    existingMap.set(item.id, item);
+  }
+
+  const conflicts: any[] = [];
+  let mutationCount = 0;
+
+  await db.$transaction(async (tx: OrgScopedTx) => {
+    for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
+      if (!doc || typeof doc !== "object") continue;
+
+      const existing = doc.id ? existingMap.get(doc.id) : undefined;
+
+      if (existing) {
+        if (assumed && hasConflict(existing, assumed)) {
+          conflicts.push(toWireCollection(existing));
+          continue;
+        }
+
+        mutationCount++;
+        if (doc._deleted) {
+          await tx.collection.update({
+            where: { id: doc.id },
+            data: { deleted: true },
+          });
+        } else {
+          const updateData: any = {
+            name: doc.name,
+            description: doc.description ?? null,
+            color: doc.color ?? "default",
+            icon: doc.icon ?? "default",
+            image: doc.image ?? null,
+            deleted: Boolean(doc.isDeleted),
+            purgeAt: parseDate(doc.purgeAt),
+          };
+          if (Array.isArray(doc.songIds)) {
+            updateData.songs = {
+              set: doc.songIds.map((id: string) => ({ id })),
+            };
+          }
+          await tx.collection.update({
+            where: { id: doc.id },
+            data: updateData,
+          });
+        }
+      } else if (!doc._deleted) {
+        mutationCount++;
+        const newId = doc.id || uuid();
+        const createData: any = {
+          id: newId,
+          name: doc.name,
+          description: doc.description ?? null,
+          color: doc.color ?? "default",
+          icon: doc.icon ?? "default",
+          image: doc.image ?? null,
+          deleted: Boolean(doc.isDeleted),
+          purgeAt: parseDate(doc.purgeAt),
+        };
+        if (Array.isArray(doc.songIds)) {
+          createData.songs = {
+            connect: doc.songIds.map((id: string) => ({ id })),
+          };
+        }
+        await tx.collection.create({
+          data: createData as any,
         });
       }
     }
@@ -733,6 +908,7 @@ const pushHandlers: Record<
 > = {
   songs: pushSongs,
   folders: pushFolders,
+  collections: pushCollections,
   services: pushServices,
   agendaEvents: pushAgendaEvents,
 };

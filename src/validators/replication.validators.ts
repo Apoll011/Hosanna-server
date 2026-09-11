@@ -1,7 +1,13 @@
 import { z } from "zod";
 
 export const collectionParamSchema = z.object({
-  collection: z.enum(["songs", "folders", "services", "agendaEvents"]),
+  collection: z.enum([
+    "songs",
+    "folders",
+    "collections",
+    "services",
+    "agendaEvents",
+  ]),
 });
 
 const checkpointSchema = z
@@ -19,6 +25,7 @@ export const pullBodySchema = z.object({
 export const replicatedCollectionSchema = z.enum([
   "songs",
   "folders",
+  "collections",
   "services",
   "agendaEvents",
 ]);
