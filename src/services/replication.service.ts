@@ -47,7 +47,10 @@ export type MultiPullCheckpoints = Partial<
 export type MultiPullLimits =
   | Partial<Record<ReplicatedCollection, number>>
   | number;
-export type MultiPullResponse<T> = Record<ReplicatedCollection, PullResponse<T>>;
+export type MultiPullResponse<T> = Record<
+  ReplicatedCollection,
+  PullResponse<T>
+>;
 
 export interface PullResponse<T> {
   documents: T[];
@@ -305,45 +308,13 @@ async function pullOne(
       return { documents: [], checkpoint };
     }
 
-    const folderIds = docs.map((d: any) => d.id);
-
-    // Batch aggregate child songs and child folders in parallel
-    const [songCounts, folderCounts] = await Promise.all([
-      db.song.groupBy({
-        by: ["folderId"],
-        where: { folderId: { in: folderIds } },
-        _count: { _all: true },
-      }),
-      db.folder.groupBy({
-        by: ["parentId"],
-        where: { parentId: { in: folderIds } },
-        _count: { _all: true },
-      }),
-    ]);
-
-    const songCountMap = new Map<string, number>();
-    for (const sc of songCounts) {
-      if (sc.folderId) songCountMap.set(sc.folderId, sc._count._all);
-    }
-
-    const folderCountMap = new Map<string, number>();
-    for (const fc of folderCounts) {
-      if (fc.parentId) folderCountMap.set(fc.parentId, fc._count._all);
-    }
-
     const last = docs[docs.length - 1];
     const newCheckpoint: ReplicationCheckpoint = {
       updatedAt: new Date(last.updatedAt).getTime(),
       id: last.id,
     };
 
-    const documents = docs.map((doc: any) =>
-      toWireFolder(
-        doc,
-        songCountMap.get(doc.id) ?? 0,
-        folderCountMap.get(doc.id) ?? 0,
-      ),
-    );
+    const documents = docs.map((doc: any) => toWireFolder(doc));
 
     return { documents, checkpoint: newCheckpoint };
   }
@@ -942,4 +913,3 @@ export class ReplicationService {
     return handler(this.db, this.tenantId, req.changeRows || []);
   }
 }
-
