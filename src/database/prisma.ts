@@ -19,6 +19,7 @@ const prisma = new PrismaClient({ adapter });
 
 const ORG_SCOPED_MODELS = new Set([
   "Folder",
+  "Collection",
   "Song",
   "Service",
   "AgendaEvent",

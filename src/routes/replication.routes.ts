@@ -37,6 +37,7 @@ export const replicationRouter = Router();
 const PULL_PERMISSIONS: Record<ReplicatedCollection, string> = {
   songs: "song.access",
   folders: "folder.access",
+  collections: "collection.access",
   services: "service.access",
   agendaEvents: "agenda.access",
 };
@@ -44,6 +45,7 @@ const PULL_PERMISSIONS: Record<ReplicatedCollection, string> = {
 const PUSH_PERMISSIONS: Record<ReplicatedCollection, string> = {
   songs: "song.create",
   folders: "folder.create",
+  collections: "collection.create",
   services: "service.create",
   agendaEvents: "agenda.create",
 };

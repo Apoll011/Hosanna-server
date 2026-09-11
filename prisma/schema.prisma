@@ -32,6 +32,29 @@ model Folder {
   @@map("folders")
 }
 
+model Collection {
+  id String @id @default(uuid())
+
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  color       String   @default("default")
+  icon        String   @default("default")
+  image       String?
+
+  songs     Song[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deleted   Boolean   @default(false) @map("_deleted")
+  purgeAt   DateTime? @map("purge_at")
+
+  @@index([orgId])
+  @@index([orgId, updatedAt, id], map: "collections_replication_idx")
+  @@map("collections")
+}
+
 model Song {
   id String @id @default(uuid())
 
@@ -44,6 +67,7 @@ model Song {
   content                String                  @db.Text
   folderId               String?
   folder                 Folder?                 @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  collections            Collection[]
   path                   String
   tags                   String[]                @default([])
   createdAt              DateTime                @default(now())
@@ -274,6 +298,7 @@ model Organization {
   members                Member[]
   invitations            Invitation[]
   folders                Folder[]
+  collections            Collection[]
   songs                  Song[]
   services               Service[]
   agendaEvents           AgendaEvent[]
