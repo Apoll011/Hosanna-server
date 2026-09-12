@@ -183,15 +183,9 @@ const sessionCache = new Map<
   { sessionData: SessionResult; expiresAt: number }
 >();
 
-const orgLocaleCache = new Map<
-  string,
-  { locale: string; expiresAt: number }
->();
+const orgLocaleCache = new Map<string, { locale: string; expiresAt: number }>();
 
-const userRoleCache = new Map<
-  string,
-  { role: string; expiresAt: number }
->();
+const userRoleCache = new Map<string, { role: string; expiresAt: number }>();
 
 export function invalidateAuthCaches() {
   sessionCache.clear();

@@ -13,11 +13,7 @@
  */
 
 export type ReplicatedCollection =
-  | "songs"
-  | "folders"
-  | "collections"
-  | "services"
-  | "agendaEvents";
+  "songs" | "folders" | "collections" | "services" | "agendaEvents";
 
 export interface ReplicationCheckpoint {
   updatedAt: number; // Unix epoch milliseconds

@@ -45,8 +45,7 @@ export type MultiPullCheckpoints = Partial<
   Record<ReplicatedCollection, ReplicationCheckpoint | null>
 >;
 export type MultiPullLimits =
-  | Partial<Record<ReplicatedCollection, number>>
-  | number;
+  Partial<Record<ReplicatedCollection, number>> | number;
 export type MultiPullResponse<T> = Record<
   ReplicatedCollection,
   PullResponse<T>
@@ -69,11 +68,7 @@ export interface PushRequest<T> {
 
 // ── Collection names we replicate ──────────────────────────────────────────
 export type ReplicatedCollection =
-  | "songs"
-  | "folders"
-  | "collections"
-  | "services"
-  | "agendaEvents";
+  "songs" | "folders" | "collections" | "services" | "agendaEvents";
 
 export const ALL_COLLECTIONS: readonly ReplicatedCollection[] = [
   "songs",
@@ -413,7 +408,10 @@ export async function pullAll(
   collections: readonly ReplicatedCollection[] = ALL_COLLECTIONS,
 ): Promise<MultiPullResponse<any>> {
   const response = {} as MultiPullResponse<any>;
-  const collectionsToFetch: { collection: ReplicatedCollection; limit: number }[] = [];
+  const collectionsToFetch: {
+    collection: ReplicatedCollection;
+    limit: number;
+  }[] = [];
 
   for (const collection of collections) {
     const cp = checkpoints[collection] ?? null;
@@ -431,7 +429,13 @@ export async function pullAll(
   if (collectionsToFetch.length > 0) {
     const fetchedResults = await Promise.all(
       collectionsToFetch.map(({ collection, limit }) =>
-        pullOne(db, tenantId, collection, checkpoints[collection] ?? null, limit),
+        pullOne(
+          db,
+          tenantId,
+          collection,
+          checkpoints[collection] ?? null,
+          limit,
+        ),
       ),
     );
     for (let i = 0; i < collectionsToFetch.length; i++) {
@@ -508,10 +512,14 @@ async function pushSongs(
         if (doc.content !== undefined) songData.content = doc.content;
         if (doc.folderId !== undefined) songData.folderId = doc.folderId;
         if (doc.path !== undefined) songData.path = doc.path;
-        if (doc.tags !== undefined) songData.tags = Array.isArray(doc.tags) ? doc.tags : [];
-        if (doc.song_number !== undefined) songData.song_number = doc.song_number;
-        if (doc.isDeleted !== undefined) songData.deleted = Boolean(doc.isDeleted);
-        if (doc.purgeAt !== undefined) songData.purgeAt = parseDate(doc.purgeAt);
+        if (doc.tags !== undefined)
+          songData.tags = Array.isArray(doc.tags) ? doc.tags : [];
+        if (doc.song_number !== undefined)
+          songData.song_number = doc.song_number;
+        if (doc.isDeleted !== undefined)
+          songData.deleted = Boolean(doc.isDeleted);
+        if (doc.purgeAt !== undefined)
+          songData.purgeAt = parseDate(doc.purgeAt);
         if (Array.isArray(doc.collectionIds)) {
           songData.collections = {
             set: doc.collectionIds.map((id: string) => ({ id })),
@@ -645,8 +653,10 @@ async function pushFolders(
         if (doc.parentId !== undefined) folderData.parentId = doc.parentId;
         if (doc.color !== undefined) folderData.color = doc.color;
         if (doc.icon !== undefined) folderData.icon = doc.icon;
-        if (doc.isDeleted !== undefined) folderData.deleted = Boolean(doc.isDeleted);
-        if (doc.purgeAt !== undefined) folderData.purgeAt = parseDate(doc.purgeAt);
+        if (doc.isDeleted !== undefined)
+          folderData.deleted = Boolean(doc.isDeleted);
+        if (doc.purgeAt !== undefined)
+          folderData.purgeAt = parseDate(doc.purgeAt);
 
         mutations.push((tx) =>
           tx.folder.update({
@@ -762,12 +772,15 @@ async function pushCollections(
       } else {
         const updateData: any = {};
         if (doc.name !== undefined) updateData.name = doc.name;
-        if (doc.description !== undefined) updateData.description = doc.description;
+        if (doc.description !== undefined)
+          updateData.description = doc.description;
         if (doc.color !== undefined) updateData.color = doc.color;
         if (doc.icon !== undefined) updateData.icon = doc.icon;
         if (doc.image !== undefined) updateData.image = doc.image;
-        if (doc.isDeleted !== undefined) updateData.deleted = Boolean(doc.isDeleted);
-        if (doc.purgeAt !== undefined) updateData.purgeAt = parseDate(doc.purgeAt);
+        if (doc.isDeleted !== undefined)
+          updateData.deleted = Boolean(doc.isDeleted);
+        if (doc.purgeAt !== undefined)
+          updateData.purgeAt = parseDate(doc.purgeAt);
         if (Array.isArray(doc.songIds)) {
           updateData.songs = {
             set: doc.songIds.map((id: string) => ({ id })),
@@ -896,10 +909,14 @@ async function pushServices(
         if (doc.name !== undefined) serviceData.name = doc.name;
         if (doc.date !== undefined) serviceData.date = parseDate(doc.date);
         if (doc.notes !== undefined) serviceData.notes = doc.notes;
-        if (doc.elements !== undefined && Array.isArray(doc.elements)) serviceData.elements = doc.elements;
-        if (doc.archived !== undefined) serviceData.archived = Boolean(doc.archived);
-        if (doc.isDeleted !== undefined) serviceData.deleted = Boolean(doc.isDeleted);
-        if (doc.purgeAt !== undefined) serviceData.purgeAt = parseDate(doc.purgeAt);
+        if (doc.elements !== undefined && Array.isArray(doc.elements))
+          serviceData.elements = doc.elements;
+        if (doc.archived !== undefined)
+          serviceData.archived = Boolean(doc.archived);
+        if (doc.isDeleted !== undefined)
+          serviceData.deleted = Boolean(doc.isDeleted);
+        if (doc.purgeAt !== undefined)
+          serviceData.purgeAt = parseDate(doc.purgeAt);
 
         mutations.push((tx) =>
           tx.service.update({
@@ -1014,16 +1031,23 @@ async function pushAgendaEvents(
         if (doc.title !== undefined) eventData.title = doc.title;
         if (doc.type !== undefined) eventData.type = doc.type;
         if (doc.time !== undefined) eventData.time = doc.time;
-        if (doc.durationMinutes !== undefined) eventData.durationMinutes = Number(doc.durationMinutes) || 0;
+        if (doc.durationMinutes !== undefined)
+          eventData.durationMinutes = Number(doc.durationMinutes) || 0;
         if (doc.location !== undefined) eventData.location = doc.location;
         if (doc.notes !== undefined) eventData.notes = doc.notes;
         if (doc.reminder !== undefined) eventData.reminder = doc.reminder;
-        if (doc.linkedServiceId !== undefined) eventData.linkedServiceId = doc.linkedServiceId;
-        if (doc.responsibilities !== undefined && Array.isArray(doc.responsibilities)) {
+        if (doc.linkedServiceId !== undefined)
+          eventData.linkedServiceId = doc.linkedServiceId;
+        if (
+          doc.responsibilities !== undefined &&
+          Array.isArray(doc.responsibilities)
+        ) {
           eventData.responsibilities = doc.responsibilities;
         }
-        if (doc.isDeleted !== undefined) eventData.deleted = Boolean(doc.isDeleted);
-        if (doc.purgeAt !== undefined) eventData.purgeAt = parseDate(doc.purgeAt);
+        if (doc.isDeleted !== undefined)
+          eventData.deleted = Boolean(doc.isDeleted);
+        if (doc.purgeAt !== undefined)
+          eventData.purgeAt = parseDate(doc.purgeAt);
 
         mutations.push((tx) =>
           tx.agendaEvent.update({
