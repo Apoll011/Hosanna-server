@@ -502,17 +502,16 @@ async function pushSongs(
           }),
         );
       } else {
-        const songData: any = {
-          title: doc.title,
-          artist: doc.artist ?? "Unknown Artist",
-          content: doc.content ?? "",
-          folderId: doc.folderId ?? null,
-          path: doc.path ?? `${doc.title}.pro`,
-          tags: Array.isArray(doc.tags) ? doc.tags : [],
-          song_number: doc.song_number ?? null,
-          deleted: Boolean(doc.isDeleted),
-          purgeAt: parseDate(doc.purgeAt),
-        };
+        const songData: any = {};
+        if (doc.title !== undefined) songData.title = doc.title;
+        if (doc.artist !== undefined) songData.artist = doc.artist;
+        if (doc.content !== undefined) songData.content = doc.content;
+        if (doc.folderId !== undefined) songData.folderId = doc.folderId;
+        if (doc.path !== undefined) songData.path = doc.path;
+        if (doc.tags !== undefined) songData.tags = Array.isArray(doc.tags) ? doc.tags : [];
+        if (doc.song_number !== undefined) songData.song_number = doc.song_number;
+        if (doc.isDeleted !== undefined) songData.deleted = Boolean(doc.isDeleted);
+        if (doc.purgeAt !== undefined) songData.purgeAt = parseDate(doc.purgeAt);
         if (Array.isArray(doc.collectionIds)) {
           songData.collections = {
             set: doc.collectionIds.map((id: string) => ({ id })),
@@ -641,17 +640,18 @@ async function pushFolders(
           }),
         );
       } else {
+        const folderData: any = {};
+        if (doc.name !== undefined) folderData.name = doc.name;
+        if (doc.parentId !== undefined) folderData.parentId = doc.parentId;
+        if (doc.color !== undefined) folderData.color = doc.color;
+        if (doc.icon !== undefined) folderData.icon = doc.icon;
+        if (doc.isDeleted !== undefined) folderData.deleted = Boolean(doc.isDeleted);
+        if (doc.purgeAt !== undefined) folderData.purgeAt = parseDate(doc.purgeAt);
+
         mutations.push((tx) =>
           tx.folder.update({
             where: { id: doc.id },
-            data: {
-              name: doc.name,
-              parentId: doc.parentId ?? null,
-              color: doc.color ?? "default",
-              icon: doc.icon ?? "default",
-              deleted: Boolean(doc.isDeleted),
-              purgeAt: parseDate(doc.purgeAt),
-            },
+            data: folderData,
           }),
         );
       }
@@ -760,15 +760,14 @@ async function pushCollections(
           }),
         );
       } else {
-        const updateData: any = {
-          name: doc.name,
-          description: doc.description ?? null,
-          color: doc.color ?? "default",
-          icon: doc.icon ?? "default",
-          image: doc.image ?? null,
-          deleted: Boolean(doc.isDeleted),
-          purgeAt: parseDate(doc.purgeAt),
-        };
+        const updateData: any = {};
+        if (doc.name !== undefined) updateData.name = doc.name;
+        if (doc.description !== undefined) updateData.description = doc.description;
+        if (doc.color !== undefined) updateData.color = doc.color;
+        if (doc.icon !== undefined) updateData.icon = doc.icon;
+        if (doc.image !== undefined) updateData.image = doc.image;
+        if (doc.isDeleted !== undefined) updateData.deleted = Boolean(doc.isDeleted);
+        if (doc.purgeAt !== undefined) updateData.purgeAt = parseDate(doc.purgeAt);
         if (Array.isArray(doc.songIds)) {
           updateData.songs = {
             set: doc.songIds.map((id: string) => ({ id })),
@@ -893,18 +892,19 @@ async function pushServices(
           }),
         );
       } else {
+        const serviceData: any = {};
+        if (doc.name !== undefined) serviceData.name = doc.name;
+        if (doc.date !== undefined) serviceData.date = parseDate(doc.date);
+        if (doc.notes !== undefined) serviceData.notes = doc.notes;
+        if (doc.elements !== undefined && Array.isArray(doc.elements)) serviceData.elements = doc.elements;
+        if (doc.archived !== undefined) serviceData.archived = Boolean(doc.archived);
+        if (doc.isDeleted !== undefined) serviceData.deleted = Boolean(doc.isDeleted);
+        if (doc.purgeAt !== undefined) serviceData.purgeAt = parseDate(doc.purgeAt);
+
         mutations.push((tx) =>
           tx.service.update({
             where: { id: doc.id },
-            data: {
-              name: doc.name,
-              date: parseDate(doc.date) ?? undefined,
-              notes: doc.notes ?? null,
-              elements: Array.isArray(doc.elements) ? doc.elements : [],
-              archived: Boolean(doc.archived),
-              deleted: Boolean(doc.isDeleted),
-              purgeAt: parseDate(doc.purgeAt),
-            },
+            data: serviceData,
           }),
         );
       }
@@ -1009,25 +1009,26 @@ async function pushAgendaEvents(
           }),
         );
       } else {
+        const eventData: any = {};
+        if (doc.date !== undefined) eventData.date = doc.date;
+        if (doc.title !== undefined) eventData.title = doc.title;
+        if (doc.type !== undefined) eventData.type = doc.type;
+        if (doc.time !== undefined) eventData.time = doc.time;
+        if (doc.durationMinutes !== undefined) eventData.durationMinutes = Number(doc.durationMinutes) || 0;
+        if (doc.location !== undefined) eventData.location = doc.location;
+        if (doc.notes !== undefined) eventData.notes = doc.notes;
+        if (doc.reminder !== undefined) eventData.reminder = doc.reminder;
+        if (doc.linkedServiceId !== undefined) eventData.linkedServiceId = doc.linkedServiceId;
+        if (doc.responsibilities !== undefined && Array.isArray(doc.responsibilities)) {
+          eventData.responsibilities = doc.responsibilities;
+        }
+        if (doc.isDeleted !== undefined) eventData.deleted = Boolean(doc.isDeleted);
+        if (doc.purgeAt !== undefined) eventData.purgeAt = parseDate(doc.purgeAt);
+
         mutations.push((tx) =>
           tx.agendaEvent.update({
             where: { id: doc.id },
-            data: {
-              date: doc.date,
-              title: doc.title,
-              type: doc.type,
-              time: doc.time,
-              durationMinutes: Number(doc.durationMinutes) || 0,
-              location: doc.location ?? null,
-              notes: doc.notes ?? null,
-              reminder: doc.reminder ?? DEFAULT_REMINDER,
-              linkedServiceId: doc.linkedServiceId ?? null,
-              responsibilities: Array.isArray(doc.responsibilities)
-                ? doc.responsibilities
-                : [],
-              deleted: Boolean(doc.isDeleted),
-              purgeAt: parseDate(doc.purgeAt),
-            },
+            data: eventData,
           }),
         );
       }
