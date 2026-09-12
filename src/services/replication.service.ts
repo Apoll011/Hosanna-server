@@ -291,10 +291,16 @@ function buildCheckpointWhere(checkpoint: ReplicationCheckpoint | null) {
 
 async function pullOne(
   db: OrgScopedPrisma,
+  tenantId: string,
   collection: ReplicatedCollection,
   checkpoint: ReplicationCheckpoint | null,
   limit: number,
 ): Promise<PullResponse<any>> {
+  // Fast path: if syncCache knows nothing has changed since checkpoint, return immediately!
+  if (syncCache.hasNoChanges(tenantId, collection, checkpoint)) {
+    return { documents: [], checkpoint };
+  }
+
   const delegateName = DELEGATE_BY_COLLECTION[collection];
   const delegate = (db as any)[delegateName];
   const where = buildCheckpointWhere(checkpoint);
@@ -308,6 +314,7 @@ async function pullOne(
     });
 
     if (docs.length === 0) {
+      syncCache.setLatestCheckpoint(tenantId, collection, checkpoint);
       return { documents: [], checkpoint };
     }
 
@@ -317,8 +324,11 @@ async function pullOne(
       id: last.id,
     };
 
-    const documents = docs.map((doc: any) => toWireFolder(doc));
+    if (docs.length < limit) {
+      syncCache.setLatestCheckpoint(tenantId, collection, newCheckpoint);
+    }
 
+    const documents = docs.map((doc: any) => toWireFolder(doc));
     return { documents, checkpoint: newCheckpoint };
   }
 
@@ -331,17 +341,13 @@ async function pullOne(
             id: true,
           },
         },
-        _count: {
-          select: {
-            songs: true,
-          },
-        },
       },
       orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
       take: limit,
     });
 
     if (docs.length === 0) {
+      syncCache.setLatestCheckpoint(tenantId, collection, checkpoint);
       return { documents: [], checkpoint };
     }
 
@@ -351,7 +357,13 @@ async function pullOne(
       id: last.id,
     };
 
-    const documents = docs.map((doc: any) => toWireCollection(doc));
+    if (docs.length < limit) {
+      syncCache.setLatestCheckpoint(tenantId, collection, newCheckpoint);
+    }
+
+    const documents = docs.map((doc: any) =>
+      toWireCollection(doc, doc.songs?.length ?? 0),
+    );
     return { documents, checkpoint: newCheckpoint };
   }
 
@@ -371,6 +383,7 @@ async function pullOne(
   });
 
   if (docs.length === 0) {
+    syncCache.setLatestCheckpoint(tenantId, collection, checkpoint);
     return { documents: [], checkpoint };
   }
 
@@ -380,38 +393,56 @@ async function pullOne(
     id: last.id,
   };
 
+  if (docs.length < limit) {
+    syncCache.setLatestCheckpoint(tenantId, collection, newCheckpoint);
+  }
+
   const documents = docs.map((doc: any) => toWireDoc(doc, collection));
   return { documents, checkpoint: newCheckpoint };
 }
 
 /**
- * Pulls all replicated collections in a single round trip (concurrently),
- * returning per-collection documents + checkpoints.
+ * Pulls all replicated collections in a single round trip,
+ * checking syncCache first to eliminate queries for unchanged collections.
  */
 export async function pullAll(
   db: OrgScopedPrisma,
+  tenantId: string,
   checkpoints: MultiPullCheckpoints = {},
   limits: MultiPullLimits = DEFAULT_LIMIT,
   collections: readonly ReplicatedCollection[] = ALL_COLLECTIONS,
 ): Promise<MultiPullResponse<any>> {
-  const results = await Promise.all(
-    collections.map((collection) => {
+  const response = {} as MultiPullResponse<any>;
+  const collectionsToFetch: { collection: ReplicatedCollection; limit: number }[] = [];
+
+  for (const collection of collections) {
+    const cp = checkpoints[collection] ?? null;
+    if (syncCache.hasNoChanges(tenantId, collection, cp)) {
+      response[collection] = { documents: [], checkpoint: cp };
+    } else {
       const limit =
         typeof limits === "number"
           ? limits
           : (limits[collection] ?? DEFAULT_LIMIT);
-      return pullOne(db, collection, checkpoints[collection] ?? null, limit);
-    }),
-  );
-
-  const response = {} as MultiPullResponse<any>;
-  for (let i = 0; i < collections.length; i++) {
-    response[collections[i]] = results[i];
+      collectionsToFetch.push({ collection, limit });
+    }
   }
+
+  if (collectionsToFetch.length > 0) {
+    const fetchedResults = await Promise.all(
+      collectionsToFetch.map(({ collection, limit }) =>
+        pullOne(db, tenantId, collection, checkpoints[collection] ?? null, limit),
+      ),
+    );
+    for (let i = 0; i < collectionsToFetch.length; i++) {
+      response[collectionsToFetch[i].collection] = fetchedResults[i];
+    }
+  }
+
   return response;
 }
 
-// Keep the old single-collection signature around for backward compatibility
+// Keep single-collection signature around for backward compatibility
 export const pull = pullOne;
 
 // ── Push: songs ────────────────────────────────────────────────────────────
@@ -517,7 +548,7 @@ async function pushSongs(
   });
 
   if (mutationCount > 0) {
-    syncCache.invalidate(tenantId);
+    syncCache.invalidate(tenantId, "songs");
   }
   return conflicts;
 }
@@ -540,11 +571,6 @@ async function pushFolders(
       ? await db.folder.findMany({
           where: { id: { in: candidateIds } },
           include: {
-            songs: {
-              select: {
-                id: true,
-              },
-            },
             _count: {
               select: {
                 songs: true,
@@ -613,7 +639,7 @@ async function pushFolders(
   });
 
   if (mutationCount > 0) {
-    syncCache.invalidate(tenantId);
+    syncCache.invalidate(tenantId, "folders");
   }
   return conflicts;
 }
@@ -717,7 +743,7 @@ async function pushCollections(
   });
 
   if (mutationCount > 0) {
-    syncCache.invalidate(tenantId);
+    syncCache.invalidate(tenantId, "collections");
   }
   return conflicts;
 }
@@ -800,7 +826,7 @@ async function pushServices(
   });
 
   if (mutationCount > 0) {
-    syncCache.invalidate(tenantId);
+    syncCache.invalidate(tenantId, "services");
   }
   return conflicts;
 }
@@ -897,7 +923,7 @@ async function pushAgendaEvents(
   });
 
   if (mutationCount > 0) {
-    syncCache.invalidate(tenantId);
+    syncCache.invalidate(tenantId, "agendaEvents");
   }
   return conflicts;
 }
@@ -923,7 +949,7 @@ export class ReplicationService {
 
   pull(collection: ReplicatedCollection, req: PullRequest) {
     const limit = Math.max(1, Math.min(req.limit || DEFAULT_LIMIT, MAX_LIMIT));
-    return pullOne(this.db, collection, req.checkpoint, limit);
+    return pullOne(this.db, this.tenantId, collection, req.checkpoint, limit);
   }
 
   pullAll(req: PullAllRequest) {
@@ -933,7 +959,7 @@ export class ReplicationService {
         : ALL_COLLECTIONS;
 
     const limit = Math.max(1, Math.min(req.limit || DEFAULT_LIMIT, MAX_LIMIT));
-    return pullAll(this.db, req.checkpoints, limit, collections);
+    return pullAll(this.db, this.tenantId, req.checkpoints, limit, collections);
   }
 
   push(collection: ReplicatedCollection, req: PushRequest<any>) {

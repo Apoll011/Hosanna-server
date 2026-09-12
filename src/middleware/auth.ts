@@ -171,10 +171,36 @@ export function requireOwnTeamResource(
 
 type SessionResult = Awaited<ReturnType<typeof auth.api.getSession>>;
 
+// ── In-memory caches with bounded size & TTL ─────────────────────────────────
+
+const SESSION_CACHE_TTL_MS = 20_000; // 20 s
+const ORG_LOCALE_CACHE_TTL_MS = 300_000; // 5 min
+const USER_ROLE_CACHE_TTL_MS = 60_000; // 1 min
+const MAX_CACHE_ENTRIES = 2_048;
+
+const sessionCache = new Map<
+  string,
+  { sessionData: SessionResult; expiresAt: number }
+>();
+
+const orgLocaleCache = new Map<
+  string,
+  { locale: string; expiresAt: number }
+>();
+
+const userRoleCache = new Map<
+  string,
+  { role: string; expiresAt: number }
+>();
+
+export function invalidateAuthCaches() {
+  sessionCache.clear();
+  orgLocaleCache.clear();
+  userRoleCache.clear();
+}
+
 /**
  * Resolves a session from cookies on the incoming request (web dashboard flow).
- * This also happens to pick up a Bearer token if better-auth manages to parse
- * it alongside the cookie header, but don't rely on that — see getSessionFromBearerToken.
  */
 async function getSessionFromCookies(
   req: Request,
@@ -188,8 +214,6 @@ async function getSessionFromCookies(
 /**
  * Resolves a session from an `Authorization: Bearer <token>` header
  * (mobile app / API clients using the better-auth bearer plugin).
- * Builds a clean Headers object with ONLY the Authorization header so a stray
- * cookie header on the same request can't interfere with resolution.
  */
 async function getSessionFromBearerToken(
   req: Request,
@@ -208,11 +232,49 @@ async function getSessionFromBearerToken(
 }
 
 async function resolveSession(req: Request): Promise<SessionResult | null> {
-  const cookieSession = await getSessionFromCookies(req);
-  if (cookieSession?.session && cookieSession?.user) {
-    return cookieSession;
+  const authHeader = req.headers.authorization;
+  const isBearer = Boolean(authHeader?.startsWith("Bearer "));
+  const cookieHeader = req.headers.cookie;
+
+  // Compute a lightweight cache key
+  const cacheKey = isBearer
+    ? `b:${authHeader!.slice(7).trim()}`
+    : cookieHeader
+      ? `c:${cookieHeader}`
+      : null;
+
+  const now = Date.now();
+
+  if (cacheKey) {
+    const cached = sessionCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return cached.sessionData;
+    }
   }
-  return getSessionFromBearerToken(req);
+
+  // Optimize resolution order: Bearer clients shouldn't run cookie resolution first
+  let sessionData: SessionResult | null = null;
+  if (isBearer) {
+    sessionData = await getSessionFromBearerToken(req);
+    if (!sessionData?.session && cookieHeader) {
+      sessionData = await getSessionFromCookies(req);
+    }
+  } else if (cookieHeader) {
+    sessionData = await getSessionFromCookies(req);
+  }
+
+  if (cacheKey && sessionData?.session && sessionData?.user) {
+    if (sessionCache.size >= MAX_CACHE_ENTRIES) {
+      const oldest = sessionCache.keys().next().value;
+      if (oldest) sessionCache.delete(oldest);
+    }
+    sessionCache.set(cacheKey, {
+      sessionData,
+      expiresAt: now + SESSION_CACHE_TTL_MS,
+    });
+  }
+
+  return sessionData;
 }
 
 /** Parse locale out of an org's JSON metadata blob. */
@@ -228,24 +290,57 @@ function parseLocaleFromMeta(metadata: unknown): string | null {
   return null;
 }
 
-async function resolveUserRole(
-  sessionData: NonNullable<SessionResult>,
+async function getCachedOrgLocale(workspaceId: string): Promise<string> {
+  const now = Date.now();
+  const cached = orgLocaleCache.get(workspaceId);
+  if (cached && cached.expiresAt > now) {
+    return cached.locale;
+  }
+
+  const org = await prisma.organization.findUnique({
+    where: { id: workspaceId },
+    select: { metadata: true },
+  });
+
+  const locale = parseLocaleFromMeta(org?.metadata) ?? DEFAULT_LOCALE;
+
+  if (orgLocaleCache.size >= MAX_CACHE_ENTRIES) {
+    const oldest = orgLocaleCache.keys().next().value;
+    if (oldest) orgLocaleCache.delete(oldest);
+  }
+  orgLocaleCache.set(workspaceId, {
+    locale,
+    expiresAt: now + ORG_LOCALE_CACHE_TTL_MS,
+  });
+
+  return locale;
+}
+
+async function getCachedUserRole(
   workspaceId: string,
+  userId: string,
 ): Promise<string> {
-  const { user, session } = sessionData;
-
-  const roleFromSession =
-    (session as any).role ||
-    (sessionData as any).member?.role ||
-    (user as any).role;
-
-  if (roleFromSession) return roleFromSession;
+  const key = `${workspaceId}:${userId}`;
+  const now = Date.now();
+  const cached = userRoleCache.get(key);
+  if (cached && cached.expiresAt > now) {
+    return cached.role;
+  }
 
   const member = await prisma.member.findFirst({
-    where: { organizationId: workspaceId, userId: user.id },
+    where: { organizationId: workspaceId, userId },
     select: { role: true },
   });
-  return member?.role ?? "guest";
+
+  const role = member?.role ?? "guest";
+
+  if (userRoleCache.size >= MAX_CACHE_ENTRIES) {
+    const oldest = userRoleCache.keys().next().value;
+    if (oldest) userRoleCache.delete(oldest);
+  }
+  userRoleCache.set(key, { role, expiresAt: now + USER_ROLE_CACHE_TTL_MS });
+
+  return role;
 }
 
 export const authenticate = asyncHandler(
@@ -267,28 +362,20 @@ export const authenticate = asyncHandler(
 
     const teamId = (session as any).activeTeamId || undefined;
 
-    // Run role lookup and org locale fetch in parallel — saves one round-trip.
     const roleFromSession =
       (session as any).role ||
       (sessionData as any).member?.role ||
       (user as any).role;
 
-    const [resolvedRole, org] = await Promise.all([
+    // Concurrently resolve cached role and cached locale
+    const [resolvedRole, locale] = await Promise.all([
       roleFromSession
         ? Promise.resolve(roleFromSession as string)
-        : prisma.member
-            .findFirst({
-              where: { organizationId: workspaceId, userId: user.id },
-              select: { role: true },
-            })
-            .then((m) => m?.role ?? "guest"),
-      prisma.organization.findUnique({
-        where: { id: workspaceId },
-        select: { metadata: true },
-      }),
+        : getCachedUserRole(workspaceId, user.id),
+      getCachedOrgLocale(workspaceId),
     ]);
 
-    req.locale = parseLocaleFromMeta(org?.metadata) ?? DEFAULT_LOCALE;
+    req.locale = locale;
     req.orgId = workspaceId;
     req.db = forOrganization(workspaceId);
     req.user = {

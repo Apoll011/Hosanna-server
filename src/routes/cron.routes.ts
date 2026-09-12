@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { Router } from "express";
 import { env } from "../config/env.js";
 import { prisma } from "../database/prisma.js";
+import { syncCache } from "../services/syncCache.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { AppError } from "../utils/errors.js";
 
@@ -37,6 +38,12 @@ cronRouter.post(
         where: { deleted: true, purgeAt: { lte: now } },
       }),
     ]);
+
+    const totalPurged =
+      songs.count + folders.count + services.count + agendaEvents.count;
+    if (totalPurged > 0) {
+      syncCache.invalidateAll();
+    }
 
     res.json({
       purged: {
