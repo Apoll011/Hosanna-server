@@ -1,15 +1,24 @@
 /**
- * SyncCache — lightweight in-memory cache for /sync/status responses.
+ * SyncCache — lightweight high-performance in-memory cache for RxDB replication
+ * and sync polling.
  *
  * Strategy:
- *   - Each tenant has its own cache entry keyed by tenantId.
- *   - On a cache hit the result is returned immediately (no DB round-trip).
- *   - Cache entries expire after CACHE_TTL_MS; on expiry the next request
- *     refreshes from the DB and repopulates the cache.
- *   - Any mutating operation (create / update / delete) on a tenant's data
- *     should call `syncCache.invalidate(tenantId)` so the next poll reflects
- *     the change without waiting for the TTL.
+ *   - Each tenant has an in-memory map of latest known checkpoints per collection.
+ *   - On replication pull, if the client's checkpoint is already at or ahead of the
+ *     server's latest document, the query returns instantly without touching the DB.
+ *   - On mutation (push / create / update / delete), the tenant's cache for that
+ *     collection is invalidated immediately so subsequent polls fetch fresh data.
+ *   - Cache entries expire after TTL to ensure consistency even if external database
+ *     mutations occur.
  */
+
+export type ReplicatedCollection =
+  "songs" | "folders" | "collections" | "services" | "agendaEvents";
+
+export interface ReplicationCheckpoint {
+  updatedAt: number; // Unix epoch milliseconds
+  id: string;
+}
 
 export interface SyncTimestamps {
   songs: string;
@@ -17,67 +26,158 @@ export interface SyncTimestamps {
   services: string;
 }
 
-interface CacheEntry {
+interface LegacyCacheEntry {
   timestamps: SyncTimestamps;
   versionHash: string;
-  cachedAt: number; // Date.now()
+  cachedAt: number;
 }
 
-/** Default TTL: 30 seconds. Tune as needed. */
-const CACHE_TTL_MS = 30_000;
+interface CheckpointEntry {
+  checkpoint: ReplicationCheckpoint | null;
+  cachedAt: number;
+}
+
+/** Default TTL: 60 seconds. Refreshes on write or expiry. */
+const CHECKPOINT_TTL_MS = 60_000;
+const LEGACY_CACHE_TTL_MS = 30_000;
+const MAX_TENANTS = 2_048;
 
 class SyncCacheService {
-  private store = new Map<string, CacheEntry>();
+  private legacyStore = new Map<string, LegacyCacheEntry>();
+  private checkpointStore = new Map<
+    string,
+    Map<ReplicatedCollection, CheckpointEntry>
+  >();
 
   /**
-   * Returns the cached entry for this tenant if it's still fresh,
-   * or `null` if the entry is absent / expired.
+   * Fast-path check: returns true if the server knows for certain that
+   * no documents have been created or modified since `clientCheckpoint`.
    */
-  get(tenantId: string): (CacheEntry & { fromCache: true }) | null {
-    const entry = this.store.get(tenantId);
+  hasNoChanges(
+    tenantId: string,
+    collection: ReplicatedCollection,
+    clientCheckpoint: ReplicationCheckpoint | null,
+  ): boolean {
+    const tenantMap = this.checkpointStore.get(tenantId);
+    if (!tenantMap) return false;
+
+    const entry = tenantMap.get(collection);
+    if (!entry) return false;
+
+    const now = Date.now();
+    if (now - entry.cachedAt > CHECKPOINT_TTL_MS) {
+      tenantMap.delete(collection);
+      return false;
+    }
+
+    // If client has no checkpoint, we only have no changes if the collection is empty
+    if (!clientCheckpoint) {
+      return entry.checkpoint === null;
+    }
+
+    // If server collection is empty, client already has everything
+    if (entry.checkpoint === null) {
+      return true;
+    }
+
+    // Client is strictly newer than server's newest doc
+    if (clientCheckpoint.updatedAt > entry.checkpoint.updatedAt) {
+      return true;
+    }
+
+    // Client matches server's newest doc exactly
+    if (
+      clientCheckpoint.updatedAt === entry.checkpoint.updatedAt &&
+      clientCheckpoint.id === entry.checkpoint.id
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Records the latest known checkpoint for a tenant's collection.
+   */
+  setLatestCheckpoint(
+    tenantId: string,
+    collection: ReplicatedCollection,
+    checkpoint: ReplicationCheckpoint | null,
+  ): void {
+    let tenantMap = this.checkpointStore.get(tenantId);
+    if (!tenantMap) {
+      // Bounded map eviction
+      if (this.checkpointStore.size >= MAX_TENANTS) {
+        const oldestKey = this.checkpointStore.keys().next().value;
+        if (oldestKey) this.checkpointStore.delete(oldestKey);
+      }
+      tenantMap = new Map();
+      this.checkpointStore.set(tenantId, tenantMap);
+    }
+
+    tenantMap.set(collection, {
+      checkpoint: checkpoint
+        ? { updatedAt: checkpoint.updatedAt, id: checkpoint.id }
+        : null,
+      cachedAt: Date.now(),
+    });
+  }
+
+  /**
+   * Invalidates the cache for a tenant.
+   * If `collection` is specified, only that collection is invalidated.
+   * Otherwise, all cached collections for the tenant are cleared.
+   */
+  invalidate(tenantId: string, collection?: ReplicatedCollection): void {
+    this.legacyStore.delete(tenantId);
+
+    if (collection) {
+      const tenantMap = this.checkpointStore.get(tenantId);
+      if (tenantMap) {
+        tenantMap.delete(collection);
+        if (tenantMap.size === 0) {
+          this.checkpointStore.delete(tenantId);
+        }
+      }
+    } else {
+      this.checkpointStore.delete(tenantId);
+    }
+  }
+
+  /**
+   * Invalidates all cached entries across all tenants.
+   */
+  invalidateAll(): void {
+    this.legacyStore.clear();
+    this.checkpointStore.clear();
+  }
+
+  // ── Legacy methods for backward compatibility ────────────────────────────
+
+  get(tenantId: string): (LegacyCacheEntry & { fromCache: true }) | null {
+    const entry = this.legacyStore.get(tenantId);
     if (!entry) return null;
-    if (Date.now() - entry.cachedAt > CACHE_TTL_MS) {
-      this.store.delete(tenantId);
+    if (Date.now() - entry.cachedAt > LEGACY_CACHE_TTL_MS) {
+      this.legacyStore.delete(tenantId);
       return null;
     }
     return { ...entry, fromCache: true };
   }
 
-  /**
-   * Stores a fresh result for this tenant.
-   */
   set(tenantId: string, timestamps: SyncTimestamps): void {
     const versionHash = Object.values(timestamps).join("|");
-    this.store.set(tenantId, {
+    this.legacyStore.set(tenantId, {
       timestamps,
       versionHash,
       cachedAt: Date.now(),
     });
   }
 
-  /**
-   * Invalidates the cache for a tenant. Call this after any write operation
-   * so the next sync poll reflects the latest state.
-   */
-  invalidate(tenantId: string): void {
-    this.store.delete(tenantId);
-  }
-
-  /**
-   * Invalidates all cached entries (useful after bulk operations or admin
-   * actions that touch multiple tenants).
-   */
-  invalidateAll(): void {
-    this.store.clear();
-  }
-
-  /**
-   * Returns cache stats for observability / debugging.
-   */
-  stats(): { size: number; tenantIds: string[] } {
+  stats(): { size: number; tenantIds: string[]; checkpointTenants: number } {
     return {
-      size: this.store.size,
-      tenantIds: [...this.store.keys()],
+      size: this.legacyStore.size,
+      tenantIds: [...this.checkpointStore.keys()],
+      checkpointTenants: this.checkpointStore.size,
     };
   }
 }

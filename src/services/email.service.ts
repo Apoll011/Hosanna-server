@@ -141,8 +141,12 @@ function buildTranslationVars(
     t_otp_expiry: tc("email.otp.expiry"),
 
     // 1.5 password-reset-success
-    t_password_reset_success_subject: tc("email.password_reset_success.subject"),
-    t_password_reset_success_heading: tc("email.password_reset_success.heading"),
+    t_password_reset_success_subject: tc(
+      "email.password_reset_success.subject",
+    ),
+    t_password_reset_success_heading: tc(
+      "email.password_reset_success.heading",
+    ),
     t_password_reset_success_body1: tc("email.password_reset_success.body1"),
     t_password_reset_success_body2: tc("email.password_reset_success.body2"),
 
@@ -153,10 +157,18 @@ function buildTranslationVars(
     t_account_locked_body2: tc("email.account_locked.body2"),
 
     // 2.1 change-email-verification
-    t_change_email_verification_subject: tc("email.change_email_verification.subject"),
-    t_change_email_verification_heading: tc("email.change_email_verification.heading"),
-    t_change_email_verification_body1: tc("email.change_email_verification.body1"),
-    t_change_email_verification_body2: tc("email.change_email_verification.body2"),
+    t_change_email_verification_subject: tc(
+      "email.change_email_verification.subject",
+    ),
+    t_change_email_verification_heading: tc(
+      "email.change_email_verification.heading",
+    ),
+    t_change_email_verification_body1: tc(
+      "email.change_email_verification.body1",
+    ),
+    t_change_email_verification_body2: tc(
+      "email.change_email_verification.body2",
+    ),
     t_change_email_verification_cta: tc("email.change_email_verification.cta"),
 
     // 2.2 email-changed-success
@@ -181,7 +193,9 @@ function buildTranslationVars(
     // 3.2 join-request-received
     t_join_request_received_subject: tc("email.join_request_received.subject"),
     t_join_request_received_heading: tc("email.join_request_received.heading"),
-    t_join_request_received_salutation: tc("email.join_request_received.salutation"),
+    t_join_request_received_salutation: tc(
+      "email.join_request_received.salutation",
+    ),
     t_join_request_received_body1: tc("email.join_request_received.body1"),
     t_join_request_received_body2: tc("email.join_request_received.body2"),
 
@@ -195,7 +209,9 @@ function buildTranslationVars(
     // 3.4 join-request-denied
     t_join_request_denied_subject: tc("email.join_request_denied.subject"),
     t_join_request_denied_heading: tc("email.join_request_denied.heading"),
-    t_join_request_denied_salutation: tc("email.join_request_denied.salutation"),
+    t_join_request_denied_salutation: tc(
+      "email.join_request_denied.salutation",
+    ),
     t_join_request_denied_body1: tc("email.join_request_denied.body1"),
     t_join_request_denied_body2: tc("email.join_request_denied.body2"),
 
@@ -217,7 +233,9 @@ function buildTranslationVars(
     // 3.7 removed-from-church
     t_removed_from_church_subject: tc("email.removed_from_church.subject"),
     t_removed_from_church_heading: tc("email.removed_from_church.heading"),
-    t_removed_from_church_salutation: tc("email.removed_from_church.salutation"),
+    t_removed_from_church_salutation: tc(
+      "email.removed_from_church.salutation",
+    ),
     t_removed_from_church_body1: tc("email.removed_from_church.body1"),
 
     // 4.1 billing-trial-started

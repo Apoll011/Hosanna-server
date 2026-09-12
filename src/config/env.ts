@@ -47,8 +47,7 @@ export const env = {
 
   // ── Email (Resend) ────────────────────────────────────────────────────────
   resendApiKey: required("RESEND_API_KEY"),
-  emailFrom:
-    process.env.EMAIL_FROM ?? "Hosanna <no-reply@hosanna.live>",
+  emailFrom: process.env.EMAIL_FROM ?? "Hosanna <no-reply@hosanna.live>",
 
   // ── Studio URL ────────────────────────────────────────────────────────────
   /** The front-end app URL used to build email links. */
