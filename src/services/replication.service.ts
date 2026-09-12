@@ -116,6 +116,8 @@ function toWireSong(doc: any): any {
     artist: doc.artist,
     content: doc.content,
     folderId: doc.folderId ?? null,
+    collectionIds:
+      doc.collections?.map((collection: any) => collection.id) ?? [],
     path: doc.path,
     tags: doc.tags ?? [],
     song_number: doc.song_number ?? null,
@@ -171,6 +173,7 @@ function toWireCollection(doc: any, songCount = 0): any {
     icon: doc.icon,
     image: doc.image ?? null,
     songCount: doc._count?.songs ?? songCount,
+    songIds: doc.songs?.map((song: any) => song.id) ?? [],
     createdAt:
       doc.createdAt instanceof Date
         ? doc.createdAt.toISOString()
@@ -323,6 +326,11 @@ async function pullOne(
     const docs = await delegate.findMany({
       where,
       include: {
+        songs: {
+          select: {
+            id: true,
+          },
+        },
         _count: {
           select: {
             songs: true,
@@ -349,6 +357,15 @@ async function pullOne(
 
   const docs = await delegate.findMany({
     where,
+    ...(collection === "songs" && {
+      include: {
+        collections: {
+          select: {
+            id: true,
+          },
+        },
+      },
+    }),
     orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
     take: limit,
   });
@@ -412,7 +429,16 @@ async function pushSongs(
 
   const existingList =
     candidateIds.length > 0
-      ? await db.song.findMany({ where: { id: { in: candidateIds } } })
+      ? await db.song.findMany({
+          where: { id: { in: candidateIds } },
+          include: {
+            collections: {
+              select: {
+                id: true,
+              },
+            },
+          },
+        })
       : [];
 
   const existingMap = new Map<string, any>();
@@ -514,6 +540,11 @@ async function pushFolders(
       ? await db.folder.findMany({
           where: { id: { in: candidateIds } },
           include: {
+            songs: {
+              select: {
+                id: true,
+              },
+            },
             _count: {
               select: {
                 songs: true,
