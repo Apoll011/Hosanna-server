@@ -21,7 +21,7 @@ import { v4 as uuid } from "uuid";
 import type { OrgScopedPrisma, OrgScopedTx } from "../database/prisma.js";
 import { syncCache } from "./syncCache.service.js";
 
-const MAX_LIMIT = 500;
+const MAX_LIMIT = 2000;
 const DEFAULT_LIMIT = 100;
 
 // ── Checkpoint type ────────────────────────────────────────────────────────
@@ -458,73 +458,51 @@ async function pushSongs(
     .map((r) => r.newDocumentState?.id)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
 
+  // Lean lookup: only fetch id and updatedAt to detect conflicts for 300+ songs
   const existingList =
     candidateIds.length > 0
       ? await db.song.findMany({
           where: { id: { in: candidateIds } },
-          include: {
-            collections: {
-              select: {
-                id: true,
-              },
-            },
+          select: {
+            id: true,
+            updatedAt: true,
           },
         })
       : [];
 
-  const existingMap = new Map<string, any>();
+  const existingMap = new Map<string, { id: string; updatedAt: Date }>();
   for (const item of existingList) {
     existingMap.set(item.id, item);
   }
 
   const conflicts: any[] = [];
+  const conflictIds: string[] = [];
   let mutationCount = 0;
 
-  await db.$transaction(async (tx: OrgScopedTx) => {
-    for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
-      if (!doc || typeof doc !== "object") continue;
+  type MutationFn = (tx: OrgScopedTx) => Promise<any>;
+  const mutations: MutationFn[] = [];
 
-      const existing = doc.id ? existingMap.get(doc.id) : undefined;
+  for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
+    if (!doc || typeof doc !== "object") continue;
 
-      if (existing) {
-        if (assumed && hasConflict(existing, assumed)) {
-          conflicts.push(toWireSong(existing));
-          continue;
-        }
+    const existing = doc.id ? existingMap.get(doc.id) : undefined;
 
-        mutationCount++;
-        if (doc._deleted) {
-          await tx.song.update({
+    if (existing) {
+      if (assumed && hasConflict(existing, assumed)) {
+        conflictIds.push(doc.id);
+        continue;
+      }
+
+      mutationCount++;
+      if (doc._deleted) {
+        mutations.push((tx) =>
+          tx.song.update({
             where: { id: doc.id },
             data: { deleted: true },
-          });
-        } else {
-          const songData: any = {
-            title: doc.title,
-            artist: doc.artist ?? "Unknown Artist",
-            content: doc.content ?? "",
-            folderId: doc.folderId ?? null,
-            path: doc.path ?? `${doc.title}.pro`,
-            tags: Array.isArray(doc.tags) ? doc.tags : [],
-            song_number: doc.song_number ?? null,
-            deleted: Boolean(doc.isDeleted),
-            purgeAt: parseDate(doc.purgeAt),
-          };
-          if (Array.isArray(doc.collectionIds)) {
-            songData.collections = {
-              set: doc.collectionIds.map((id: string) => ({ id })),
-            };
-          }
-          await tx.song.update({
-            where: { id: doc.id },
-            data: songData,
-          });
-        }
-      } else if (!doc._deleted) {
-        mutationCount++;
-        const newId = doc.id || uuid();
-        const createSongData: any = {
-          id: newId,
+          }),
+        );
+      } else {
+        const songData: any = {
           title: doc.title,
           artist: doc.artist ?? "Unknown Artist",
           content: doc.content ?? "",
@@ -536,16 +514,73 @@ async function pushSongs(
           purgeAt: parseDate(doc.purgeAt),
         };
         if (Array.isArray(doc.collectionIds)) {
-          createSongData.collections = {
-            connect: doc.collectionIds.map((id: string) => ({ id })),
+          songData.collections = {
+            set: doc.collectionIds.map((id: string) => ({ id })),
           };
         }
-        await tx.song.create({
-          data: createSongData as any,
-        });
+        mutations.push((tx) =>
+          tx.song.update({
+            where: { id: doc.id },
+            data: songData,
+          }),
+        );
       }
+    } else if (!doc._deleted) {
+      mutationCount++;
+      const newId = doc.id || uuid();
+      const createSongData: any = {
+        id: newId,
+        title: doc.title,
+        artist: doc.artist ?? "Unknown Artist",
+        content: doc.content ?? "",
+        folderId: doc.folderId ?? null,
+        path: doc.path ?? `${doc.title}.pro`,
+        tags: Array.isArray(doc.tags) ? doc.tags : [],
+        song_number: doc.song_number ?? null,
+        deleted: Boolean(doc.isDeleted),
+        purgeAt: parseDate(doc.purgeAt),
+      };
+      if (Array.isArray(doc.collectionIds)) {
+        createSongData.collections = {
+          connect: doc.collectionIds.map((id: string) => ({ id })),
+        };
+      }
+      mutations.push((tx) =>
+        tx.song.create({
+          data: createSongData as any,
+        }),
+      );
     }
-  });
+  }
+
+  // If any conflicts occurred (rare), load their full wire representation
+  if (conflictIds.length > 0) {
+    const conflictedDocs = await db.song.findMany({
+      where: { id: { in: conflictIds } },
+      include: {
+        collections: {
+          select: { id: true },
+        },
+      },
+    });
+    for (const cDoc of conflictedDocs) {
+      conflicts.push(toWireSong(cDoc));
+    }
+  }
+
+  // Execute mutations in chunked batches inside an extended transaction
+  if (mutations.length > 0) {
+    const BATCH_SIZE = 15;
+    await db.$transaction(
+      async (tx: OrgScopedTx) => {
+        for (let i = 0; i < mutations.length; i += BATCH_SIZE) {
+          const chunk = mutations.slice(i, i + BATCH_SIZE);
+          await Promise.all(chunk.map((fn) => fn(tx)));
+        }
+      },
+      { maxWait: 15_000, timeout: 60_000 },
+    );
+  }
 
   if (mutationCount > 0) {
     syncCache.invalidate(tenantId, "songs");
@@ -570,45 +605,44 @@ async function pushFolders(
     candidateIds.length > 0
       ? await db.folder.findMany({
           where: { id: { in: candidateIds } },
-          include: {
-            _count: {
-              select: {
-                songs: true,
-                children: true,
-              },
-            },
-          },
+          select: { id: true, updatedAt: true },
         })
       : [];
 
-  const existingMap = new Map<string, any>();
+  const existingMap = new Map<string, { id: string; updatedAt: Date }>();
   for (const item of existingList) {
     existingMap.set(item.id, item);
   }
 
   const conflicts: any[] = [];
+  const conflictIds: string[] = [];
   let mutationCount = 0;
 
-  await db.$transaction(async (tx: OrgScopedTx) => {
-    for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
-      if (!doc || typeof doc !== "object") continue;
+  type MutationFn = (tx: OrgScopedTx) => Promise<any>;
+  const mutations: MutationFn[] = [];
 
-      const existing = doc.id ? existingMap.get(doc.id) : undefined;
+  for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
+    if (!doc || typeof doc !== "object") continue;
 
-      if (existing) {
-        if (assumed && hasConflict(existing, assumed)) {
-          conflicts.push(toWireFolder(existing));
-          continue;
-        }
+    const existing = doc.id ? existingMap.get(doc.id) : undefined;
 
-        mutationCount++;
-        if (doc._deleted) {
-          await tx.folder.update({
+    if (existing) {
+      if (assumed && hasConflict(existing, assumed)) {
+        conflictIds.push(doc.id);
+        continue;
+      }
+
+      mutationCount++;
+      if (doc._deleted) {
+        mutations.push((tx) =>
+          tx.folder.update({
             where: { id: doc.id },
             data: { deleted: true },
-          });
-        } else {
-          await tx.folder.update({
+          }),
+        );
+      } else {
+        mutations.push((tx) =>
+          tx.folder.update({
             where: { id: doc.id },
             data: {
               name: doc.name,
@@ -618,12 +652,14 @@ async function pushFolders(
               deleted: Boolean(doc.isDeleted),
               purgeAt: parseDate(doc.purgeAt),
             },
-          });
-        }
-      } else if (!doc._deleted) {
-        mutationCount++;
-        const newId = doc.id || uuid();
-        await tx.folder.create({
+          }),
+        );
+      }
+    } else if (!doc._deleted) {
+      mutationCount++;
+      const newId = doc.id || uuid();
+      mutations.push((tx) =>
+        tx.folder.create({
           data: {
             id: newId,
             name: doc.name,
@@ -633,10 +669,37 @@ async function pushFolders(
             deleted: Boolean(doc.isDeleted),
             purgeAt: parseDate(doc.purgeAt),
           } as any,
-        });
-      }
+        }),
+      );
     }
-  });
+  }
+
+  if (conflictIds.length > 0) {
+    const conflictedDocs = await db.folder.findMany({
+      where: { id: { in: conflictIds } },
+      include: {
+        _count: {
+          select: { songs: true, children: true },
+        },
+      },
+    });
+    for (const cDoc of conflictedDocs) {
+      conflicts.push(toWireFolder(cDoc));
+    }
+  }
+
+  if (mutations.length > 0) {
+    const BATCH_SIZE = 15;
+    await db.$transaction(
+      async (tx: OrgScopedTx) => {
+        for (let i = 0; i < mutations.length; i += BATCH_SIZE) {
+          const chunk = mutations.slice(i, i + BATCH_SIZE);
+          await Promise.all(chunk.map((fn) => fn(tx)));
+        }
+      },
+      { maxWait: 15_000, timeout: 60_000 },
+    );
+  }
 
   if (mutationCount > 0) {
     syncCache.invalidate(tenantId, "folders");
@@ -661,67 +724,43 @@ async function pushCollections(
     candidateIds.length > 0
       ? await db.collection.findMany({
           where: { id: { in: candidateIds } },
-          include: {
-            _count: {
-              select: {
-                songs: true,
-              },
-            },
-          },
+          select: { id: true, updatedAt: true },
         })
       : [];
 
-  const existingMap = new Map<string, any>();
+  const existingMap = new Map<string, { id: string; updatedAt: Date }>();
   for (const item of existingList) {
     existingMap.set(item.id, item);
   }
 
   const conflicts: any[] = [];
+  const conflictIds: string[] = [];
   let mutationCount = 0;
 
-  await db.$transaction(async (tx: OrgScopedTx) => {
-    for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
-      if (!doc || typeof doc !== "object") continue;
+  type MutationFn = (tx: OrgScopedTx) => Promise<any>;
+  const mutations: MutationFn[] = [];
 
-      const existing = doc.id ? existingMap.get(doc.id) : undefined;
+  for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
+    if (!doc || typeof doc !== "object") continue;
 
-      if (existing) {
-        if (assumed && hasConflict(existing, assumed)) {
-          conflicts.push(toWireCollection(existing));
-          continue;
-        }
+    const existing = doc.id ? existingMap.get(doc.id) : undefined;
 
-        mutationCount++;
-        if (doc._deleted) {
-          await tx.collection.update({
+    if (existing) {
+      if (assumed && hasConflict(existing, assumed)) {
+        conflictIds.push(doc.id);
+        continue;
+      }
+
+      mutationCount++;
+      if (doc._deleted) {
+        mutations.push((tx) =>
+          tx.collection.update({
             where: { id: doc.id },
             data: { deleted: true },
-          });
-        } else {
-          const updateData: any = {
-            name: doc.name,
-            description: doc.description ?? null,
-            color: doc.color ?? "default",
-            icon: doc.icon ?? "default",
-            image: doc.image ?? null,
-            deleted: Boolean(doc.isDeleted),
-            purgeAt: parseDate(doc.purgeAt),
-          };
-          if (Array.isArray(doc.songIds)) {
-            updateData.songs = {
-              set: doc.songIds.map((id: string) => ({ id })),
-            };
-          }
-          await tx.collection.update({
-            where: { id: doc.id },
-            data: updateData,
-          });
-        }
-      } else if (!doc._deleted) {
-        mutationCount++;
-        const newId = doc.id || uuid();
-        const createData: any = {
-          id: newId,
+          }),
+        );
+      } else {
+        const updateData: any = {
           name: doc.name,
           description: doc.description ?? null,
           color: doc.color ?? "default",
@@ -731,16 +770,69 @@ async function pushCollections(
           purgeAt: parseDate(doc.purgeAt),
         };
         if (Array.isArray(doc.songIds)) {
-          createData.songs = {
-            connect: doc.songIds.map((id: string) => ({ id })),
+          updateData.songs = {
+            set: doc.songIds.map((id: string) => ({ id })),
           };
         }
-        await tx.collection.create({
-          data: createData as any,
-        });
+        mutations.push((tx) =>
+          tx.collection.update({
+            where: { id: doc.id },
+            data: updateData,
+          }),
+        );
       }
+    } else if (!doc._deleted) {
+      mutationCount++;
+      const newId = doc.id || uuid();
+      const createData: any = {
+        id: newId,
+        name: doc.name,
+        description: doc.description ?? null,
+        color: doc.color ?? "default",
+        icon: doc.icon ?? "default",
+        image: doc.image ?? null,
+        deleted: Boolean(doc.isDeleted),
+        purgeAt: parseDate(doc.purgeAt),
+      };
+      if (Array.isArray(doc.songIds)) {
+        createData.songs = {
+          connect: doc.songIds.map((id: string) => ({ id })),
+        };
+      }
+      mutations.push((tx) =>
+        tx.collection.create({
+          data: createData as any,
+        }),
+      );
     }
-  });
+  }
+
+  if (conflictIds.length > 0) {
+    const conflictedDocs = await db.collection.findMany({
+      where: { id: { in: conflictIds } },
+      include: {
+        songs: {
+          select: { id: true },
+        },
+      },
+    });
+    for (const cDoc of conflictedDocs) {
+      conflicts.push(toWireCollection(cDoc, cDoc.songs?.length ?? 0));
+    }
+  }
+
+  if (mutations.length > 0) {
+    const BATCH_SIZE = 15;
+    await db.$transaction(
+      async (tx: OrgScopedTx) => {
+        for (let i = 0; i < mutations.length; i += BATCH_SIZE) {
+          const chunk = mutations.slice(i, i + BATCH_SIZE);
+          await Promise.all(chunk.map((fn) => fn(tx)));
+        }
+      },
+      { maxWait: 15_000, timeout: 60_000 },
+    );
+  }
 
   if (mutationCount > 0) {
     syncCache.invalidate(tenantId, "collections");
@@ -763,37 +855,46 @@ async function pushServices(
 
   const existingList =
     candidateIds.length > 0
-      ? await db.service.findMany({ where: { id: { in: candidateIds } } })
+      ? await db.service.findMany({
+          where: { id: { in: candidateIds } },
+          select: { id: true, updatedAt: true },
+        })
       : [];
 
-  const existingMap = new Map<string, any>();
+  const existingMap = new Map<string, { id: string; updatedAt: Date }>();
   for (const item of existingList) {
     existingMap.set(item.id, item);
   }
 
   const conflicts: any[] = [];
+  const conflictIds: string[] = [];
   let mutationCount = 0;
 
-  await db.$transaction(async (tx: OrgScopedTx) => {
-    for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
-      if (!doc || typeof doc !== "object") continue;
+  type MutationFn = (tx: OrgScopedTx) => Promise<any>;
+  const mutations: MutationFn[] = [];
 
-      const existing = doc.id ? existingMap.get(doc.id) : undefined;
+  for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
+    if (!doc || typeof doc !== "object") continue;
 
-      if (existing) {
-        if (assumed && hasConflict(existing, assumed)) {
-          conflicts.push(toWireService(existing));
-          continue;
-        }
+    const existing = doc.id ? existingMap.get(doc.id) : undefined;
 
-        mutationCount++;
-        if (doc._deleted) {
-          await tx.service.update({
+    if (existing) {
+      if (assumed && hasConflict(existing, assumed)) {
+        conflictIds.push(doc.id);
+        continue;
+      }
+
+      mutationCount++;
+      if (doc._deleted) {
+        mutations.push((tx) =>
+          tx.service.update({
             where: { id: doc.id },
             data: { deleted: true },
-          });
-        } else {
-          await tx.service.update({
+          }),
+        );
+      } else {
+        mutations.push((tx) =>
+          tx.service.update({
             where: { id: doc.id },
             data: {
               name: doc.name,
@@ -804,12 +905,14 @@ async function pushServices(
               deleted: Boolean(doc.isDeleted),
               purgeAt: parseDate(doc.purgeAt),
             },
-          });
-        }
-      } else if (!doc._deleted) {
-        mutationCount++;
-        const newId = doc.id || uuid();
-        await tx.service.create({
+          }),
+        );
+      }
+    } else if (!doc._deleted) {
+      mutationCount++;
+      const newId = doc.id || uuid();
+      mutations.push((tx) =>
+        tx.service.create({
           data: {
             id: newId,
             name: doc.name,
@@ -820,10 +923,32 @@ async function pushServices(
             deleted: Boolean(doc.isDeleted),
             purgeAt: parseDate(doc.purgeAt),
           } as any,
-        });
-      }
+        }),
+      );
     }
-  });
+  }
+
+  if (conflictIds.length > 0) {
+    const conflictedDocs = await db.service.findMany({
+      where: { id: { in: conflictIds } },
+    });
+    for (const cDoc of conflictedDocs) {
+      conflicts.push(toWireService(cDoc));
+    }
+  }
+
+  if (mutations.length > 0) {
+    const BATCH_SIZE = 15;
+    await db.$transaction(
+      async (tx: OrgScopedTx) => {
+        for (let i = 0; i < mutations.length; i += BATCH_SIZE) {
+          const chunk = mutations.slice(i, i + BATCH_SIZE);
+          await Promise.all(chunk.map((fn) => fn(tx)));
+        }
+      },
+      { maxWait: 15_000, timeout: 60_000 },
+    );
+  }
 
   if (mutationCount > 0) {
     syncCache.invalidate(tenantId, "services");
@@ -846,37 +971,46 @@ async function pushAgendaEvents(
 
   const existingList =
     candidateIds.length > 0
-      ? await db.agendaEvent.findMany({ where: { id: { in: candidateIds } } })
+      ? await db.agendaEvent.findMany({
+          where: { id: { in: candidateIds } },
+          select: { id: true, updatedAt: true },
+        })
       : [];
 
-  const existingMap = new Map<string, any>();
+  const existingMap = new Map<string, { id: string; updatedAt: Date }>();
   for (const item of existingList) {
     existingMap.set(item.id, item);
   }
 
   const conflicts: any[] = [];
+  const conflictIds: string[] = [];
   let mutationCount = 0;
 
-  await db.$transaction(async (tx: OrgScopedTx) => {
-    for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
-      if (!doc || typeof doc !== "object") continue;
+  type MutationFn = (tx: OrgScopedTx) => Promise<any>;
+  const mutations: MutationFn[] = [];
 
-      const existing = doc.id ? existingMap.get(doc.id) : undefined;
+  for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
+    if (!doc || typeof doc !== "object") continue;
 
-      if (existing) {
-        if (assumed && hasConflict(existing, assumed)) {
-          conflicts.push(toWireAgendaEvent(existing));
-          continue;
-        }
+    const existing = doc.id ? existingMap.get(doc.id) : undefined;
 
-        mutationCount++;
-        if (doc._deleted) {
-          await tx.agendaEvent.update({
+    if (existing) {
+      if (assumed && hasConflict(existing, assumed)) {
+        conflictIds.push(doc.id);
+        continue;
+      }
+
+      mutationCount++;
+      if (doc._deleted) {
+        mutations.push((tx) =>
+          tx.agendaEvent.update({
             where: { id: doc.id },
             data: { deleted: true },
-          });
-        } else {
-          await tx.agendaEvent.update({
+          }),
+        );
+      } else {
+        mutations.push((tx) =>
+          tx.agendaEvent.update({
             where: { id: doc.id },
             data: {
               date: doc.date,
@@ -894,12 +1028,14 @@ async function pushAgendaEvents(
               deleted: Boolean(doc.isDeleted),
               purgeAt: parseDate(doc.purgeAt),
             },
-          });
-        }
-      } else if (!doc._deleted) {
-        mutationCount++;
-        const newId = doc.id || uuid();
-        await tx.agendaEvent.create({
+          }),
+        );
+      }
+    } else if (!doc._deleted) {
+      mutationCount++;
+      const newId = doc.id || uuid();
+      mutations.push((tx) =>
+        tx.agendaEvent.create({
           data: {
             id: newId,
             date: doc.date,
@@ -917,10 +1053,32 @@ async function pushAgendaEvents(
             deleted: Boolean(doc.isDeleted),
             purgeAt: parseDate(doc.purgeAt),
           } as any,
-        });
-      }
+        }),
+      );
     }
-  });
+  }
+
+  if (conflictIds.length > 0) {
+    const conflictedDocs = await db.agendaEvent.findMany({
+      where: { id: { in: conflictIds } },
+    });
+    for (const cDoc of conflictedDocs) {
+      conflicts.push(toWireAgendaEvent(cDoc));
+    }
+  }
+
+  if (mutations.length > 0) {
+    const BATCH_SIZE = 15;
+    await db.$transaction(
+      async (tx: OrgScopedTx) => {
+        for (let i = 0; i < mutations.length; i += BATCH_SIZE) {
+          const chunk = mutations.slice(i, i + BATCH_SIZE);
+          await Promise.all(chunk.map((fn) => fn(tx)));
+        }
+      },
+      { maxWait: 15_000, timeout: 60_000 },
+    );
+  }
 
   if (mutationCount > 0) {
     syncCache.invalidate(tenantId, "agendaEvents");
