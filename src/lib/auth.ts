@@ -45,7 +45,10 @@ import {
 } from "./supabase.js";
 
 const stripeClient = new Stripe(env.stripeSecretKey, {
-  apiVersion: "2026-08-26.dahlia", // Latest API version as of Stripe SDK v22.0.0
+  // Keep this aligned with the Stripe SDK version in package.json.
+  // The Better Auth Stripe plugin expects the current Stripe API surface,
+  // and the installed stripe package only accepts the latest API version union.
+  apiVersion: "2026-08-26.dahlia",
 });
 
 /*
