@@ -16,6 +16,8 @@ app.disable("x-powered-by");
 app.disable("etag");
 app.set("trust proxy", 1);
 
+app.use("/api/auth/stripe/webhook", express.raw({ type: "application/json" }));
+
 // ── HTTPS redirect — must run before anything else ─────────────────────────
 // Runs first so we don't waste CPU on parsing/compressing requests that will
 // immediately be redirected.
