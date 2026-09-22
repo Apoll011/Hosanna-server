@@ -16,11 +16,6 @@ app.disable("x-powered-by");
 app.disable("etag");
 app.set("trust proxy", 1);
 
-// Stripe webhook raw body — must be first and match any content type so the
-// raw Buffer is preserved for signature verification. Using "*/*" instead of
-// "application/json" avoids charset/subtype mismatches (e.g. charset=utf-8).
-app.use("/api/auth/stripe/webhook", express.raw({ type: "*/*" }));
-
 // ── HTTPS redirect — must run before anything else ─────────────────────────
 // Runs first so we don't waste CPU on parsing/compressing requests that will
 // immediately be redirected.
@@ -77,7 +72,13 @@ app.use(
 
 // ── Body parsing ─────────────────────────────────────────────────────────────
 // 5 MB headroom for large replication push batches (songs with full lyrics)
-app.use(express.json({ limit: "5mb" }));
+app.use((req, res, next) => {
+  if (req.path === "/api/auth/stripe/webhook") {
+    return express.raw({ type: "*/*" })(req, res, next);
+  }
+
+  return express.json({ limit: "5mb" })(req, res, next);
+});
 app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 
 // ── Cache-Control — private APIs must not be cached by shared proxies ───────
