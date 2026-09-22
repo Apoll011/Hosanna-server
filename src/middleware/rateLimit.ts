@@ -1,4 +1,9 @@
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+
+function makeKeyGenerator() {
+  return (req: any) =>
+    req.user?.id || req.orgId || ipKeyGenerator(req) || "unknown";
+}
 
 export const healthLimiter = rateLimit({
   windowMs: 60_000,
@@ -12,8 +17,7 @@ export const syncLimiter = rateLimit({
   limit: 600, // Generous limit for high-frequency RxDB sync polling
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  keyGenerator: (req) =>
-    (req as any).user?.id || (req as any).orgId || req.ip || "unknown",
+  keyGenerator: makeKeyGenerator(),
 });
 
 export const apiLimiter = rateLimit({
@@ -21,8 +25,7 @@ export const apiLimiter = rateLimit({
   limit: 1000,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  keyGenerator: (req) =>
-    (req as any).user?.id || (req as any).orgId || req.ip || "unknown",
+  keyGenerator: makeKeyGenerator(),
 });
 
 export const backupLimiter = rateLimit({
