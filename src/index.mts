@@ -16,8 +16,6 @@ app.disable("x-powered-by");
 app.disable("etag");
 app.set("trust proxy", 1);
 
-app.use("/api/auth/stripe/webhook", express.raw({ type: "application/json" }));
-
 // ── HTTPS redirect — must run before anything else ─────────────────────────
 // Runs first so we don't waste CPU on parsing/compressing requests that will
 // immediately be redirected.
@@ -72,6 +70,8 @@ app.use(
   }),
 );
 
+app.all("/api/auth/*", toNodeHandler(auth));
+
 // ── Body parsing ─────────────────────────────────────────────────────────────
 // 5 MB headroom for large replication push batches (songs with full lyrics)
 app.use(express.json({ limit: "5mb" }));
@@ -105,9 +105,6 @@ const globalLimiter = rateLimit({
   },
   skip: () => env.nodeEnv !== "production",
 });
-
-// ── Better Auth ─────────────────────────────────────────────────────────────
-app.all("/api/auth/*", toNodeHandler(auth));
 
 // ── API routes ──────────────────────────────────────────────────────────────
 app.use("/api", globalLimiter, apiRouter);

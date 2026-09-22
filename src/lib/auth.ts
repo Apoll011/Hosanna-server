@@ -44,8 +44,13 @@ import {
   uploadUrlAvatar,
 } from "./supabase.js";
 
-const stripeClient = new Stripe(env.stripeSecretKey, {
-  apiVersion: "2026-08-26.dahlia", // Latest API version as of Stripe SDK v22.0.0
+export const stripeClient = new Stripe(env.stripeSecretKey, {
+  // Use 2026-07-29.dahlia to match incoming webhook events and avoid
+  // FAILED_TO_CONSTRUCT_STRIPE_EVENT errors when Stripe sends events with
+  // older API versions.
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-expect-error — SDK types only reflect latest API version; 2026-07-29.dahlia is valid.
+  apiVersion: "2026-07-29.dahlia",
 });
 
 /*
