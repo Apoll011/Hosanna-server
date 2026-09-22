@@ -5,32 +5,12 @@ import express from "express";
 import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 import { env } from "./config/env.js";
-import { auth } from "./lib/auth.js";
+import { auth, stripeClient } from "./lib/auth.js";
 import { DEFAULT_LOCALE, t } from "./lib/i18n.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { apiRouter } from "./routes/index.js";
 
 const app = express();
-
-app.use((req, _res, next) => {
-  console.log("\n========== REQUEST ARRIVED ==========");
-  console.log("METHOD:", req.method);
-  console.log("URL:", req.originalUrl);
-  console.log("HEADERS:", req.headers);
-  console.log("=====================================\n");
-  console.log(
-    "BODY TYPE:",
-    Buffer.isBuffer(req.body) ? "Buffer" : typeof req.body,
-  );
-
-  if (Buffer.isBuffer(req.body)) {
-    console.log("BODY:", req.body.toString("utf8"));
-  } else {
-    console.log("BODY:", req.body);
-  }
-
-  next();
-});
 
 app.disable("x-powered-by");
 app.disable("etag");
@@ -134,22 +114,32 @@ const globalLimiter = rateLimit({
 const betterAuthHandler = toNodeHandler(auth);
 
 app.all("/api/auth/*", (req, res) => {
-  console.log("\n========== BEFORE BETTER AUTH ==========");
-  console.log("METHOD:", req.method);
-  console.log("URL:", req.originalUrl);
-  console.log("HEADERS:", req.headers);
-  console.log(
-    "BODY TYPE:",
-    Buffer.isBuffer(req.body) ? "Buffer" : typeof req.body,
-  );
+  console.log("STRIPE SECRET:", {
+    configured: Boolean(env.stripeWebhookSecret),
+    prefix: env.stripeWebhookSecret?.slice(0, 8),
+    length: env.stripeWebhookSecret?.length,
+  });
 
-  if (Buffer.isBuffer(req.body)) {
-    console.log("BODY:", req.body.toString("utf8"));
-  } else {
-    console.log("BODY:", req.body);
+  const stripeSignature = req.headers["stripe-signature"];
+
+  if (
+    req.path === "/api/auth/stripe/webhook" &&
+    Buffer.isBuffer(req.body) &&
+    typeof stripeSignature === "string"
+  ) {
+    try {
+      stripeClient.webhooks.constructEvent(
+        req.body,
+        stripeSignature,
+        env.stripeWebhookSecret,
+      );
+
+      console.log("✅ MANUAL STRIPE SIGNATURE: VALID");
+    } catch (error) {
+      console.error("❌ MANUAL STRIPE SIGNATURE: INVALID");
+      console.error(error);
+    }
   }
-
-  console.log("========================================\n");
 
   return betterAuthHandler(req, res);
 });

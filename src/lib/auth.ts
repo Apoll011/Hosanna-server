@@ -44,7 +44,7 @@ import {
   uploadUrlAvatar,
 } from "./supabase.js";
 
-const stripeClient = new Stripe(env.stripeSecretKey, {
+export const stripeClient = new Stripe(env.stripeSecretKey, {
   // Use 2026-07-29.dahlia to match incoming webhook events and avoid
   // FAILED_TO_CONSTRUCT_STRIPE_EVENT errors when Stripe sends events with
   // older API versions.
