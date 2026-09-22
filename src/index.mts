@@ -5,7 +5,7 @@ import express from "express";
 import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 import { env } from "./config/env.js";
-import { auth, stripeClient } from "./lib/auth.js";
+import { auth } from "./lib/auth.js";
 import { DEFAULT_LOCALE, t } from "./lib/i18n.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { apiRouter } from "./routes/index.js";
@@ -70,15 +70,11 @@ app.use(
   }),
 );
 
+app.all("/api/auth/*", toNodeHandler(auth));
+
 // ── Body parsing ─────────────────────────────────────────────────────────────
 // 5 MB headroom for large replication push batches (songs with full lyrics)
-app.use((req, res, next) => {
-  if (req.path === "/api/auth/stripe/webhook") {
-    return express.raw({ type: "*/*" })(req, res, next);
-  }
-
-  return express.json({ limit: "5mb" })(req, res, next);
-});
+app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 
 // ── Cache-Control — private APIs must not be cached by shared proxies ───────
@@ -110,39 +106,6 @@ const globalLimiter = rateLimit({
   skip: () => env.nodeEnv !== "production",
 });
 
-// ── Better Auth ─────────────────────────────────────────────────────────────
-const betterAuthHandler = toNodeHandler(auth);
-
-app.all("/api/auth/*", (req, res) => {
-  console.log("STRIPE SECRET:", {
-    configured: Boolean(env.stripeWebhookSecret),
-    prefix: env.stripeWebhookSecret?.slice(0, 8),
-    length: env.stripeWebhookSecret?.length,
-  });
-
-  const stripeSignature = req.headers["stripe-signature"];
-
-  if (
-    req.path === "/api/auth/stripe/webhook" &&
-    Buffer.isBuffer(req.body) &&
-    typeof stripeSignature === "string"
-  ) {
-    try {
-      stripeClient.webhooks.constructEvent(
-        req.body,
-        stripeSignature,
-        env.stripeWebhookSecret,
-      );
-
-      console.log("✅ MANUAL STRIPE SIGNATURE: VALID");
-    } catch (error) {
-      console.error("❌ MANUAL STRIPE SIGNATURE: INVALID");
-      console.error(error);
-    }
-  }
-
-  return betterAuthHandler(req, res);
-});
 // ── API routes ──────────────────────────────────────────────────────────────
 app.use("/api", globalLimiter, apiRouter);
 
