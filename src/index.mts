@@ -16,7 +16,10 @@ app.disable("x-powered-by");
 app.disable("etag");
 app.set("trust proxy", 1);
 
-app.use("/api/auth/stripe/webhook", express.raw({ type: "application/json" }));
+// Stripe webhook raw body — must be first and match any content type so the
+// raw Buffer is preserved for signature verification. Using "*/*" instead of
+// "application/json" avoids charset/subtype mismatches (e.g. charset=utf-8).
+app.use("/api/auth/stripe/webhook", express.raw({ type: "*/*" }));
 
 // ── HTTPS redirect — must run before anything else ─────────────────────────
 // Runs first so we don't waste CPU on parsing/compressing requests that will
