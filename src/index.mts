@@ -12,6 +12,26 @@ import { apiRouter } from "./routes/index.js";
 
 const app = express();
 
+app.use((req, _res, next) => {
+  console.log("\n========== REQUEST ARRIVED ==========");
+  console.log("METHOD:", req.method);
+  console.log("URL:", req.originalUrl);
+  console.log("HEADERS:", req.headers);
+  console.log("=====================================\n");
+  console.log(
+    "BODY TYPE:",
+    Buffer.isBuffer(req.body) ? "Buffer" : typeof req.body,
+  );
+
+  if (Buffer.isBuffer(req.body)) {
+    console.log("BODY:", req.body.toString("utf8"));
+  } else {
+    console.log("BODY:", req.body);
+  }
+
+  next();
+});
+
 app.disable("x-powered-by");
 app.disable("etag");
 app.set("trust proxy", 1);
@@ -111,8 +131,28 @@ const globalLimiter = rateLimit({
 });
 
 // ── Better Auth ─────────────────────────────────────────────────────────────
-app.all("/api/auth/*", toNodeHandler(auth));
+const betterAuthHandler = toNodeHandler(auth);
 
+app.all("/api/auth/*", (req, res) => {
+  console.log("\n========== BEFORE BETTER AUTH ==========");
+  console.log("METHOD:", req.method);
+  console.log("URL:", req.originalUrl);
+  console.log("HEADERS:", req.headers);
+  console.log(
+    "BODY TYPE:",
+    Buffer.isBuffer(req.body) ? "Buffer" : typeof req.body,
+  );
+
+  if (Buffer.isBuffer(req.body)) {
+    console.log("BODY:", req.body.toString("utf8"));
+  } else {
+    console.log("BODY:", req.body);
+  }
+
+  console.log("========================================\n");
+
+  return betterAuthHandler(req, res);
+});
 // ── API routes ──────────────────────────────────────────────────────────────
 app.use("/api", globalLimiter, apiRouter);
 
