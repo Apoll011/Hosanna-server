@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { Router } from "express";
 import { env } from "../config/env.js";
 import { prisma } from "../database/prisma.js";
+import { runAgendaReminders } from "../services/agendaReminder.service.js";
 import { syncCache } from "../services/syncCache.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { AppError } from "../utils/errors.js";
@@ -17,8 +18,27 @@ function requireCronSecret(req: Request, _res: Response, next: NextFunction) {
   next();
 }
 
-// POST /api/cron/purge-trash — permanently delete records past their purgeAt
+// GET|POST /api/cron/agenda-reminders — notify assignees of events in 1 or 3 days
+// (Vercel cron issues GET requests; POST kept for manual/scripted runs.)
+async function agendaRemindersHandler(_req: Request, res: Response) {
+  const result = await runAgendaReminders();
+  res.json(result);
+}
+
+cronRouter.get(
+  "/agenda-reminders",
+  requireCronSecret,
+  asyncHandler(agendaRemindersHandler),
+);
+
 cronRouter.post(
+  "/agenda-reminders",
+  requireCronSecret,
+  asyncHandler(agendaRemindersHandler),
+);
+
+// POST /api/cron/purge-trash — permanently delete records past their purgeAt
+cronRouter.get(
   "/purge-trash",
   requireCronSecret,
   asyncHandler(async (_req, res) => {
