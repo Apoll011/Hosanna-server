@@ -41,8 +41,8 @@ model Collection {
 
   name        String
   description String?
-  color       String   @default("default")
-  icon        String   @default("default")
+  color       String  @default("default")
+  icon        String  @default("default")
   image       String?
 
   songs     Song[]
@@ -218,6 +218,9 @@ model Session {
   activeTeamId         String?
 
   impersonatedBy String?
+
+  fcm    String?
+  notify Boolean @default(true)
 
   @@unique([token])
   @@index([userId])
