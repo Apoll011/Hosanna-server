@@ -43,21 +43,28 @@ cronRouter.get(
   requireCronSecret,
   asyncHandler(async (_req, res) => {
     const now = new Date();
+    // Reminder dispatch rows are idempotency keys; once an event is well in the
+    // past they can never be needed again.
+    const dispatchCutoff = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
 
-    const [songs, folders, services, agendaEvents] = await Promise.all([
-      prisma.song.deleteMany({
-        where: { deleted: true, purgeAt: { lte: now } },
-      }),
-      prisma.folder.deleteMany({
-        where: { deleted: true, purgeAt: { lte: now } },
-      }),
-      prisma.service.deleteMany({
-        where: { deleted: true, purgeAt: { lte: now } },
-      }),
-      prisma.agendaEvent.deleteMany({
-        where: { deleted: true, purgeAt: { lte: now } },
-      }),
-    ]);
+    const [songs, folders, services, agendaEvents, reminderDispatches] =
+      await Promise.all([
+        prisma.song.deleteMany({
+          where: { deleted: true, purgeAt: { lte: now } },
+        }),
+        prisma.folder.deleteMany({
+          where: { deleted: true, purgeAt: { lte: now } },
+        }),
+        prisma.service.deleteMany({
+          where: { deleted: true, purgeAt: { lte: now } },
+        }),
+        prisma.agendaEvent.deleteMany({
+          where: { deleted: true, purgeAt: { lte: now } },
+        }),
+        prisma.agendaReminderDispatch.deleteMany({
+          where: { sentAt: { lt: dispatchCutoff } },
+        }),
+      ]);
 
     const totalPurged =
       songs.count + folders.count + services.count + agendaEvents.count;
@@ -71,6 +78,7 @@ cronRouter.get(
         folders: folders.count,
         services: services.count,
         agendaEvents: agendaEvents.count,
+        reminderDispatches: reminderDispatches.count,
       },
     });
   }),
