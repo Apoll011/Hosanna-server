@@ -83,6 +83,9 @@ const ptPT = {
     canceled_title: "Subscrição cancelada",
     canceled_description:
       "A tua subscrição foi cancelada. O acesso continuará disponível até ao fim do período faturado.",
+    agenda_reminder_title: "Evento próximo",
+    agenda_reminder_tomorrow: "Amanhã tens",
+    agenda_reminder_in_days: "Em {{days}} dias tens",
   },
 
   // ── email templates ─────────────────────────────────────────────────────

@@ -81,6 +81,9 @@ const en = {
     canceled_title: "Subscription canceled",
     canceled_description:
       "Your subscription has been canceled. Access remains available until the end of the billing period.",
+    agenda_reminder_title: "Upcoming event",
+    agenda_reminder_tomorrow: "Tomorrow you have",
+    agenda_reminder_in_days: "In {{days}} days you have",
   },
 
   // ── email templates ─────────────────────────────────────────────────────

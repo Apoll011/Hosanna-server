@@ -86,6 +86,9 @@ const es = {
     canceled_title: "Suscripción cancelada",
     canceled_description:
       "Tu suscripción ha sido cancelada. El acceso permanecerá disponible hasta el final del período de facturación.",
+    agenda_reminder_title: "Próximo evento",
+    agenda_reminder_tomorrow: "Mañana tienes",
+    agenda_reminder_in_days: "En {{days}} días tienes",
   },
 
   // ── email templates ─────────────────────────────────────────────────────

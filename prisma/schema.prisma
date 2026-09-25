@@ -1,4 +1,3 @@
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -41,8 +40,8 @@ model Collection {
 
   name        String
   description String?
-  color       String   @default("default")
-  icon        String   @default("default")
+  color       String  @default("default")
+  icon        String  @default("default")
   image       String?
 
   songs     Song[]
@@ -141,10 +140,39 @@ model AgendaEvent {
   deleted   Boolean   @default(false) @map("_deleted")
   purgeAt   DateTime? @map("purge_at")
 
+  reminderDispatches AgendaReminderDispatch[]
+
   @@index([orgId])
   @@index([orgId, updatedAt, id], map: "agenda_events_replication_idx")
   @@index([deleted, purgeAt])
+  // Reminder cron: orgId = ? AND _deleted = false AND date IN (…).
+  @@index([orgId, deleted, date], map: "agenda_events_org_deleted_date_idx")
   @@map("agenda_events")
+}
+
+/// Idempotency ledger for the agenda reminder cron.
+///
+/// A row is written once per (event, user, offset) after at least one push is
+/// delivered, so re-running the job (manual trigger or Vercel retry) never
+/// notifies the same person about the same event twice.
+model AgendaReminderDispatch {
+  id String @id @default(uuid())
+
+  eventId String
+  event   AgendaEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /**
+   * Reminder lead time: 1 (tomorrow) or 3 (in three days).
+   */
+  daysUntil Int
+  sentAt    DateTime @default(now())
+
+  @@unique([eventId, userId, daysUntil])
+  @@index([sentAt])
+  @@map("agenda_reminder_dispatches")
 }
 
 model Service {
@@ -174,14 +202,14 @@ model Service {
 }
 
 model User {
-  id                     String                  @id
+  id                     String                   @id
   name                   String
   email                  String
-  emailVerified          Boolean                 @default(false)
+  emailVerified          Boolean                  @default(false)
   image                  String?
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
-  twoFactorEnabled       Boolean?                @default(false)
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  twoFactorEnabled       Boolean?                 @default(false)
   sessions               Session[]
   accounts               Account[]
   notifications          Notification[]
@@ -190,6 +218,7 @@ model User {
   members                Member[]
   invitations            Invitation[]
   serviceSongAnnotations ServiceSongAnnotation[]
+  reminderDispatches     AgendaReminderDispatch[]
 
   stripeCustomerId String?
 
@@ -219,8 +248,13 @@ model Session {
 
   impersonatedBy String?
 
+  fcm    String?
+  notify Boolean @default(false)
+
   @@unique([token])
   @@index([userId])
+  // Reminder cron lookup: userId = ? AND notify = true AND fcm IS NOT NULL.
+  @@index([userId, notify], map: "session_user_notify_idx")
   @@index([expiresAt])
   @@map("session")
 }
@@ -243,9 +277,9 @@ model Account {
 
   issuer String
 
+  @@unique([issuer, accountId], map: "account_issuer_accountId_uidx")
   @@index([userId])
   @@map("account")
-  @@unique([issuer, accountId], map: "account_issuer_accountId_uidx")
 }
 
 model Verification {
@@ -342,10 +376,10 @@ model TeamMember {
 
   membershipKey String?
 
+  @@unique([membershipKey])
   @@index([teamId])
   @@index([userId])
   @@map("teamMember")
-  @@unique([membershipKey])
 }
 
 model Member {
@@ -357,9 +391,9 @@ model Member {
   role           String       @default("member")
   createdAt      DateTime
 
+  @@unique([organizationId, userId])
   @@index([organizationId])
   @@index([userId])
-  @@unique([organizationId, userId])
   @@map("member")
 }
 
