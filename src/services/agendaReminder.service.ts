@@ -126,7 +126,9 @@ function toDateKeyInTz(date: Date, timeZone: string): string {
 /** Adds whole calendar days to a YYYY-MM-DD key, immune to DST shifts. */
 function addDaysToDateKey(dateKey: string, days: number): string {
   const [year, month, day] = dateKey.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+  return new Date(Date.UTC(year, month - 1, day + days))
+    .toISOString()
+    .slice(0, 10);
 }
 
 /** Date keys (YYYY-MM-DD) for the reminder offsets in the org timezone. */
@@ -140,8 +142,7 @@ function getTargetDateKeys(timeZone: string, now: Date): string[] {
 function parseOrgMetadata(metadata: unknown): OrgMeta {
   if (!metadata) return {};
   try {
-    const meta =
-      typeof metadata === "string" ? JSON.parse(metadata) : metadata;
+    const meta = typeof metadata === "string" ? JSON.parse(metadata) : metadata;
     return (meta ?? {}) as OrgMeta;
   } catch {
     return {};
@@ -152,7 +153,10 @@ function parseOrgMetadata(metadata: unknown): OrgMeta {
  * Builds a `categoryId → label` map once per org: the org's own configured
  * categories take precedence over the built-in locale tables.
  */
-function buildCategoryLabels(meta: OrgMeta, locale: string): Map<string, string> {
+function buildCategoryLabels(
+  meta: OrgMeta,
+  locale: string,
+): Map<string, string> {
   const labels = new Map<string, string>();
 
   const builtIn = (
@@ -165,7 +169,8 @@ function buildCategoryLabels(meta: OrgMeta, locale: string): Map<string, string>
     labels.set(category.id, category.label);
   }
 
-  for (const category of meta.settings?.agenda?.responsibilityCategories ?? []) {
+  for (const category of meta.settings?.agenda?.responsibilityCategories ??
+    []) {
     if (category?.id && category.label) labels.set(category.id, category.label);
   }
 
@@ -250,7 +255,8 @@ export async function runAgendaReminders(
   for (const org of organizations) {
     try {
       const meta = parseOrgMetadata(org.metadata);
-      const locale = meta.settings?.general?.locale ?? meta.locale ?? DEFAULT_LOCALE;
+      const locale =
+        meta.settings?.general?.locale ?? meta.locale ?? DEFAULT_LOCALE;
       const timezone = meta.settings?.general?.timezone ?? DEFAULT_TIMEZONE;
       const i18nLocale = resolveI18nLocale(locale);
       const categoryLabels = buildCategoryLabels(meta, locale);
@@ -321,7 +327,9 @@ export async function runAgendaReminders(
         result.eventsChecked++;
 
         const daysUntil =
-          event.date === targetKeys[0] ? REMINDER_OFFSETS_DAYS[0] : REMINDER_OFFSETS_DAYS[1];
+          event.date === targetKeys[0]
+            ? REMINDER_OFFSETS_DAYS[0]
+            : REMINDER_OFFSETS_DAYS[1];
 
         for (const [memberId, labels] of labelsByMemberId) {
           const userId = memberToUser.get(memberId);

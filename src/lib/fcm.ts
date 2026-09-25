@@ -39,7 +39,9 @@ let tokenRefresh: Promise<string> | null = null;
  * PEM parses.
  */
 function normalizePrivateKey(privateKey: string): string {
-  return privateKey.includes("\\n") ? privateKey.replace(/\\n/g, "\n") : privateKey;
+  return privateKey.includes("\\n")
+    ? privateKey.replace(/\\n/g, "\n")
+    : privateKey;
 }
 
 async function fetchAccessToken(): Promise<string> {
