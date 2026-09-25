@@ -805,7 +805,7 @@ export const auth = betterAuth({
       },
       notify: {
         type: "boolean",
-        defaultValue: true,
+        defaultValue: false,
       },
     },
   },

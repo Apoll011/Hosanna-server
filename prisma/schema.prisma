@@ -1,4 +1,3 @@
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -165,7 +164,9 @@ model AgendaReminderDispatch {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  /** Reminder lead time: 1 (tomorrow) or 3 (in three days). */
+  /**
+   * Reminder lead time: 1 (tomorrow) or 3 (in three days).
+   */
   daysUntil Int
   sentAt    DateTime @default(now())
 
@@ -201,14 +202,14 @@ model Service {
 }
 
 model User {
-  id                     String                  @id
+  id                     String                   @id
   name                   String
   email                  String
-  emailVerified          Boolean                 @default(false)
+  emailVerified          Boolean                  @default(false)
   image                  String?
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
-  twoFactorEnabled       Boolean?                @default(false)
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  twoFactorEnabled       Boolean?                 @default(false)
   sessions               Session[]
   accounts               Account[]
   notifications          Notification[]
@@ -248,7 +249,7 @@ model Session {
   impersonatedBy String?
 
   fcm    String?
-  notify Boolean @default(true)
+  notify Boolean @default(false)
 
   @@unique([token])
   @@index([userId])
@@ -276,9 +277,9 @@ model Account {
 
   issuer String
 
+  @@unique([issuer, accountId], map: "account_issuer_accountId_uidx")
   @@index([userId])
   @@map("account")
-  @@unique([issuer, accountId], map: "account_issuer_accountId_uidx")
 }
 
 model Verification {
@@ -375,10 +376,10 @@ model TeamMember {
 
   membershipKey String?
 
+  @@unique([membershipKey])
   @@index([teamId])
   @@index([userId])
   @@map("teamMember")
-  @@unique([membershipKey])
 }
 
 model Member {
@@ -390,9 +391,9 @@ model Member {
   role           String       @default("member")
   createdAt      DateTime
 
+  @@unique([organizationId, userId])
   @@index([organizationId])
   @@index([userId])
-  @@unique([organizationId, userId])
   @@map("member")
 }
 
