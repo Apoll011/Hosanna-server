@@ -12,6 +12,7 @@ export const statement = {
   settings: ["manage"],
   export: ["pdf"],
   backup: ["import", "export"],
+  notification: ["sent"],
 } as const;
 
 export const ac = createAccessControl(statement);
