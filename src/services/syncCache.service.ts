@@ -4,8 +4,10 @@
  *
  * Strategy:
  *   - Each tenant has an in-memory map of latest known checkpoints per collection.
- *   - On replication pull, if the client's checkpoint is already at or ahead of the
- *     server's latest document, the query returns instantly without touching the DB.
+ *   - On replication pull, if the client's checkpoint matches the server's latest
+ *     document exactly, the query returns instantly without touching the DB.
+ *   - A client checkpoint ahead of the cached server checkpoint is NOT treated as
+ *     "no changes" (clock skew / missed invalidation / multi-instance).
  *   - On mutation (push / create / update / delete), the tenant's cache for that
  *     collection is invalidated immediately so subsequent polls fetch fresh data.
  *   - Cache entries expire after TTL to ensure consistency even if external database
@@ -80,12 +82,10 @@ class SyncCacheService {
       return true;
     }
 
-    // Client is strictly newer than server's newest doc
-    if (clientCheckpoint.updatedAt > entry.checkpoint.updatedAt) {
-      return true;
-    }
-
-    // Client matches server's newest doc exactly
+    // Only treat as unchanged when the client is exactly at the server's
+    // newest doc. A client checkpoint *ahead* of the cache (clock skew,
+    // missed invalidate, multi-instance) must fall through to the DB —
+    // otherwise real server updates are hidden and the next push conflicts.
     if (
       clientCheckpoint.updatedAt === entry.checkpoint.updatedAt &&
       clientCheckpoint.id === entry.checkpoint.id

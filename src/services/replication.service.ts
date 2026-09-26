@@ -12,9 +12,10 @@
  *
  * Push:
  *  - Batch fetches all candidate records in a single query (eliminating 2*N sequential queries)
- *  - Runs mutations inside an interactive transaction for ACID consistency
- *  - Detects conflicts before executing updates
- *  - Invalidates syncCache atomically only when state was modified
+ *  - Persists the client's `updatedAt` (conflict token) so assumedMasterState stays aligned
+ *  - Optimistic-locks updates with `updateMany` on `(id, assumed.updatedAt)` inside the tx
+ *  - Insert without assumedMasterState against an existing id is a conflict (RxDB protocol)
+ *  - Invalidates syncCache only when state was modified
  */
 
 import { v4 as uuid } from "uuid";
@@ -268,6 +269,61 @@ function hasConflict(serverDoc: any, assumed: any): boolean {
   return sTime !== aTime;
 }
 
+/**
+ * Persist the client's timestamps so the next push's assumedMasterState
+ * matches what is stored on the server. Prisma `@updatedAt` would otherwise
+ * overwrite with a server clock and cause false conflicts.
+ */
+function assignClientTimestamps(
+  data: Record<string, unknown>,
+  doc: any,
+  options?: { includeCreatedAt?: boolean },
+): void {
+  const updatedAt = parseDate(doc?.updatedAt);
+  if (updatedAt) data.updatedAt = updatedAt;
+  if (options?.includeCreatedAt) {
+    const createdAt = parseDate(doc?.createdAt);
+    if (createdAt) data.createdAt = createdAt;
+  }
+}
+
+/** Where clause for optimistic lock: id + assumed updatedAt when present. */
+function optimisticIdWhere(
+  id: string,
+  assumed: any,
+): { id: string; updatedAt?: Date } {
+  const assumedAt = assumed ? parseDate(assumed.updatedAt) : null;
+  return assumedAt ? { id, updatedAt: assumedAt } : { id };
+}
+
+/** Mutation returns a conflict document id, or null on success. */
+type PushMutationFn = (tx: OrgScopedTx) => Promise<string | null>;
+
+async function commitPushMutations(
+  db: OrgScopedPrisma,
+  mutations: PushMutationFn[],
+): Promise<string[]> {
+  if (mutations.length === 0) return [];
+
+  const lateConflictIds: string[] = [];
+  const BATCH_SIZE = 15;
+
+  await db.$transaction(
+    async (tx: OrgScopedTx) => {
+      for (let i = 0; i < mutations.length; i += BATCH_SIZE) {
+        const chunk = mutations.slice(i, i + BATCH_SIZE);
+        const results = await Promise.all(chunk.map((fn) => fn(tx)));
+        for (const conflictId of results) {
+          if (conflictId) lateConflictIds.push(conflictId);
+        }
+      }
+    },
+    { maxWait: 15_000, timeout: 60_000 },
+  );
+
+  return lateConflictIds;
+}
+
 function buildCheckpointWhere(checkpoint: ReplicationCheckpoint | null) {
   if (!checkpoint) return {};
   const checkpointDate = new Date(checkpoint.updatedAt);
@@ -479,12 +535,8 @@ async function pushSongs(
     existingMap.set(item.id, item);
   }
 
-  const conflicts: any[] = [];
   const conflictIds: string[] = [];
-  let mutationCount = 0;
-
-  type MutationFn = (tx: OrgScopedTx) => Promise<any>;
-  const mutations: MutationFn[] = [];
+  const mutations: PushMutationFn[] = [];
 
   for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
     if (!doc || typeof doc !== "object") continue;
@@ -492,21 +544,24 @@ async function pushSongs(
     const existing = doc.id ? existingMap.get(doc.id) : undefined;
 
     if (existing) {
-      if (assumed && hasConflict(existing, assumed)) {
+      // Missing assumedMasterState means the client thinks this is an insert.
+      if (!assumed || hasConflict(existing, assumed)) {
         conflictIds.push(doc.id);
         continue;
       }
 
-      mutationCount++;
       if (doc._deleted) {
-        mutations.push((tx) =>
-          tx.song.update({
-            where: { id: doc.id },
-            data: { deleted: true },
-          }),
-        );
+        const deleteData: Record<string, unknown> = { deleted: true };
+        assignClientTimestamps(deleteData, doc);
+        mutations.push(async (tx) => {
+          const result = await tx.song.updateMany({
+            where: optimisticIdWhere(doc.id, assumed),
+            data: deleteData,
+          });
+          return result.count === 0 ? doc.id : null;
+        });
       } else {
-        const songData: any = {};
+        const songData: Record<string, unknown> = {};
         if (doc.title !== undefined) songData.title = doc.title;
         if (doc.artist !== undefined) songData.artist = doc.artist;
         if (doc.content !== undefined) songData.content = doc.content;
@@ -520,22 +575,36 @@ async function pushSongs(
           songData.deleted = Boolean(doc.isDeleted);
         if (doc.purgeAt !== undefined)
           songData.purgeAt = parseDate(doc.purgeAt);
-        if (Array.isArray(doc.collectionIds)) {
-          songData.collections = {
-            set: doc.collectionIds.map((id: string) => ({ id })),
-          };
-        }
-        mutations.push((tx) =>
-          tx.song.update({
-            where: { id: doc.id },
+        assignClientTimestamps(songData, doc);
+
+        const collectionIds = Array.isArray(doc.collectionIds)
+          ? doc.collectionIds
+          : undefined;
+
+        mutations.push(async (tx) => {
+          const result = await tx.song.updateMany({
+            where: optimisticIdWhere(doc.id, assumed),
             data: songData,
-          }),
-        );
+          });
+          if (result.count === 0) return doc.id;
+
+          // Relation writes are not supported by updateMany.
+          if (collectionIds) {
+            await tx.song.update({
+              where: { id: doc.id },
+              data: {
+                collections: {
+                  set: collectionIds.map((id: string) => ({ id })),
+                },
+              },
+            });
+          }
+          return null;
+        });
       }
     } else if (!doc._deleted) {
-      mutationCount++;
       const newId = doc.id || uuid();
-      const createSongData: any = {
+      const createSongData: Record<string, unknown> = {
         id: newId,
         title: doc.title,
         artist: doc.artist ?? "Unknown Artist",
@@ -547,23 +616,28 @@ async function pushSongs(
         deleted: Boolean(doc.isDeleted),
         purgeAt: parseDate(doc.purgeAt),
       };
+      assignClientTimestamps(createSongData, doc, { includeCreatedAt: true });
       if (Array.isArray(doc.collectionIds)) {
         createSongData.collections = {
           connect: doc.collectionIds.map((id: string) => ({ id })),
         };
       }
-      mutations.push((tx) =>
-        tx.song.create({
+      mutations.push(async (tx) => {
+        await tx.song.create({
           data: createSongData as any,
-        }),
-      );
+        });
+        return null;
+      });
     }
   }
 
-  // If any conflicts occurred (rare), load their full wire representation
-  if (conflictIds.length > 0) {
+  const lateConflictIds = await commitPushMutations(db, mutations);
+  const allConflictIds = [...new Set([...conflictIds, ...lateConflictIds])];
+
+  const conflicts: any[] = [];
+  if (allConflictIds.length > 0) {
     const conflictedDocs = await db.song.findMany({
-      where: { id: { in: conflictIds } },
+      where: { id: { in: allConflictIds } },
       include: {
         collections: {
           select: { id: true },
@@ -575,21 +649,7 @@ async function pushSongs(
     }
   }
 
-  // Execute mutations in chunked batches inside an extended transaction
-  if (mutations.length > 0) {
-    const BATCH_SIZE = 15;
-    await db.$transaction(
-      async (tx: OrgScopedTx) => {
-        for (let i = 0; i < mutations.length; i += BATCH_SIZE) {
-          const chunk = mutations.slice(i, i + BATCH_SIZE);
-          await Promise.all(chunk.map((fn) => fn(tx)));
-        }
-      },
-      { maxWait: 15_000, timeout: 60_000 },
-    );
-  }
-
-  if (mutationCount > 0) {
+  if (mutations.length > lateConflictIds.length) {
     syncCache.invalidate(tenantId, "songs");
   }
   return conflicts;
@@ -621,12 +681,8 @@ async function pushFolders(
     existingMap.set(item.id, item);
   }
 
-  const conflicts: any[] = [];
   const conflictIds: string[] = [];
-  let mutationCount = 0;
-
-  type MutationFn = (tx: OrgScopedTx) => Promise<any>;
-  const mutations: MutationFn[] = [];
+  const mutations: PushMutationFn[] = [];
 
   for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
     if (!doc || typeof doc !== "object") continue;
@@ -634,21 +690,23 @@ async function pushFolders(
     const existing = doc.id ? existingMap.get(doc.id) : undefined;
 
     if (existing) {
-      if (assumed && hasConflict(existing, assumed)) {
+      if (!assumed || hasConflict(existing, assumed)) {
         conflictIds.push(doc.id);
         continue;
       }
 
-      mutationCount++;
       if (doc._deleted) {
-        mutations.push((tx) =>
-          tx.folder.update({
-            where: { id: doc.id },
-            data: { deleted: true },
-          }),
-        );
+        const deleteData: Record<string, unknown> = { deleted: true };
+        assignClientTimestamps(deleteData, doc);
+        mutations.push(async (tx) => {
+          const result = await tx.folder.updateMany({
+            where: optimisticIdWhere(doc.id, assumed),
+            data: deleteData,
+          });
+          return result.count === 0 ? doc.id : null;
+        });
       } else {
-        const folderData: any = {};
+        const folderData: Record<string, unknown> = {};
         if (doc.name !== undefined) folderData.name = doc.name;
         if (doc.parentId !== undefined) folderData.parentId = doc.parentId;
         if (doc.color !== undefined) folderData.color = doc.color;
@@ -657,36 +715,44 @@ async function pushFolders(
           folderData.deleted = Boolean(doc.isDeleted);
         if (doc.purgeAt !== undefined)
           folderData.purgeAt = parseDate(doc.purgeAt);
+        assignClientTimestamps(folderData, doc);
 
-        mutations.push((tx) =>
-          tx.folder.update({
-            where: { id: doc.id },
+        mutations.push(async (tx) => {
+          const result = await tx.folder.updateMany({
+            where: optimisticIdWhere(doc.id, assumed),
             data: folderData,
-          }),
-        );
+          });
+          return result.count === 0 ? doc.id : null;
+        });
       }
     } else if (!doc._deleted) {
-      mutationCount++;
       const newId = doc.id || uuid();
-      mutations.push((tx) =>
-        tx.folder.create({
-          data: {
-            id: newId,
-            name: doc.name,
-            parentId: doc.parentId ?? null,
-            color: doc.color ?? "default",
-            icon: doc.icon ?? "default",
-            deleted: Boolean(doc.isDeleted),
-            purgeAt: parseDate(doc.purgeAt),
-          } as any,
-        }),
-      );
+      const createData: Record<string, unknown> = {
+        id: newId,
+        name: doc.name,
+        parentId: doc.parentId ?? null,
+        color: doc.color ?? "default",
+        icon: doc.icon ?? "default",
+        deleted: Boolean(doc.isDeleted),
+        purgeAt: parseDate(doc.purgeAt),
+      };
+      assignClientTimestamps(createData, doc, { includeCreatedAt: true });
+      mutations.push(async (tx) => {
+        await tx.folder.create({
+          data: createData as any,
+        });
+        return null;
+      });
     }
   }
 
-  if (conflictIds.length > 0) {
+  const lateConflictIds = await commitPushMutations(db, mutations);
+  const allConflictIds = [...new Set([...conflictIds, ...lateConflictIds])];
+
+  const conflicts: any[] = [];
+  if (allConflictIds.length > 0) {
     const conflictedDocs = await db.folder.findMany({
-      where: { id: { in: conflictIds } },
+      where: { id: { in: allConflictIds } },
       include: {
         _count: {
           select: { songs: true, children: true },
@@ -698,20 +764,7 @@ async function pushFolders(
     }
   }
 
-  if (mutations.length > 0) {
-    const BATCH_SIZE = 15;
-    await db.$transaction(
-      async (tx: OrgScopedTx) => {
-        for (let i = 0; i < mutations.length; i += BATCH_SIZE) {
-          const chunk = mutations.slice(i, i + BATCH_SIZE);
-          await Promise.all(chunk.map((fn) => fn(tx)));
-        }
-      },
-      { maxWait: 15_000, timeout: 60_000 },
-    );
-  }
-
-  if (mutationCount > 0) {
+  if (mutations.length > lateConflictIds.length) {
     syncCache.invalidate(tenantId, "folders");
   }
   return conflicts;
@@ -743,12 +796,8 @@ async function pushCollections(
     existingMap.set(item.id, item);
   }
 
-  const conflicts: any[] = [];
   const conflictIds: string[] = [];
-  let mutationCount = 0;
-
-  type MutationFn = (tx: OrgScopedTx) => Promise<any>;
-  const mutations: MutationFn[] = [];
+  const mutations: PushMutationFn[] = [];
 
   for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
     if (!doc || typeof doc !== "object") continue;
@@ -756,21 +805,23 @@ async function pushCollections(
     const existing = doc.id ? existingMap.get(doc.id) : undefined;
 
     if (existing) {
-      if (assumed && hasConflict(existing, assumed)) {
+      if (!assumed || hasConflict(existing, assumed)) {
         conflictIds.push(doc.id);
         continue;
       }
 
-      mutationCount++;
       if (doc._deleted) {
-        mutations.push((tx) =>
-          tx.collection.update({
-            where: { id: doc.id },
-            data: { deleted: true },
-          }),
-        );
+        const deleteData: Record<string, unknown> = { deleted: true };
+        assignClientTimestamps(deleteData, doc);
+        mutations.push(async (tx) => {
+          const result = await tx.collection.updateMany({
+            where: optimisticIdWhere(doc.id, assumed),
+            data: deleteData,
+          });
+          return result.count === 0 ? doc.id : null;
+        });
       } else {
-        const updateData: any = {};
+        const updateData: Record<string, unknown> = {};
         if (doc.name !== undefined) updateData.name = doc.name;
         if (doc.description !== undefined)
           updateData.description = doc.description;
@@ -781,22 +832,33 @@ async function pushCollections(
           updateData.deleted = Boolean(doc.isDeleted);
         if (doc.purgeAt !== undefined)
           updateData.purgeAt = parseDate(doc.purgeAt);
-        if (Array.isArray(doc.songIds)) {
-          updateData.songs = {
-            set: doc.songIds.map((id: string) => ({ id })),
-          };
-        }
-        mutations.push((tx) =>
-          tx.collection.update({
-            where: { id: doc.id },
+        assignClientTimestamps(updateData, doc);
+
+        const songIds = Array.isArray(doc.songIds) ? doc.songIds : undefined;
+
+        mutations.push(async (tx) => {
+          const result = await tx.collection.updateMany({
+            where: optimisticIdWhere(doc.id, assumed),
             data: updateData,
-          }),
-        );
+          });
+          if (result.count === 0) return doc.id;
+
+          if (songIds) {
+            await tx.collection.update({
+              where: { id: doc.id },
+              data: {
+                songs: {
+                  set: songIds.map((id: string) => ({ id })),
+                },
+              },
+            });
+          }
+          return null;
+        });
       }
     } else if (!doc._deleted) {
-      mutationCount++;
       const newId = doc.id || uuid();
-      const createData: any = {
+      const createData: Record<string, unknown> = {
         id: newId,
         name: doc.name,
         description: doc.description ?? null,
@@ -806,22 +868,28 @@ async function pushCollections(
         deleted: Boolean(doc.isDeleted),
         purgeAt: parseDate(doc.purgeAt),
       };
+      assignClientTimestamps(createData, doc, { includeCreatedAt: true });
       if (Array.isArray(doc.songIds)) {
         createData.songs = {
           connect: doc.songIds.map((id: string) => ({ id })),
         };
       }
-      mutations.push((tx) =>
-        tx.collection.create({
+      mutations.push(async (tx) => {
+        await tx.collection.create({
           data: createData as any,
-        }),
-      );
+        });
+        return null;
+      });
     }
   }
 
-  if (conflictIds.length > 0) {
+  const lateConflictIds = await commitPushMutations(db, mutations);
+  const allConflictIds = [...new Set([...conflictIds, ...lateConflictIds])];
+
+  const conflicts: any[] = [];
+  if (allConflictIds.length > 0) {
     const conflictedDocs = await db.collection.findMany({
-      where: { id: { in: conflictIds } },
+      where: { id: { in: allConflictIds } },
       include: {
         songs: {
           select: { id: true },
@@ -833,20 +901,7 @@ async function pushCollections(
     }
   }
 
-  if (mutations.length > 0) {
-    const BATCH_SIZE = 15;
-    await db.$transaction(
-      async (tx: OrgScopedTx) => {
-        for (let i = 0; i < mutations.length; i += BATCH_SIZE) {
-          const chunk = mutations.slice(i, i + BATCH_SIZE);
-          await Promise.all(chunk.map((fn) => fn(tx)));
-        }
-      },
-      { maxWait: 15_000, timeout: 60_000 },
-    );
-  }
-
-  if (mutationCount > 0) {
+  if (mutations.length > lateConflictIds.length) {
     syncCache.invalidate(tenantId, "collections");
   }
   return conflicts;
@@ -878,12 +933,8 @@ async function pushServices(
     existingMap.set(item.id, item);
   }
 
-  const conflicts: any[] = [];
   const conflictIds: string[] = [];
-  let mutationCount = 0;
-
-  type MutationFn = (tx: OrgScopedTx) => Promise<any>;
-  const mutations: MutationFn[] = [];
+  const mutations: PushMutationFn[] = [];
 
   for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
     if (!doc || typeof doc !== "object") continue;
@@ -891,21 +942,23 @@ async function pushServices(
     const existing = doc.id ? existingMap.get(doc.id) : undefined;
 
     if (existing) {
-      if (assumed && hasConflict(existing, assumed)) {
+      if (!assumed || hasConflict(existing, assumed)) {
         conflictIds.push(doc.id);
         continue;
       }
 
-      mutationCount++;
       if (doc._deleted) {
-        mutations.push((tx) =>
-          tx.service.update({
-            where: { id: doc.id },
-            data: { deleted: true },
-          }),
-        );
+        const deleteData: Record<string, unknown> = { deleted: true };
+        assignClientTimestamps(deleteData, doc);
+        mutations.push(async (tx) => {
+          const result = await tx.service.updateMany({
+            where: optimisticIdWhere(doc.id, assumed),
+            data: deleteData,
+          });
+          return result.count === 0 ? doc.id : null;
+        });
       } else {
-        const serviceData: any = {};
+        const serviceData: Record<string, unknown> = {};
         if (doc.name !== undefined) serviceData.name = doc.name;
         if (doc.date !== undefined) serviceData.date = parseDate(doc.date);
         if (doc.notes !== undefined) serviceData.notes = doc.notes;
@@ -917,57 +970,52 @@ async function pushServices(
           serviceData.deleted = Boolean(doc.isDeleted);
         if (doc.purgeAt !== undefined)
           serviceData.purgeAt = parseDate(doc.purgeAt);
+        assignClientTimestamps(serviceData, doc);
 
-        mutations.push((tx) =>
-          tx.service.update({
-            where: { id: doc.id },
+        mutations.push(async (tx) => {
+          const result = await tx.service.updateMany({
+            where: optimisticIdWhere(doc.id, assumed),
             data: serviceData,
-          }),
-        );
+          });
+          return result.count === 0 ? doc.id : null;
+        });
       }
     } else if (!doc._deleted) {
-      mutationCount++;
       const newId = doc.id || uuid();
-      mutations.push((tx) =>
-        tx.service.create({
-          data: {
-            id: newId,
-            name: doc.name,
-            date: parseDate(doc.date) ?? new Date(),
-            notes: doc.notes ?? "",
-            elements: Array.isArray(doc.elements) ? doc.elements : [],
-            archived: Boolean(doc.archived),
-            deleted: Boolean(doc.isDeleted),
-            purgeAt: parseDate(doc.purgeAt),
-          } as any,
-        }),
-      );
+      const createData: Record<string, unknown> = {
+        id: newId,
+        name: doc.name,
+        date: parseDate(doc.date) ?? new Date(),
+        notes: doc.notes ?? "",
+        elements: Array.isArray(doc.elements) ? doc.elements : [],
+        archived: Boolean(doc.archived),
+        deleted: Boolean(doc.isDeleted),
+        purgeAt: parseDate(doc.purgeAt),
+      };
+      assignClientTimestamps(createData, doc, { includeCreatedAt: true });
+      mutations.push(async (tx) => {
+        await tx.service.create({
+          data: createData as any,
+        });
+        return null;
+      });
     }
   }
 
-  if (conflictIds.length > 0) {
+  const lateConflictIds = await commitPushMutations(db, mutations);
+  const allConflictIds = [...new Set([...conflictIds, ...lateConflictIds])];
+
+  const conflicts: any[] = [];
+  if (allConflictIds.length > 0) {
     const conflictedDocs = await db.service.findMany({
-      where: { id: { in: conflictIds } },
+      where: { id: { in: allConflictIds } },
     });
     for (const cDoc of conflictedDocs) {
       conflicts.push(toWireService(cDoc));
     }
   }
 
-  if (mutations.length > 0) {
-    const BATCH_SIZE = 15;
-    await db.$transaction(
-      async (tx: OrgScopedTx) => {
-        for (let i = 0; i < mutations.length; i += BATCH_SIZE) {
-          const chunk = mutations.slice(i, i + BATCH_SIZE);
-          await Promise.all(chunk.map((fn) => fn(tx)));
-        }
-      },
-      { maxWait: 15_000, timeout: 60_000 },
-    );
-  }
-
-  if (mutationCount > 0) {
+  if (mutations.length > lateConflictIds.length) {
     syncCache.invalidate(tenantId, "services");
   }
   return conflicts;
@@ -999,12 +1047,8 @@ async function pushAgendaEvents(
     existingMap.set(item.id, item);
   }
 
-  const conflicts: any[] = [];
   const conflictIds: string[] = [];
-  let mutationCount = 0;
-
-  type MutationFn = (tx: OrgScopedTx) => Promise<any>;
-  const mutations: MutationFn[] = [];
+  const mutations: PushMutationFn[] = [];
 
   for (const { newDocumentState: doc, assumedMasterState: assumed } of rows) {
     if (!doc || typeof doc !== "object") continue;
@@ -1012,21 +1056,23 @@ async function pushAgendaEvents(
     const existing = doc.id ? existingMap.get(doc.id) : undefined;
 
     if (existing) {
-      if (assumed && hasConflict(existing, assumed)) {
+      if (!assumed || hasConflict(existing, assumed)) {
         conflictIds.push(doc.id);
         continue;
       }
 
-      mutationCount++;
       if (doc._deleted) {
-        mutations.push((tx) =>
-          tx.agendaEvent.update({
-            where: { id: doc.id },
-            data: { deleted: true },
-          }),
-        );
+        const deleteData: Record<string, unknown> = { deleted: true };
+        assignClientTimestamps(deleteData, doc);
+        mutations.push(async (tx) => {
+          const result = await tx.agendaEvent.updateMany({
+            where: optimisticIdWhere(doc.id, assumed),
+            data: deleteData,
+          });
+          return result.count === 0 ? doc.id : null;
+        });
       } else {
-        const eventData: any = {};
+        const eventData: Record<string, unknown> = {};
         if (doc.date !== undefined) eventData.date = doc.date;
         if (doc.title !== undefined) eventData.title = doc.title;
         if (doc.type !== undefined) eventData.type = doc.type;
@@ -1048,64 +1094,59 @@ async function pushAgendaEvents(
           eventData.deleted = Boolean(doc.isDeleted);
         if (doc.purgeAt !== undefined)
           eventData.purgeAt = parseDate(doc.purgeAt);
+        assignClientTimestamps(eventData, doc);
 
-        mutations.push((tx) =>
-          tx.agendaEvent.update({
-            where: { id: doc.id },
+        mutations.push(async (tx) => {
+          const result = await tx.agendaEvent.updateMany({
+            where: optimisticIdWhere(doc.id, assumed),
             data: eventData,
-          }),
-        );
+          });
+          return result.count === 0 ? doc.id : null;
+        });
       }
     } else if (!doc._deleted) {
-      mutationCount++;
       const newId = doc.id || uuid();
-      mutations.push((tx) =>
-        tx.agendaEvent.create({
-          data: {
-            id: newId,
-            date: doc.date,
-            title: doc.title,
-            type: doc.type,
-            time: doc.time,
-            durationMinutes: Number(doc.durationMinutes) || 0,
-            location: doc.location ?? null,
-            notes: doc.notes ?? null,
-            reminder: doc.reminder ?? DEFAULT_REMINDER,
-            linkedServiceId: doc.linkedServiceId ?? null,
-            responsibilities: Array.isArray(doc.responsibilities)
-              ? doc.responsibilities
-              : [],
-            deleted: Boolean(doc.isDeleted),
-            purgeAt: parseDate(doc.purgeAt),
-          } as any,
-        }),
-      );
+      const createData: Record<string, unknown> = {
+        id: newId,
+        date: doc.date,
+        title: doc.title,
+        type: doc.type,
+        time: doc.time,
+        durationMinutes: Number(doc.durationMinutes) || 0,
+        location: doc.location ?? null,
+        notes: doc.notes ?? null,
+        reminder: doc.reminder ?? DEFAULT_REMINDER,
+        linkedServiceId: doc.linkedServiceId ?? null,
+        responsibilities: Array.isArray(doc.responsibilities)
+          ? doc.responsibilities
+          : [],
+        deleted: Boolean(doc.isDeleted),
+        purgeAt: parseDate(doc.purgeAt),
+      };
+      assignClientTimestamps(createData, doc, { includeCreatedAt: true });
+      mutations.push(async (tx) => {
+        await tx.agendaEvent.create({
+          data: createData as any,
+        });
+        return null;
+      });
     }
   }
 
-  if (conflictIds.length > 0) {
+  const lateConflictIds = await commitPushMutations(db, mutations);
+  const allConflictIds = [...new Set([...conflictIds, ...lateConflictIds])];
+
+  const conflicts: any[] = [];
+  if (allConflictIds.length > 0) {
     const conflictedDocs = await db.agendaEvent.findMany({
-      where: { id: { in: conflictIds } },
+      where: { id: { in: allConflictIds } },
     });
     for (const cDoc of conflictedDocs) {
       conflicts.push(toWireAgendaEvent(cDoc));
     }
   }
 
-  if (mutations.length > 0) {
-    const BATCH_SIZE = 15;
-    await db.$transaction(
-      async (tx: OrgScopedTx) => {
-        for (let i = 0; i < mutations.length; i += BATCH_SIZE) {
-          const chunk = mutations.slice(i, i + BATCH_SIZE);
-          await Promise.all(chunk.map((fn) => fn(tx)));
-        }
-      },
-      { maxWait: 15_000, timeout: 60_000 },
-    );
-  }
-
-  if (mutationCount > 0) {
+  if (mutations.length > lateConflictIds.length) {
     syncCache.invalidate(tenantId, "agendaEvents");
   }
   return conflicts;
