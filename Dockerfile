@@ -25,4 +25,4 @@ EXPOSE 3000
 
 # Applies pending migrations then boots the API. Safe to run on every
 # container start: `migrate deploy` is a no-op if the schema is current.
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.mjs"]
