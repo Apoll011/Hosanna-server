@@ -50,6 +50,13 @@ const en = {
     not_found: "The service does not exist.",
   },
 
+  // ── service notes ───────────────────────────────────────────────────────
+  note: {
+    not_found: "The note does not exist.",
+    element_not_found: "That service element does not exist.",
+    forbidden: "Only the author can change this note.",
+  },
+
   // ── backup ──────────────────────────────────────────────────────────────
   backup: {
     restored_successfully: "Backup restored successfully",
