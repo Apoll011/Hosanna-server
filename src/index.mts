@@ -1,9 +1,30 @@
 import { toNodeHandler } from "better-auth/node";
 import cors from "cors";
 import express from "express";
+import type { RequestHandler } from "express";
 import { rateLimit } from "express-rate-limit";
-import helmet from "helmet";
+import helmetImport from "helmet";
 import { env } from "./config/env.js";
+
+/**
+ * Helmet ships separate CJS and ESM typings, and its package `types` field
+ * points at the CJS file. Compilers that resolve that file (Vercel's does)
+ * type `import helmet from "helmet"` as the module namespace, so `helmet()`
+ * is rejected with TS2349. Node loads the ESM build, whose default export is
+ * the middleware function — this cast matches that runtime value.
+ */
+const helmet = helmetImport as unknown as (options?: {
+  crossOriginResourcePolicy?:
+    | { policy?: "same-origin" | "same-site" | "cross-origin" }
+    | false;
+  hsts?:
+    | { maxAge: number; includeSubDomains?: boolean; preload?: boolean }
+    | false;
+  noSniff?: boolean;
+  frameguard?: { action?: "deny" | "sameorigin" } | false;
+  xssFilter?: boolean;
+  hidePoweredBy?: boolean;
+}) => RequestHandler;
 import { auth } from "./lib/auth.js";
 import { DEFAULT_LOCALE, t } from "./lib/i18n.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
