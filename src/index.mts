@@ -5,13 +5,15 @@ import type { RequestHandler } from "express";
 import { rateLimit } from "express-rate-limit";
 import helmetImport from "helmet";
 import { env } from "./config/env.js";
+import { auth } from "./lib/auth.js";
+import { DEFAULT_LOCALE, t } from "./lib/i18n.js";
+import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
+import { apiRouter } from "./routes/index.js";
 
 /**
- * Helmet ships separate CJS and ESM typings, and its package `types` field
- * points at the CJS file. Compilers that resolve that file (Vercel's does)
- * type `import helmet from "helmet"` as the module namespace, so `helmet()`
- * is rejected with TS2349. Node loads the ESM build, whose default export is
- * the middleware function — this cast matches that runtime value.
+ * Vercel's Node builder typechecks Helmet's CommonJS file. That file's
+ * default import is the module namespace, so `helmet()` is TS2349. Node
+ * loads the ESM build, whose default export is the middleware function.
  */
 const helmet = helmetImport as unknown as (options?: {
   crossOriginResourcePolicy?:
@@ -25,10 +27,6 @@ const helmet = helmetImport as unknown as (options?: {
   xssFilter?: boolean;
   hidePoweredBy?: boolean;
 }) => RequestHandler;
-import { auth } from "./lib/auth.js";
-import { DEFAULT_LOCALE, t } from "./lib/i18n.js";
-import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
-import { apiRouter } from "./routes/index.js";
 
 /** True when running as a Vercel Function (Fluid / serverless). */
 const isVercel = Boolean(process.env.VERCEL);
