@@ -23,6 +23,7 @@ anotationRouter.get(
       canvasDataBase64: row.canvasData.toString("base64"),
       updatedAt: row.updatedAt.toISOString(),
       updatedById: row.updatedById,
+      revision: row.updatedAt.getTime(),
     });
   },
 );
@@ -52,6 +53,7 @@ anotationRouter.put(
     res.json({
       updatedAt: row.updatedAt.toISOString(),
       updatedById: row.updatedById,
+      revision: row.updatedAt.getTime(),
     });
   },
 );
