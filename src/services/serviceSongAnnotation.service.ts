@@ -90,9 +90,10 @@ export class ServiceSongAnnotationService {
     const updatedAtIso = row.updatedAt.toISOString();
     const revision = row.updatedAt.getTime();
 
-    // Supabase broadcast removed — Flutter listens on Firestore.
-    // Failures are logged inside publishAnnotation (same soft-fail as notes).
-    void publishAnnotation({
+    // Await so Firestore ping is written before the HTTP response returns —
+    // clients listening on the other device should see the update promptly.
+    // Failures are logged inside publishAnnotation (soft-fail like notes).
+    await publishAnnotation({
       orgId: this.orgId,
       serviceId,
       songId,
