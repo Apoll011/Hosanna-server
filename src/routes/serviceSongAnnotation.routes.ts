@@ -20,8 +20,9 @@ anotationRouter.get(
     if (!row) return res.status(404).json({ error: "Not found" });
 
     res.json({
-      canvasDataBase64: Buffer.from(row.canvasData).toString("base64"),
+      canvasDataBase64: row.canvasData.toString("base64"),
       updatedAt: row.updatedAt.toISOString(),
+      updatedById: row.updatedById,
     });
   },
 );
@@ -48,7 +49,10 @@ anotationRouter.put(
       canvasData: Buffer.from(canvasDataBase64, "base64"),
     });
 
-    res.json({ updatedAt: row.updatedAt.toISOString() });
+    res.json({
+      updatedAt: row.updatedAt.toISOString(),
+      updatedById: row.updatedById,
+    });
   },
 );
 

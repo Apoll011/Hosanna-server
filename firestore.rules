@@ -1,0 +1,22 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Note CUD pings — clients listen, Admin writes.
+    match /services/{serviceId}/realtime/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Song annotation metadata (+ optional inline canvasDataBase64).
+    // Path: services/{serviceId}/annotations/{songId}
+    match /services/{serviceId}/annotations/{songId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
