@@ -10,6 +10,7 @@ import {
   updateServiceElementsSchema,
   updateServiceSchema,
 } from "../validators/service.validators.js";
+import { serviceNoteRouter } from "./serviceNote.routes.js";
 
 export const serviceRouter = Router();
 
@@ -75,3 +76,5 @@ serviceRouter.put(
     res.json(await service.updateElements(req.params.id, updatedAt, elements));
   }),
 );
+
+serviceRouter.use("/:id/notes", serviceNoteRouter);

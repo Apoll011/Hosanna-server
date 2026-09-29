@@ -51,6 +51,13 @@ const ptPT = {
     not_found: "O culto não existe.",
   },
 
+  // ── service notes ───────────────────────────────────────────────────────
+  note: {
+    not_found: "A nota não existe.",
+    element_not_found: "O elemento do culto não existe.",
+    forbidden: "Só o autor pode alterar esta nota.",
+  },
+
   // ── backup ──────────────────────────────────────────────────────────────
   backup: {
     restored_successfully: "Backup restaurado com sucesso",

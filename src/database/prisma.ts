@@ -29,6 +29,7 @@ const ORG_SCOPED_MODELS = new Set([
   "Collection",
   "Song",
   "Service",
+  "ServiceNote",
   "AgendaEvent",
   "Settings",
 ]);
