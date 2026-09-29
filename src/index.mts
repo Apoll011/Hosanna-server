@@ -1,14 +1,35 @@
 import { toNodeHandler } from "better-auth/node";
-import compression from "compression";
 import cors from "cors";
 import express from "express";
+import type { RequestHandler } from "express";
 import { rateLimit } from "express-rate-limit";
-import helmet from "helmet";
+import helmetImport from "helmet";
 import { env } from "./config/env.js";
 import { auth } from "./lib/auth.js";
 import { DEFAULT_LOCALE, t } from "./lib/i18n.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { apiRouter } from "./routes/index.js";
+
+/**
+ * Vercel's Node builder typechecks Helmet's CommonJS file. That file's
+ * default import is the module namespace, so `helmet()` is TS2349. Node
+ * loads the ESM build, whose default export is the middleware function.
+ */
+const helmet = helmetImport as unknown as (options?: {
+  crossOriginResourcePolicy?:
+    | { policy?: "same-origin" | "same-site" | "cross-origin" }
+    | false;
+  hsts?:
+    | { maxAge: number; includeSubDomains?: boolean; preload?: boolean }
+    | false;
+  noSniff?: boolean;
+  frameguard?: { action?: "deny" | "sameorigin" } | false;
+  xssFilter?: boolean;
+  hidePoweredBy?: boolean;
+}) => RequestHandler;
+
+/** True when running as a Vercel Function (Fluid / serverless). */
+const isVercel = Boolean(process.env.VERCEL);
 
 const app = express();
 
@@ -16,15 +37,17 @@ app.disable("x-powered-by");
 app.disable("etag");
 app.set("trust proxy", 1);
 
-// ── HTTPS redirect — must run before anything else ─────────────────────────
-// Runs first so we don't waste CPU on parsing/compressing requests that will
-// immediately be redirected.
-app.use((req, res, next) => {
-  if (env.nodeEnv === "production" && !req.secure) {
-    return res.redirect(301, `https://${req.header("host")}${req.url}`);
-  }
-  next();
-});
+// ── HTTPS redirect — only for long-running hosts (Docker / bare metal) ─────
+// Vercel terminates TLS at the edge; redirecting here wastes cold-start CPU
+// and can fight the platform's own HTTPS enforcement.
+if (env.nodeEnv === "production" && !isVercel) {
+  app.use((req, res, next) => {
+    if (!req.secure) {
+      return res.redirect(301, `https://${req.header("host")}${req.url}`);
+    }
+    next();
+  });
+}
 
 // ── Security headers ────────────────────────────────────────────────────────
 app.use(
@@ -57,18 +80,21 @@ app.use(
   }),
 );
 
-// ── Compression — only for responses ≥ 1 KB, skip already-compressed types ─
-app.use(
-  compression({
-    // Don't bother compressing tiny responses — overhead outweighs savings.
-    threshold: 1024,
-    filter: (req, res) => {
-      // Skip if the client explicitly asked for no compression.
-      if (req.headers["x-no-compression"]) return false;
-      return compression.filter(req, res);
-    },
-  }),
-);
+// ── Compression — skip on Vercel (edge/CDN already compresses) ─────────────
+// Lazy-load so the Vercel serverless bundle does not pay for the middleware
+// on every cold start.
+if (!isVercel) {
+  const { default: compression } = await import("compression");
+  app.use(
+    compression({
+      threshold: 1024,
+      filter: (req, res) => {
+        if (req.headers["x-no-compression"]) return false;
+        return compression.filter(req, res);
+      },
+    }),
+  );
+}
 
 app.all("/api/auth/*", toNodeHandler(auth));
 
@@ -92,6 +118,8 @@ app.use((req, _res, next) => {
 });
 
 // ── Global rate limiter ─────────────────────────────────────────────────────
+// Note: in-memory store is per-instance. Fine for Docker; on Vercel Fluid it
+// only rate-limits within a warm isolate (still useful as a safety net).
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 1000,
@@ -113,15 +141,25 @@ app.use("/api", globalLimiter, apiRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-// ── Start ───────────────────────────────────────────────────────────────────
-const server = app.listen(env.port, "0.0.0.0", () => {
-  console.log(
-    `Hosanna API listening on http://0.0.0.0:${env.port} (${env.nodeEnv})`,
-  );
-});
+// Vercel Fluid / Express detection: export the app (do not listen).
+export default app;
 
-// Keep idle keep-alive connections alive for 65 s (slightly above typical
-// load-balancer 60 s timeout to avoid race-condition RST packets).
-server.keepAliveTimeout = 65_000;
-// Give headers an extra 5 s on top of keep-alive to arrive fully.
-server.headersTimeout = 70_000;
+/** Allow long replication pushes / cron work on Vercel Pro+. */
+export const config = {
+  maxDuration: 60,
+};
+
+// ── Long-running server (local + Docker) ───────────────────────────────────
+if (!isVercel) {
+  const server = app.listen(env.port, "0.0.0.0", () => {
+    console.log(
+      `Hosanna API listening on http://0.0.0.0:${env.port} (${env.nodeEnv})`,
+    );
+  });
+
+  // Keep idle keep-alive connections alive for 65 s (slightly above typical
+  // load-balancer 60 s timeout to avoid race-condition RST packets).
+  server.keepAliveTimeout = 65_000;
+  // Give headers an extra 5 s on top of keep-alive to arrive fully.
+  server.headersTimeout = 70_000;
+}

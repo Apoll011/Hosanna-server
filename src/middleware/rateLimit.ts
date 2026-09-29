@@ -1,4 +1,7 @@
-import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+// Vercel's Node builder resolves this package's CommonJS entry. A default
+// import there is the module namespace (TS2349). The named export is the
+// middleware function in both the CJS and ESM type entries.
+import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 
 function makeKeyGenerator() {
   return (req: any) =>

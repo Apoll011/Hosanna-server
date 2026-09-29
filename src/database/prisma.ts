@@ -1,19 +1,26 @@
-import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "@prisma/client";
+import { attachDatabasePool } from "@vercel/functions";
 import { Pool } from "pg";
 import { env } from "../config/env.js";
 
 const pool = new Pool({
   connectionString: env.databaseUrl,
-  // Keep at most 20 open connections; tune per your DB plan.
   max: env.dbPoolMax,
-  // Return idle connections to the server after 30 s.
-  idleTimeoutMillis: 30_000,
-  // Kill a connection that takes more than 10 s to establish.
+  // On Vercel Fluid, close idle connections quickly so attachDatabasePool
+  // can release them before the isolate suspends. Long-running hosts keep
+  // connections warmer to avoid reconnect churn.
+  idleTimeoutMillis: env.isVercel ? 5_000 : 30_000,
   connectionTimeoutMillis: 10_000,
-  // Let PostgreSQL kill statements that run longer than 10 s.
   statement_timeout: 10_000,
 });
+
+// Fluid compute: close idle pool connections before the isolate suspends,
+// preventing leaked Postgres connections across freeze/thaw cycles.
+if (env.isVercel) {
+  attachDatabasePool(pool);
+}
+
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
@@ -22,6 +29,7 @@ const ORG_SCOPED_MODELS = new Set([
   "Collection",
   "Song",
   "Service",
+  "ServiceNote",
   "AgendaEvent",
   "Settings",
 ]);

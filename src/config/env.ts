@@ -12,17 +12,29 @@ function optional(name: string): string | undefined {
   return process.env[name] || undefined;
 }
 
+/** True when running inside a Vercel Function. */
+const isVercel = Boolean(process.env.VERCEL);
+
 export const env = {
   // ── Server ──────────────────────────────────────────────────────────────
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: parseInt(process.env.PORT ?? "3000", 10),
   /** Set DEV_MODE=true in .env to use sameSite: None cookies locally. */
   devMode: process.env.DEV_MODE === "true",
+  /** Vercel Fluid / serverless runtime. */
+  isVercel,
 
   // ── Database ─────────────────────────────────────────────────────────────
   databaseUrl: required("DATABASE_URL"),
-  /** Max connections in the pg pool. Defaults to 20. */
-  dbPoolMax: parseInt(process.env.DB_POOL_MAX ?? "20", 10),
+  /**
+   * Max connections in the pg pool.
+   * Defaults to 5 on Vercel (many warm isolates × large pools exhaust Postgres)
+   * and 20 for long-running hosts (Docker / local).
+   */
+  dbPoolMax: parseInt(
+    process.env.DB_POOL_MAX ?? (isVercel ? "5" : "20"),
+    10,
+  ),
 
   // ── Better Auth ──────────────────────────────────────────────────────────
   betterAuthSecret: required("BETTER_AUTH_SECRET"),

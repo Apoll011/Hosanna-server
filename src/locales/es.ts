@@ -52,6 +52,13 @@ const es = {
     not_found: "El culto no existe.",
   },
 
+  // ── service notes ───────────────────────────────────────────────────────
+  note: {
+    not_found: "La nota no existe.",
+    element_not_found: "El elemento del culto no existe.",
+    forbidden: "Solo el autor puede modificar esta nota.",
+  },
+
   // ── backup ──────────────────────────────────────────────────────────────
   backup: {
     restored_successfully: "Copia de seguridad restaurada con éxito",

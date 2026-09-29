@@ -11,6 +11,7 @@ export const owner = ac.newRole({
   export: ["pdf"],
   billing: ["manage", "access"],
   backup: ["export", "import"],
+  notification: ["sent"],
   ...ownerAc.statements,
 });
 
@@ -23,6 +24,7 @@ export const admin = ac.newRole({
   settings: ["manage"],
   export: ["pdf"],
   backup: ["export"],
+  notification: ["sent"],
   ...adminAc.statements,
 });
 
@@ -34,6 +36,7 @@ export const teamLeader = ac.newRole({
   agenda: ["create", "access", "update"],
   invitation: ["create"],
   team: ["create", "update"],
+  notification: ["sent"],
   export: ["pdf"],
 });
 

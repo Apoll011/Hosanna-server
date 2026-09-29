@@ -113,6 +113,42 @@ model ServiceSongAnnotation {
   @@map("service_song_annotations")
 }
 
+/// Thread of notes on a worship service.
+///
+/// A note with a null `elementId` belongs to the service itself. A note with
+/// an `elementId` is attached to one item inside `Service.elements`. This is
+/// separate from the single `notes` string stored on each element (and from
+/// `Service.notes`). Rows are not part of RxDB replication: privacy is
+/// enforced when they are read, so private notes never leave the server
+/// except for their author.
+model ServiceNote {
+  id String @id @default(uuid())
+
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  serviceId String
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  /// Id of an object inside Service.elements. Null = service-level note.
+  elementId String?
+
+  body    String  @db.Text
+  private Boolean @default(false)
+
+  authorId String?
+  author   User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([serviceId, createdAt])
+  @@index([serviceId, elementId])
+  @@index([authorId])
+  @@map("service_notes")
+}
+
 model AgendaEvent {
   id String @id @default(uuid())
 
@@ -193,6 +229,7 @@ model Service {
   deleted                Boolean                 @default(false) @map("_deleted")
   purgeAt                DateTime?               @map("purge_at")
   serviceSongAnnotations ServiceSongAnnotation[]
+  serviceNotes           ServiceNote[]
   agendaEvents           AgendaEvent[]
 
   @@index([orgId])
@@ -218,6 +255,7 @@ model User {
   members                Member[]
   invitations            Invitation[]
   serviceSongAnnotations ServiceSongAnnotation[]
+  serviceNotes           ServiceNote[]
   reminderDispatches     AgendaReminderDispatch[]
 
   stripeCustomerId String?
@@ -344,6 +382,7 @@ model Organization {
   services               Service[]
   agendaEvents           AgendaEvent[]
   serviceSongAnnotations ServiceSongAnnotation[]
+  serviceNotes           ServiceNote[]
 
   stripeCustomerId String?
 
