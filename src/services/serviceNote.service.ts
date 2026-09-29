@@ -1,6 +1,7 @@
 import { v4 as uuid } from "uuid";
 import type { OrgScopedPrisma } from "../database/prisma.js";
 import { DEFAULT_LOCALE, t } from "../lib/i18n.js";
+import { publishNotesSignal } from "../lib/firestore.js";
 import {
   ServiceNoteRepository,
   ServiceNoteWithAuthor,
@@ -86,6 +87,13 @@ export class ServiceNoteService {
       private: input.private,
       authorId: this.userId,
     });
+    void publishNotesSignal({
+      serviceId,
+      noteId: created.id,
+      action: "create",
+      authorId: this.userId,
+      private: created.private,
+    });
     return serialize(created);
   }
 
@@ -96,12 +104,26 @@ export class ServiceNoteService {
   ) {
     await this.loadOwnNote(serviceId, noteId);
     const updated = await this.notes.update(noteId, patch);
+    void publishNotesSignal({
+      serviceId,
+      noteId: updated.id,
+      action: "update",
+      authorId: this.userId,
+      private: updated.private,
+    });
     return serialize(updated);
   }
 
   async delete(serviceId: string, noteId: string) {
-    await this.loadOwnNote(serviceId, noteId);
+    const existing = await this.loadOwnNote(serviceId, noteId);
     await this.notes.delete(noteId);
+    void publishNotesSignal({
+      serviceId,
+      noteId,
+      action: "delete",
+      authorId: this.userId,
+      private: existing.private,
+    });
   }
 
   private async assertService(serviceId: string) {
