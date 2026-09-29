@@ -90,6 +90,12 @@ See `.env.example` for the full list. At minimum, set:
 - `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` (e.g. `openssl rand -hex 64`)
 - `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` before running the seed script
 
+For live note pings and **song annotation sync**, also set `FCM_PROJECT_ID`,
+`FCM_CLIENT_EMAIL`, and `FCM_PRIVATE_KEY`, enable Firestore, and deploy
+`firestore.rules` (see
+[docs/ANNOTATIONS_FIREBASE.md](docs/ANNOTATIONS_FIREBASE.md)). Firebase Storage
+is not required.
+
 ## Scripts
 
 - `npm run dev` — watch mode (tsx)

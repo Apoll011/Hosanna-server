@@ -68,7 +68,7 @@ export const env = {
   // ── Cron ──────────────────────────────────────────────────────────────────
   cronSecret: optional("CRON_SECRET"),
 
-  // ── Firebase Cloud Messaging (push notifications) ────────────────────────
+  // ── Firebase Cloud Messaging / Firestore ─────────────────────────────────
   fcmProjectId: optional("FCM_PROJECT_ID"),
   fcmClientEmail: optional("FCM_CLIENT_EMAIL"),
   /** Service-account private key with literal \n escapes (as in the JSON file). */
