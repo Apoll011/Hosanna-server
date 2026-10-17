@@ -27,7 +27,7 @@
     "@vercel/functions": "^3.9.9",
     "better-auth": "^1.7.6",
     "better-inbox": "^0.1.2",
-    "compression": "^1.8.1",
+    "compression": "^1.8.2",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.21.0",
