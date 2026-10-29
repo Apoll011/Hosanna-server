@@ -15,23 +15,25 @@ Protect church data: correct tenant, correct permissions, no accidental overwrit
 
 ## Auth and tenancy
 
-1. Call `hosanna.permissions`.
+1. Call `hosanna_permissions`.
 2. Require `authenticated: true` with an active organization for org tools.
 3. Check `entitled` before writes — inactive subscriptions are read-only.
 4. Check role permissions (`song.*`, `service.*`) before attempting mutations.
 
 Auth is Better Auth bearer (or cookie) with `activeOrganizationId`. Org scoping is enforced server-side — never treat a client-supplied org id as authorization.
 
-Unauthenticated clients may still use pure ChordPro tools (`chordpro.*`).
+Unauthenticated clients may still use pure ChordPro tools (`chordpro_validate`, `chordpro_format`, …).
+
+For people/roles on the agenda, call `me` / `members_list` / `org_get` and set `responsibilities` on `agenda_create` / `agenda_update` (do not invent memberIds). There is no org-switch tool — the session org is fixed.
 
 ## Draft before save (mandatory)
 
 | Intent | Do this first | Persist with |
 |--------|---------------|--------------|
-| New song | `songs.create_draft` | `songs.save` mode=`create` |
-| Edit/fix song | `songs.propose_edit` / `songs.propose_fix` | `songs.save` mode=`update` |
-| New service | `services.create_draft` or `services.plan_suggest` | `services.save` mode=`create` |
-| Edit service | `services.propose_edit` | `services.save` mode=`update` |
+| New song | `songs_create_draft` | `songs_save` mode=`create` |
+| Edit/fix song | `songs_propose_edit` / `songs_propose_fix` | `songs_save` mode=`update` |
+| New service | `services_create_draft` or `services_plan_suggest` | `services_save` mode=`create` |
+| Edit service | `services_propose_edit` | `services_save` mode=`update` |
 
 Present the proposal (content + validation + diff/reasoning) and wait for explicit user approval. Do not “helpfully” save in the same turn unless the user clearly ordered an immediate save.
 
@@ -44,8 +46,8 @@ Song and service updates need the `updatedAt` from the last read/proposal.
 
 ## Validation before persist
 
-- Songs: `chordpro.validate` (or proposal validation). Use `allowInvalid` only if the user accepts known issues.
-- Services: `services.validate` — song elements must have real `songId`s.
+- Songs: `chordpro_validate` (or proposal validation). Use `allowInvalid` only if the user accepts known issues.
+- Services: `services_validate` — song elements must have real `songId`s.
 
 ## Content integrity
 
@@ -63,7 +65,7 @@ Song and service updates need the `updatedAt` from the last read/proposal.
 ## Quick preflight
 
 ```
-[ ] hosanna.permissions checked
+[ ] hosanna_permissions checked
 [ ] Correct skill(s) read for the job
 [ ] Draft/propose done
 [ ] Validation reviewed with user

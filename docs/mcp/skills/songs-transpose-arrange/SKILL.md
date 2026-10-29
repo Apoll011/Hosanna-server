@@ -11,7 +11,7 @@ Change key or arrangement using Hosanna’s real ChordPro capabilities while pre
 
 ## When to use
 
-- Prompt `songs.transpose` or `songs.arrange`
+- Prompt `songs_transpose` or `songs_arrange`
 - User asks for a different key, capo discussion, section order, or alternate version
 
 ## Read first
@@ -25,7 +25,7 @@ Change key or arrangement using Hosanna’s real ChordPro capabilities while pre
 
 ### Preferred tool
 
-`chordpro.transpose` with either:
+`chordpro_transpose` with either:
 
 - `toKey`: target key spelling (e.g. `"A"`, `"Bb"`)
 - `semitones`: signed interval
@@ -34,11 +34,11 @@ This uses **source-preserving** rewrite: chords in `[…]` (including timings) a
 
 ### Workflow
 
-1. `songs.get`
+1. `songs_get`
 2. Note current key from content or metadata
-3. `chordpro.transpose` → inspect `content`, `semitones`, `fromKey`, `toKey`, `validation`
-4. `songs.propose_edit` with transposed content
-5. Present proposal; `songs.save` only after approval
+3. `chordpro_transpose` → inspect `content`, `semitones`, `fromKey`, `toKey`, `validation`
+4. `songs_propose_edit` with transposed content
+5. Present proposal; `songs_save` only after approval
 
 ### Preserve during transpose
 
@@ -49,7 +49,7 @@ This uses **source-preserving** rewrite: chords in `[…]` (including timings) a
 
 ### Do not
 
-- Manually regex-rewrite chords if `chordpro.transpose` is available
+- Manually regex-rewrite chords if `chordpro_transpose` is available
 - Round-trip through AST serialization (no full serializer) for saveable text
 - Change arrangement while “just transposing” unless asked
 
@@ -73,7 +73,7 @@ Not first-class:
 
 1. Confirm what “arrange” means (structure vs variant vs chord voicing).
 2. Read features; refuse or reframe unsupported asks.
-3. `songs.get` → edit → `songs.propose_edit` → validate → present → save after approval.
+3. `songs_get` → edit → `songs_propose_edit` → validate → present → save after approval.
 
 ### Variants tip
 

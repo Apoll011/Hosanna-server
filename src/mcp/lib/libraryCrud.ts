@@ -6,6 +6,10 @@ import {
   requireWriteEntitlement,
 } from "../context.js";
 import { syncCache } from "../../services/syncCache.service.js";
+import {
+  normalizeResponsibilities,
+  type OrgResponsibility,
+} from "./orgDirectory.js";
 
 const PURGE_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_REMINDER = { enabled: false, label: "" };
@@ -64,6 +68,8 @@ function serializeAgenda(e: {
   location: string | null;
   notes: string | null;
   linkedServiceId: string | null;
+  responsibilities?: unknown;
+  reminder?: unknown;
   updatedAt: Date;
 }) {
   return {
@@ -76,6 +82,8 @@ function serializeAgenda(e: {
     location: e.location,
     notes: e.notes,
     linkedServiceId: e.linkedServiceId,
+    responsibilities: normalizeResponsibilities(e.responsibilities ?? []),
+    reminder: e.reminder ?? DEFAULT_REMINDER,
     updatedAt: e.updatedAt.toISOString(),
   };
 }
@@ -368,10 +376,14 @@ export async function createAgendaEvent(
     location?: string;
     notes?: string;
     linkedServiceId?: string | null;
+    responsibilities?: OrgResponsibility[] | unknown;
   },
 ) {
   requirePermission(ctx, "agenda.create");
   requireWriteEntitlement(ctx);
+  const responsibilities = normalizeResponsibilities(
+    args.responsibilities ?? [],
+  );
   const created = await ctx.db.agendaEvent.create({
     data: {
       id: randomUUID(),
@@ -385,7 +397,7 @@ export async function createAgendaEvent(
       notes: args.notes ?? null,
       linkedServiceId: args.linkedServiceId ?? null,
       reminder: DEFAULT_REMINDER,
-      responsibilities: [],
+      responsibilities,
     } as never,
   });
   syncCache.invalidate(ctx.orgId, "agendaEvents");
@@ -405,6 +417,7 @@ export async function updateAgendaEvent(
     location?: string | null;
     notes?: string | null;
     linkedServiceId?: string | null;
+    responsibilities?: OrgResponsibility[] | unknown;
   },
 ) {
   requirePermission(ctx, "agenda.update");
@@ -431,7 +444,12 @@ export async function updateAgendaEvent(
       ...(args.linkedServiceId !== undefined
         ? { linkedServiceId: args.linkedServiceId }
         : {}),
-    },
+      ...(args.responsibilities !== undefined
+        ? {
+            responsibilities: normalizeResponsibilities(args.responsibilities),
+          }
+        : {}),
+    } as never,
   });
   syncCache.invalidate(ctx.orgId, "agendaEvents");
   return { updated: true, event: serializeAgenda(updated) };

@@ -34,7 +34,7 @@ export function registerDiscoveryTools(
   authInfo?: AuthInfo,
 ): void {
   server.registerTool(
-    "hosanna.capabilities",
+    "hosanna_capabilities",
     {
       title: "Hosanna capabilities",
       description:
@@ -48,68 +48,75 @@ export function registerDiscoveryTools(
           server: { name: "hosanna", version: "1.0.0" },
           tools: {
             discovery: [
-              "hosanna.capabilities",
-              "hosanna.permissions",
-              "hosanna.skills_list",
-              "hosanna.skill_read",
-              "hosanna.resources_list",
-              "hosanna.resource_read",
+              "hosanna_capabilities",
+              "hosanna_permissions",
+              "hosanna_skills_list",
+              "hosanna_skill_read",
+              "hosanna_resources_list",
+              "hosanna_resource_read",
+              "me",
+              "members_list",
+              "members_get",
+              "org_get",
             ],
             chordpro: [
-              "chordpro.validate",
-              "chordpro.parse_summary",
-              "chordpro.format",
-              "chordpro.transpose",
-              "chordpro.convert",
-              "chordpro.directives",
+              "chordpro_validate",
+              "chordpro_parse_summary",
+              "chordpro_format",
+              "chordpro_transpose",
+              "chordpro_convert",
+              "chordpro_directives",
+              "chordpro_propagate_chords",
             ],
             songs: [
-              "songs.search",
-              "songs.get",
-              "songs.get_many",
-              "songs.create_draft",
-              "songs.propose_edit",
-              "songs.propose_fix",
-              "songs.propose_transpose",
-              "songs.propose_propagate_chords",
-              "songs.save",
-              "songs.move",
-              "songs.delete",
-              "songs.restore",
+              "songs_search",
+              "songs_search_lyrics",
+              "songs_get",
+              "songs_get_many",
+              "songs_create_draft",
+              "songs_propose_edit",
+              "songs_propose_fix",
+              "songs_propose_transpose",
+              "songs_propose_propagate_chords",
+              "songs_save",
+              "songs_move",
+              "songs_delete",
+              "songs_restore",
             ],
             services: [
-              "services.search",
-              "services.get",
-              "services.create_draft",
-              "services.propose_edit",
-              "services.validate",
-              "services.save",
-              "services.delete",
-              "services.restore",
-              "services.plan_suggest",
+              "services_search",
+              "services_get",
+              "services_create_draft",
+              "services_propose_edit",
+              "services_validate",
+              "services_save",
+              "services_delete",
+              "services_restore",
+              "services_plan_suggest",
             ],
             library: [
-              "folders.list",
-              "folders.create",
-              "folders.update",
-              "folders.delete",
-              "folders.restore",
-              "collections.list",
-              "collections.get",
-              "collections.create",
-              "collections.update",
-              "collections.delete",
-              "collections.add_songs",
-              "collections.remove_songs",
-              "agenda.list",
-              "agenda.get",
-              "agenda.create",
-              "agenda.update",
-              "agenda.delete",
-              "trash.list",
-              "metadata.musicbrainz_search",
-              "metadata.youtube_search",
-              "metadata.web_search",
+              "folders_list",
+              "folders_create",
+              "folders_update",
+              "folders_delete",
+              "folders_restore",
+              "collections_list",
+              "collections_get",
+              "collections_create",
+              "collections_update",
+              "collections_delete",
+              "collections_add_songs",
+              "collections_remove_songs",
+              "agenda_list",
+              "agenda_get",
+              "agenda_create",
+              "agenda_update",
+              "agenda_delete",
+              "trash_list",
+              "metadata_musicbrainz_search",
+              "metadata_youtube_search",
+              "metadata_web_search",
+              "metadata_web_fetch",
             ],
           },
           resources: [
@@ -129,24 +136,24 @@ export function registerDiscoveryTools(
             "hosanna://skills/{name}",
           ],
           prompts: {
-            system: ["hosanna.system"],
+            system: ["hosanna_system"],
             songs: [
-              "songs.create",
-              "songs.edit",
-              "songs.fix",
-              "songs.complete",
-              "songs.review",
-              "songs.transpose",
-              "songs.arrange",
-              "songs.explain_chordpro",
+              "songs_create",
+              "songs_edit",
+              "songs_fix",
+              "songs_complete",
+              "songs_review",
+              "songs_transpose",
+              "songs_arrange",
+              "songs_explain_chordpro",
             ],
             services: [
-              "services.create",
-              "services.edit",
-              "services.complete",
-              "services.fix",
-              "services.review",
-              "services.plan",
+              "services_create",
+              "services_edit",
+              "services_complete",
+              "services_fix",
+              "services_review",
+              "services_plan",
             ],
           },
           skills: [
@@ -163,11 +170,13 @@ export function registerDiscoveryTools(
           studioUi: STUDIO_UI_CATALOG,
           notes: [
             "Server instructions tell you to READ skill resources — they are not auto-injected into context.",
-            "Start with prompt hosanna.system (or read hosanna://skills/hosanna-safe-data + job skills).",
+            "Start with prompt hosanna_system (or read hosanna://skills/hosanna-safe-data + job skills).",
             "Org-scoped song/service tools require Better Auth bearer session with activeOrganizationId.",
-            "Use draft/propose tools first; persist only with *.save after user approval.",
+            "Use draft/propose tools first; persist only with songs_save / services_save after user approval.",
             "Never fabricate lyrics. Instrument diagrams are client-render-only.",
             "Folder/collection icon and color must use studioUi ids (or hosanna://domain/library).",
+            "Assign agenda people via responsibilities + members_list/me (not service element notes).",
+            "All tool names use snake_case (underscores), never dots.",
           ],
         });
       } catch (error) {
@@ -177,7 +186,7 @@ export function registerDiscoveryTools(
   );
 
   server.registerTool(
-    "hosanna.permissions",
+    "hosanna_permissions",
     {
       title: "Current permissions",
       description:
@@ -214,11 +223,11 @@ export function registerDiscoveryTools(
   );
 
   server.registerTool(
-    "hosanna.skills_list",
+    "hosanna_skills_list",
     {
       title: "List skills",
       description:
-        "List Hosanna skill documents (hosanna://skills/*) with on-disk existence and a short preview. Read full text with hosanna.skill_read.",
+        "List Hosanna skill documents (hosanna://skills/*) with on-disk existence and a short preview. Read full text with hosanna_skill_read.",
       inputSchema: z.object({}),
     },
     async () => {
@@ -234,7 +243,7 @@ export function registerDiscoveryTools(
   );
 
   server.registerTool(
-    "hosanna.skill_read",
+    "hosanna_skill_read",
     {
       title: "Read skill",
       description:
@@ -262,7 +271,7 @@ export function registerDiscoveryTools(
   );
 
   server.registerTool(
-    "hosanna.resources_list",
+    "hosanna_resources_list",
     {
       title: "List resources",
       description: "List readable hosanna:// resource URIs (docs + skills).",
@@ -278,7 +287,7 @@ export function registerDiscoveryTools(
   );
 
   server.registerTool(
-    "hosanna.resource_read",
+    "hosanna_resource_read",
     {
       title: "Read resource",
       description:
@@ -319,7 +328,7 @@ export function registerDiscoveryTools(
             mimeType: "application/json",
             text: JSON.stringify(
               {
-                tools: "see hosanna.capabilities",
+                tools: "see hosanna_capabilities",
                 resources: listResources(),
                 skills: SKILL_NAMES,
               },
@@ -335,7 +344,7 @@ export function registerDiscoveryTools(
               error: true,
               code: "not_found",
               message: `Unknown resource ${trimmed}`,
-              hint: "Call hosanna.resources_list",
+              hint: "Call hosanna_resources_list",
             },
             true,
           );

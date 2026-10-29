@@ -13,14 +13,14 @@ Produce a complete, valid ChordPro song for Hosanna that the team can open in St
 
 - User wants a new song from scratch
 - User pastes incomplete lyrics/chords and wants a proper ChordPro document
-- Prompt `songs.create` or `songs.complete` (for new unfinished docs)
+- Prompt `songs_create` or `songs_complete` (for new unfinished docs)
 
 ## Read first
 
 1. `hosanna://skills/hosanna-safe-data`
 2. `hosanna://chordpro/guide`
 3. `hosanna://chordpro/examples/valid`
-4. Optionally `hosanna://chordpro/directives` or tool `chordpro.directives`
+4. Optionally `hosanna://chordpro/directives` or tool `chordpro_directives`
 
 ## Essential metadata
 
@@ -65,11 +65,11 @@ Use aliases if helpful (`{sov}`…`{eov}`, `{soc}`…`{eoc}`, `{sob}`…`{eob}`)
 
 1. Gather title, artist, key, lyrics, and chords from the user.
 2. Draft ChordPro using **parsed** directives only (see features resource).
-3. `chordpro.validate` — fix errors/warnings that you can fix without inventing content.
-4. Optionally `chordpro.format` for normalization.
-5. `songs.create_draft` with title/artist/content/tags/folder if known.
+3. `chordpro_validate` — fix errors/warnings that you can fix without inventing content.
+4. Optionally `chordpro_format` for normalization.
+5. `songs_create_draft` with title/artist/content/tags/folder if known.
 6. Present the full proposal (content + validation summary) to the user.
-7. Only after explicit approval: `songs.save` with `mode=create`.
+7. Only after explicit approval: `songs_save` with `mode=create`.
 
 ## What you may infer vs must ask
 
@@ -93,7 +93,7 @@ If the user asks for these, explain the limitation and offer a supported alterna
 
 ## Common mistakes
 
-- Calling `songs.save` before validation or approval
+- Calling `songs_save` before validation or approval
 - Leaving unclosed `{start_of_*}` blocks
 - Putting chords above lyrics Word-style instead of `[Chord]lyric` inline
 - Inventing metadata “for completeness”
@@ -101,6 +101,6 @@ If the user asks for these, explain the limitation and offer a supported alterna
 
 ## Done when
 
-- Document validates (`chordpro.validate` ok, or remaining issues are disclosed)
+- Document validates (`chordpro_validate` ok, or remaining issues are disclosed)
 - User has seen the proposal
 - Save only happens after approval (or user explicitly asked to save now)

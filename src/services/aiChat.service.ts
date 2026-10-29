@@ -82,6 +82,12 @@ import {
   providerSupportsNativeFetch,
 } from "../mcp/lib/nativeWeb.js";
 import {
+  getMe,
+  getMember,
+  getOrganization,
+  listMembers,
+} from "../mcp/lib/orgDirectory.js";
+import {
   FOLDER_COLOR_IDS,
   FOLDER_ICON_IDS,
   STUDIO_UI_CATALOG,
@@ -229,6 +235,7 @@ function buildHosannaTools(
             ],
             songs: [
               "search",
+              "search_lyrics",
               "get",
               "get_many",
               "create_draft",
@@ -251,10 +258,11 @@ function buildHosannaTools(
               "delete",
               "restore",
             ],
+            org: ["me", "members_list", "members_get", "org_get"],
             library: [
               "folders CRUD+restore",
               "collections CRUD+songs",
-              "agenda CRUD",
+              "agenda CRUD+responsibilities",
               "trash_list",
               "studio_sync",
             ],
@@ -280,19 +288,71 @@ function buildHosannaTools(
         }),
     }),
     hosanna_permissions: tool({
-      description: "Current user role and org entitlement.",
+      description:
+        "Current user role and org entitlement. Prefer `me` for name/email/memberId.",
       inputSchema: z.object({}),
       execute: async () => {
         const ctx = getMcpContext(authInfo);
         if (!ctx) return textResult({ authenticated: false });
-        return textResult({
-          authenticated: true,
-          userId: ctx.user.id,
-          orgId: ctx.orgId,
-          role: ctx.user.role,
-          entitled: ctx.entitled,
-        });
+        try {
+          const identity = await getMe(ctx);
+          return textResult({
+            authenticated: true,
+            userId: identity.user.id,
+            name: identity.user.name,
+            email: identity.user.email,
+            memberId: identity.member.id,
+            orgId: identity.organization.id,
+            orgName: identity.organization.name,
+            role: identity.member.role,
+            entitled: identity.entitled,
+            locale: identity.organization.locale,
+          });
+        } catch {
+          return textResult({
+            authenticated: true,
+            userId: ctx.user.id,
+            orgId: ctx.orgId,
+            role: ctx.user.role,
+            entitled: ctx.entitled,
+          });
+        }
       },
+    }),
+    me: tool({
+      description:
+        "Who am I — user id/name/email, memberId, role, active org. Use before assigning agenda responsibilities to yourself.",
+      inputSchema: z.object({}),
+      execute: async () =>
+        textResult(await getMe(requireMcpContext(authInfo))),
+    }),
+    members_list: tool({
+      description:
+        "List org members (memberId, userId, name, email, role). Resolve people for agenda responsibilities.",
+      inputSchema: z.object({
+        search: z.string().optional(),
+        role: z.string().optional(),
+        limit: z.number().int().positive().max(200).optional(),
+      }),
+      execute: async (args) =>
+        textResult(await listMembers(requireMcpContext(authInfo), args)),
+    }),
+    members_get: tool({
+      description: "Get one member by memberId, userId, or name.",
+      inputSchema: z.object({
+        memberId: z.string().optional(),
+        userId: z.string().optional(),
+        name: z.string().optional(),
+      }),
+      execute: async (args) =>
+        textResult(await getMember(requireMcpContext(authInfo), args)),
+    }),
+    org_get: tool({
+      description:
+        "Active org profile + responsibilityCategories (leader, musicians, preacher, …). No org switch.",
+      inputSchema: z.object({}),
+      execute: async () =>
+        textResult(await getOrganization(requireMcpContext(authInfo))),
     }),
     hosanna_skills_list: tool({
       description:
@@ -607,7 +667,7 @@ function buildHosannaTools(
     }),
     agenda_create: tool({
       description:
-        "Create an agenda event (org-local date/time, no timezone conversion).",
+        "Create an agenda event. Pass responsibilities with real memberIds from members_list/me (categoryIds from org_get).",
       inputSchema: z.object({
         title: z.string().min(1),
         date: z.string().min(1).describe("YYYY-MM-DD org-local"),
@@ -620,12 +680,31 @@ function buildHosannaTools(
         location: z.string().optional(),
         notes: z.string().optional(),
         linkedServiceId: z.string().nullable().optional(),
+        responsibilities: z
+          .array(
+            z.object({
+              id: z.string().optional(),
+              categoryId: z.string().min(1),
+              assignees: z
+                .array(
+                  z.object({
+                    id: z.string().optional(),
+                    name: z.string().min(1),
+                    memberId: z.string().optional(),
+                    avatarUrl: z.string().optional(),
+                  }),
+                )
+                .default([]),
+            }),
+          )
+          .optional(),
       }),
       execute: async (args) =>
         textResult(await createAgendaEvent(requireMcpContext(authInfo), args)),
     }),
     agenda_update: tool({
-      description: "Update an agenda event. Requires updatedAt.",
+      description:
+        "Update an agenda event. Requires updatedAt. responsibilities replaces the full list when set.",
       inputSchema: z.object({
         eventId: z.string(),
         updatedAt: z.string(),
@@ -637,6 +716,24 @@ function buildHosannaTools(
         location: z.string().nullable().optional(),
         notes: z.string().nullable().optional(),
         linkedServiceId: z.string().nullable().optional(),
+        responsibilities: z
+          .array(
+            z.object({
+              id: z.string().optional(),
+              categoryId: z.string().min(1),
+              assignees: z
+                .array(
+                  z.object({
+                    id: z.string().optional(),
+                    name: z.string().min(1),
+                    memberId: z.string().optional(),
+                    avatarUrl: z.string().optional(),
+                  }),
+                )
+                .default([]),
+            }),
+          )
+          .optional(),
       }),
       execute: async (args) =>
         textResult(await updateAgendaEvent(requireMcpContext(authInfo), args)),
@@ -865,6 +962,61 @@ function buildHosannaTools(
           page: result.page,
           totalPages: result.totalPages,
           nextPage: result.page < result.totalPages ? result.page + 1 : null,
+          songs: result.songs.map((s) => {
+            if (!args.includeContent) {
+              return {
+                id: s.id,
+                title: s.title,
+                artist: s.artist,
+                tags: s.tags,
+                path: s.path,
+                folderId: s.folderId,
+                updatedAt: s.updatedAt.toISOString(),
+                contentPreview: s.content.slice(0, 200),
+              };
+            }
+            const clipped = clipContent(s.content, SEARCH_CONTENT_MAX);
+            return {
+              id: s.id,
+              title: s.title,
+              artist: s.artist,
+              tags: s.tags,
+              path: s.path,
+              folderId: s.folderId,
+              updatedAt: s.updatedAt.toISOString(),
+              content: clipped.content,
+              truncated: clipped.truncated,
+              contentLength: clipped.contentLength,
+            };
+          }),
+        });
+      },
+    }),
+    songs_search_lyrics: tool({
+      description:
+        "Search lyrics ignoring ChordPro chords/directives. Query \"Pois só Tu és o Deus eterno\" matches \"Pois [D9]só Tu és o [C#m]Deus eterno\". Prefer when the user quotes plain lyrics.",
+      inputSchema: z.object({
+        query: z.string().min(1),
+        folder: z.string().optional(),
+        page: z.number().int().positive().optional(),
+        limit: z.number().int().positive().max(50).optional(),
+        includeContent: z.boolean().optional(),
+      }),
+      execute: async (args) => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "song.access");
+        const result = await songService(ctx).searchLyrics({
+          query: args.query,
+          folder: args.folder,
+          page: args.page ?? 1,
+          limit: Math.min(args.limit ?? 20, 50),
+        });
+        return textResult({
+          total: result.total,
+          page: result.page,
+          totalPages: result.totalPages,
+          nextPage: result.page < result.totalPages ? result.page + 1 : null,
+          query: args.query,
           songs: result.songs.map((s) => {
             if (!args.includeContent) {
               return {
@@ -1597,11 +1749,12 @@ const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church son
 - On stale/concurrency errors, use the returned \`current\` object (do not re-fetch blindly).
 
 ## Capabilities (use them)
-- Songs: search/get/get_many, draft, propose_edit/fix/transpose, save, move, delete, restore; trash_list
+- Songs: search, search_lyrics (plain lyrics ignoring chords), get/get_many, draft, propose_edit/fix/transpose, save, move, delete, restore; trash_list
 - Services: search/get (expandSongs), propose_edit, plan_suggest, validate, save, delete, restore
+- People/org: me, members_list, members_get, org_get (responsibilityCategories). No org switch.
 - Folders: list/create/update/delete/restore (icon/color ids from studioUi)
 - Collections: list/get/create/update/delete, add_songs/remove_songs (same icon/color ids)
-- Agenda: list/get/create/update/delete
+- Agenda: list/get/create/update/delete — set responsibilities with real memberIds (not only notes on service elements)
 - studio_sync: pull replication in this Studio tab after library mutations
 - Metadata: MusicBrainz, YouTube (for \`{youtube:}\`), DuckDuckGo web search; ChordPro validate/format/transpose/convert/propagate
 - When completing metadata: MusicBrainz for title/artist/release; YouTube search for \`{youtube: URL}\` (use hits[].directive); web search for extra confirmation. If \`metadata_web_fetch\` is available (DeepSeek org AI), use it to read CCLI/artist pages or Cifra URLs blocked by Akamai. Call metadata tools one at a time (MusicBrainz rate-limits parallel bursts with 503). If a tool returns 403/503, report the structured error — do not claim success. Propose the ChordPro edit — do not invent lyrics.

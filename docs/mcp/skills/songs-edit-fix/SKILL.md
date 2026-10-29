@@ -11,7 +11,7 @@ Apply the user’s requested changes — or repair ChordPro problems — while p
 
 ## When to use
 
-- Prompt `songs.edit`, `songs.fix`, or `songs.complete` on an existing song
+- Prompt `songs_edit`, `songs_fix`, or `songs_complete` on an existing song
 - User reports “broken ChordPro”, bad directives, or wants a targeted rewrite
 
 ## Read first
@@ -24,25 +24,25 @@ Apply the user’s requested changes — or repair ChordPro problems — while p
 
 | Step | Tool |
 |------|------|
-| Load | `songs.get` |
-| Inspect | `chordpro.validate`, `chordpro.parse_summary` |
-| Edit proposal | `songs.propose_edit` |
-| Fix proposal | `songs.propose_fix` (format + lint-oriented) |
-| Persist | `songs.save` with `mode=update`, `songId`, and `updatedAt` |
+| Load | `songs_get` |
+| Inspect | `chordpro_validate`, `chordpro_parse_summary` |
+| Edit proposal | `songs_propose_edit` |
+| Fix proposal | `songs_propose_fix` (format + lint-oriented) |
+| Persist | `songs_save` with `mode=update`, `songId`, and `updatedAt` |
 
 ## Edit workflow
 
-1. `songs.get` — note `updatedAt`, content, title, artist, tags.
+1. `songs_get` — note `updatedAt`, content, title, artist, tags.
 2. Make **only** the requested changes. Leave variants, comments, grids/tabs, and unrelated metadata alone unless asked.
-3. `songs.propose_edit` with the new content (and metadata fields if changed).
+3. `songs_propose_edit` with the new content (and metadata fields if changed).
 4. Show the proposal’s `diff.preview` and validation to the user in plain language.
-5. After approval: `songs.save` (`mode=update`, pass the proposal’s `updatedAt`).
+5. After approval: `songs_save` (`mode=update`, pass the proposal’s `updatedAt`).
 
-If `updatedAt` conflicts, reload with `songs.get` and re-propose — do not force overwrite.
+If `updatedAt` conflicts, reload with `songs_get` and re-propose — do not force overwrite.
 
 ## Fix workflow
 
-1. `songs.get` + `chordpro.validate` / `songs.propose_fix`.
+1. `songs_get` + `chordpro_validate` / `songs_propose_fix`.
 2. Explain each issue (unclosed braces, bad chords, mismatched blocks, etc.).
 3. Prefer mechanical fixes: close blocks, expand aliases, normalize spacing via format.
 4. If a “fix” would require guessing lyrics or chords, **ask** instead of inventing.
@@ -76,4 +76,4 @@ Say clearly what you inferred vs what you need from them.
 
 - Diff is understandable
 - Validation is clean or residual issues are listed with reasons
-- User approved before any `songs.save`
+- User approved before any `songs_save`

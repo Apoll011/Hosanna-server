@@ -54,7 +54,7 @@ export function registerLibraryTools(
   authInfo?: AuthInfo,
 ): void {
   server.registerTool(
-    "folders.list",
+    "folders_list",
     {
       title: "List folders",
       description: "List organization folders (library tree).",
@@ -74,7 +74,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "folders.create",
+    "folders_create",
     {
       title: "Create folder",
       description:
@@ -96,7 +96,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "folders.update",
+    "folders_update",
     {
       title: "Update folder",
       description:
@@ -120,7 +120,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "folders.delete",
+    "folders_delete",
     {
       title: "Delete folder",
       description:
@@ -140,7 +140,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "collections.list",
+    "collections_list",
     {
       title: "List collections",
       description: "List organization song collections.",
@@ -156,7 +156,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "collections.get",
+    "collections_get",
     {
       title: "Get collection",
       description: "Get a collection with its song ids/titles.",
@@ -174,7 +174,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "collections.create",
+    "collections_create",
     {
       title: "Create collection",
       description:
@@ -199,7 +199,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "collections.update",
+    "collections_update",
     {
       title: "Update collection",
       description:
@@ -225,7 +225,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "collections.delete",
+    "collections_delete",
     {
       title: "Delete collection",
       description: "Soft-delete a collection (songs stay in the library).",
@@ -243,7 +243,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "collections.add_songs",
+    "collections_add_songs",
     {
       title: "Add songs to collection",
       description: "Connect songs to a collection.",
@@ -264,7 +264,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "collections.remove_songs",
+    "collections_remove_songs",
     {
       title: "Remove songs from collection",
       description: "Disconnect songs from a collection (does not delete songs).",
@@ -285,7 +285,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "agenda.list",
+    "agenda_list",
     {
       title: "List agenda events",
       description: "List upcoming organization agenda events.",
@@ -307,7 +307,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "agenda.get",
+    "agenda_get",
     {
       title: "Get agenda event",
       description: "Get a single agenda event by id.",
@@ -324,11 +324,32 @@ export function registerLibraryTools(
     },
   );
 
+  const agendaAssigneeSchema = z.object({
+    id: z.string().optional(),
+    name: z.string().min(1),
+    memberId: z
+      .string()
+      .optional()
+      .describe("Better Auth member id from members_list / me"),
+    avatarUrl: z.string().optional(),
+  });
+  const agendaResponsibilitySchema = z.object({
+    id: z.string().optional(),
+    categoryId: z
+      .string()
+      .min(1)
+      .describe(
+        "From org_get.responsibilityCategories (leader, musicians, preacher, …)",
+      ),
+    assignees: z.array(agendaAssigneeSchema).default([]),
+  });
+
   server.registerTool(
-    "agenda.create",
+    "agenda_create",
     {
       title: "Create agenda event",
-      description: "Create an agenda event (org-local date/time, no timezone conversion).",
+      description:
+        "Create an agenda event (org-local date/time). Pass responsibilities with real memberIds from members_list/me (categoryIds from org_get).",
       inputSchema: z.object({
         title: z.string().min(1),
         date: z
@@ -347,6 +368,7 @@ export function registerLibraryTools(
         location: z.string().optional(),
         notes: z.string().optional(),
         linkedServiceId: z.string().uuid().nullable().optional(),
+        responsibilities: z.array(agendaResponsibilitySchema).optional(),
       }),
     },
     async (args) => {
@@ -361,10 +383,11 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "agenda.update",
+    "agenda_update",
     {
       title: "Update agenda event",
-      description: "Update an agenda event. Requires updatedAt.",
+      description:
+        "Update an agenda event. Requires updatedAt. responsibilities replaces the full list when provided.",
       inputSchema: z.object({
         eventId: z.string().uuid(),
         updatedAt: z.string(),
@@ -376,6 +399,7 @@ export function registerLibraryTools(
         location: z.string().nullable().optional(),
         notes: z.string().nullable().optional(),
         linkedServiceId: z.string().uuid().nullable().optional(),
+        responsibilities: z.array(agendaResponsibilitySchema).optional(),
       }),
     },
     async (args) => {
@@ -390,7 +414,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "agenda.delete",
+    "agenda_delete",
     {
       title: "Delete agenda event",
       description: "Soft-delete an agenda event.",
@@ -408,7 +432,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "trash.list",
+    "trash_list",
     {
       title: "List trash",
       description: "List soft-deleted songs, folders, and services.",
@@ -455,7 +479,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "folders.restore",
+    "folders_restore",
     {
       title: "Restore folder",
       description: "Restore a soft-deleted folder from trash.",
@@ -475,7 +499,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "metadata.musicbrainz_search",
+    "metadata_musicbrainz_search",
     {
       title: "Search MusicBrainz",
       description:
@@ -505,7 +529,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "metadata.youtube_search",
+    "metadata_youtube_search",
     {
       title: "Search YouTube",
       description:
@@ -528,7 +552,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "metadata.web_search",
+    "metadata_web_search",
     {
       title: "Web search",
       description:
@@ -557,7 +581,7 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
-    "metadata.web_fetch",
+    "metadata_web_fetch",
     {
       title: "Fetch web page",
       description:

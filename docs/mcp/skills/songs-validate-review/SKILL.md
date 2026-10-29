@@ -11,7 +11,7 @@ Produce a clear, actionable review of a song’s ChordPro quality and metadata c
 
 ## When to use
 
-- Prompt `songs.review`
+- Prompt `songs_review`
 - User asks “is this song OK?” / “check my ChordPro”
 - Before a large service plan, spot-check library health
 
@@ -25,12 +25,12 @@ Produce a clear, actionable review of a song’s ChordPro quality and metadata c
 
 | Tool | Use |
 |------|-----|
-| `songs.get` | Load library song |
-| `chordpro.validate` | Lint + parse errors |
-| `chordpro.parse_summary` | Metadata, variants, analysis, score |
-| `chordpro.directives` | Explain a specific directive |
+| `songs_get` | Load library song |
+| `chordpro_validate` | Lint + parse errors |
+| `chordpro_parse_summary` | Metadata, variants, analysis, score |
+| `chordpro_directives` | Explain a specific directive |
 
-Do **not** call `songs.save` during a pure review.
+Do **not** call `songs_save` during a pure review.
 
 ## Review checklist
 
@@ -49,7 +49,7 @@ Use a short structured report:
 2. **Blockers** — would break parse/preview
 3. **Warnings** — quality / consistency
 4. **Suggestions** — optional improvements (with example snippets)
-5. **Next steps** — offer to run `songs.fix` / `songs.edit` if the user wants changes
+5. **Next steps** — offer to run `songs_fix` / `songs_edit` if the user wants changes
 
 ## Lint vs parse
 

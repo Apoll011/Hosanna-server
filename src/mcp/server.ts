@@ -8,6 +8,7 @@ import { registerResources } from "./resources/catalog.js";
 import { registerChordProTools } from "./tools/chordpro.js";
 import { registerDiscoveryTools } from "./tools/discovery.js";
 import { registerLibraryTools } from "./tools/library.js";
+import { registerOrgTools } from "./tools/org.js";
 import { registerServiceTools } from "./tools/services.js";
 import { registerSongTools } from "./tools/songs.js";
 
@@ -23,6 +24,7 @@ export function createHosannaMcpServer(authInfo?: AuthInfo): McpServer {
   });
 
   registerDiscoveryTools(server, authInfo);
+  registerOrgTools(server, authInfo);
   registerChordProTools(server);
   registerSongTools(server, authInfo);
   registerServiceTools(server, authInfo);

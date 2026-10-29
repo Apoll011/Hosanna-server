@@ -2,7 +2,7 @@
 
 This guide documents ChordPro as **implemented by Hosanna** (`@hosanna/chordpro`). Support levels: **parsed** (first-class), **formatter-only** (recognized but not specially handled), **unsupported**.
 
-Use MCP resource `hosanna://chordpro/directives` or tool `chordpro.directives` for the machine-readable manifest.
+Use MCP resource `hosanna://chordpro/directives` or tool `chordpro_directives` for the machine-readable manifest.
 
 ## Essentials
 
@@ -96,7 +96,7 @@ Style suffixes use `|style` or `|style=name`. The TypeScript renderer honors sty
 
 ## Validation
 
-Use `lintChordPro` / MCP `chordpro.validate` for unclosed braces/brackets, block mismatches, empty/unknown chords, malformed timing, and numeric capo/tempo issues.
+Use `lintChordPro` / MCP `chordpro_validate` for unclosed braces/brackets, block mismatches, empty/unknown chords, malformed timing, and numeric capo/tempo issues.
 
 ## Not fully supported
 

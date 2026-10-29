@@ -21,7 +21,7 @@ export function registerServiceTools(
   authInfo?: AuthInfo,
 ): void {
   server.registerTool(
-    "services.search",
+    "services_search",
     {
       title: "Search services",
       description: "List services in the active organization.",
@@ -51,7 +51,7 @@ export function registerServiceTools(
   );
 
   server.registerTool(
-    "services.get",
+    "services_get",
     {
       title: "Get service",
       description:
@@ -114,7 +114,7 @@ export function registerServiceTools(
   );
 
   server.registerTool(
-    "services.create_draft",
+    "services_create_draft",
     {
       title: "Create service draft",
       description:
@@ -147,7 +147,7 @@ export function registerServiceTools(
             elements,
           },
           validation,
-          next: "Call services.save with mode=create after user approval.",
+          next: "Call services_save with mode=create after user approval.",
         });
       } catch (error) {
         return errorResult(error);
@@ -156,7 +156,7 @@ export function registerServiceTools(
   );
 
   server.registerTool(
-    "services.propose_edit",
+    "services_propose_edit",
     {
       title: "Propose service edit",
       description:
@@ -202,7 +202,7 @@ export function registerServiceTools(
                 : new Date(current.updatedAt).toISOString(),
           },
           validation,
-          next: "Call services.save with mode=update after user approval.",
+          next: "Call services_save with mode=update after user approval.",
         });
       } catch (error) {
         return errorResult(error);
@@ -211,7 +211,7 @@ export function registerServiceTools(
   );
 
   server.registerTool(
-    "services.validate",
+    "services_validate",
     {
       title: "Validate service",
       description:
@@ -245,7 +245,7 @@ export function registerServiceTools(
   );
 
   server.registerTool(
-    "services.save",
+    "services_save",
     {
       title: "Save service",
       description:
@@ -319,7 +319,7 @@ export function registerServiceTools(
   );
 
   server.registerTool(
-    "services.delete",
+    "services_delete",
     {
       title: "Delete service",
       description:
@@ -342,7 +342,7 @@ export function registerServiceTools(
   );
 
   server.registerTool(
-    "services.restore",
+    "services_restore",
     {
       title: "Restore service",
       description: "Restore a soft-deleted service from trash.",
@@ -362,7 +362,7 @@ export function registerServiceTools(
   );
 
   server.registerTool(
-    "services.plan_suggest",
+    "services_plan_suggest",
     {
       title: "Suggest a service plan",
       description:
@@ -472,7 +472,7 @@ export function registerServiceTools(
                 : "Songs selected from the organization's library by search/key/tag filters.",
           },
           validation,
-          next: "Present the draft; save only with services.save after approval.",
+          next: "Present the draft; save only with services_save after approval.",
         });
       } catch (error) {
         return errorResult(error);

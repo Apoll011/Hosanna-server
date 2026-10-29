@@ -11,7 +11,7 @@ Build or modify worship service plans that validate against Hosanna’s element 
 
 ## When to use
 
-- Prompts `services.create`, `services.edit`, `services.fix`, `services.complete`
+- Prompts `services_create`, `services_edit`, `services_fix`, `services_complete`
 - User wants to add/remove/reorder setlist items or non-song elements
 
 ## Read first
@@ -36,33 +36,33 @@ Every element needs a unique `id` (UUID) and should use contiguous `position` va
 ## Critical rule: song references
 
 - Song elements **must** point at a real library song via `songId`
-- Discover with `songs.search` / `songs.get` — never invent UUIDs or fake titles as if they were library songs
+- Discover with `songs_search` / `songs_get` — never invent UUIDs or fake titles as if they were library songs
 - Prefer setting `title` to the song’s library title for readability
 
 ## Tools
 
 | Step | Tool |
 |------|------|
-| List/get | `services.search`, `services.get` |
-| Draft | `services.create_draft` |
-| Edit proposal | `services.propose_edit` |
-| Validate | `services.validate` |
-| Persist | `services.save` (`create` or `update` + `updatedAt`) |
+| List/get | `services_search`, `services_get` |
+| Draft | `services_create_draft` |
+| Edit proposal | `services_propose_edit` |
+| Validate | `services_validate` |
+| Persist | `services_save` (`create` or `update` + `updatedAt`) |
 
 ## Create workflow
 
 1. Gather name, date (ISO), notes, desired flow (welcome → songs → message, etc.).
 2. Search the library for each requested song; record ids.
 3. Build elements with ids/positions.
-4. `services.create_draft` → `services.validate`.
-5. Present the draft; after approval `services.save` `mode=create`.
+4. `services_create_draft` → `services_validate`.
+5. Present the draft; after approval `services_save` `mode=create`.
 
 ## Edit workflow
 
-1. `services.get` — keep `updatedAt`.
+1. `services_get` — keep `updatedAt`.
 2. Change only what the user asked; preserve unrelated elements.
-3. `services.propose_edit` → `services.validate`.
-4. Present; `services.save` `mode=update` with `serviceId` + `updatedAt`.
+3. `services_propose_edit` → `services_validate`.
+4. Present; `services_save` `mode=update` with `serviceId` + `updatedAt`.
 
 ## Fix / complete
 
@@ -75,6 +75,6 @@ Studio stores element notes **inline** on the element JSON. Prefer that over ass
 
 ## Done when
 
-- `services.validate` reports `ok` (or remaining issues are disclosed)
+- `services_validate` reports `ok` (or remaining issues are disclosed)
 - All song ids resolve
 - User approved before save

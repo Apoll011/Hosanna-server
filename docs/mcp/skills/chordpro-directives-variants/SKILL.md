@@ -11,13 +11,13 @@ Give accurate explanations and edits based on what Hosanna **actually** implemen
 
 ## When to use
 
-- Prompt `songs.explain_chordpro` or `songs.arrange`
+- Prompt `songs_explain_chordpro` or `songs_arrange`
 - User asks “how does X work in Hosanna?”
 - Before using uncommon directives in create/edit flows
 
 ## Read / call
 
-1. Tool `chordpro.directives` (with or without `name`)
+1. Tool `chordpro_directives` (with or without `name`)
 2. Resource `hosanna://chordpro/features`
 3. Resource `hosanna://chordpro/guide`
 4. Examples: `hosanna://chordpro/examples/variants`, `…/grids`, `…/valid`
@@ -85,7 +85,7 @@ Example resource: `hosanna://chordpro/examples/variants`.
 [G]Hello [Am@2x]world
 ```
 
-`@Nx` timings are preserved by source-preserving transpose (`chordpro.transpose`).
+`@Nx` timings are preserved by source-preserving transpose (`chordpro_transpose`).
 
 ## Not fully supported — be honest
 
@@ -100,7 +100,7 @@ When arranging, if the user asks for unsupported behavior, say so and propose th
 
 ## Explaining a directive
 
-1. `chordpro.directives` with `name` (aliases work, e.g. `t`, `soc`).
+1. `chordpro_directives` with `name` (aliases work, e.g. `t`, `soc`).
 2. Give a short description, an example, and the support level.
 3. Mention Hosanna-specific behavior when `hosannaSpecific` is true.
 

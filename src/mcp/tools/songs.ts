@@ -54,7 +54,7 @@ export function registerSongTools(
   authInfo?: AuthInfo,
 ): void {
   server.registerTool(
-    "songs.search",
+    "songs_search",
     {
       title: "Search songs",
       description:
@@ -121,7 +121,63 @@ export function registerSongTools(
   );
 
   server.registerTool(
-    "songs.get",
+    "songs_search_lyrics",
+    {
+      title: "Search song lyrics (ignore chords)",
+      description:
+        "Search lyrics after stripping ChordPro chords and directives. Query \"Pois só Tu és o Deus eterno\" matches \"Pois [D9]só Tu és o [C#m]Deus eterno\". Prefer this over songs_search when the user quotes plain lyrics.",
+      inputSchema: z.object({
+        query: z.string().min(1).describe("Plain lyrics / phrase without chord markers"),
+        folder: z.string().optional().describe("Folder id filter"),
+        page: z.number().int().positive().optional().default(1),
+        limit: z.number().int().positive().max(100).optional().default(20),
+        includeContent: z.boolean().optional().default(false),
+      }),
+    },
+    async (args) => {
+      try {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "song.access");
+        const result = await songService(ctx).searchLyrics({
+          query: args.query,
+          folder: args.folder,
+          page: args.page,
+          limit: args.limit,
+        });
+        const nextPage =
+          result.page < result.totalPages ? result.page + 1 : null;
+        return jsonResult({
+          total: result.total,
+          page: result.page,
+          totalPages: result.totalPages,
+          nextPage,
+          query: args.query,
+          songs: result.songs.map((s) => {
+            const base = serializeSong(s);
+            if (!args.includeContent) {
+              const { content: _c, ...rest } = base;
+              return {
+                ...rest,
+                contentPreview: s.content.slice(0, 200),
+              };
+            }
+            const clipped = clipContent(s.content, SEARCH_CONTENT_MAX);
+            return {
+              ...base,
+              content: clipped.content,
+              truncated: clipped.truncated,
+              contentLength: clipped.contentLength,
+            };
+          }),
+        });
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "songs_get",
     {
       title: "Get song",
       description: "Retrieve a song by id, including full ChordPro content.",
@@ -151,7 +207,7 @@ export function registerSongTools(
   );
 
   server.registerTool(
-    "songs.get_many",
+    "songs_get_many",
     {
       title: "Get many songs",
       description:
@@ -197,11 +253,11 @@ export function registerSongTools(
   );
 
   server.registerTool(
-    "songs.create_draft",
+    "songs_create_draft",
     {
       title: "Create song draft",
       description:
-        "Build and validate a new song proposal without saving. Present to the user before songs.save.",
+        "Build and validate a new song proposal without saving. Present to the user before songs_save.",
       inputSchema: z.object({
         title: z.string().min(1),
         artist: z.string().optional(),
@@ -230,7 +286,7 @@ export function registerSongTools(
             song_number: args.song_number ?? meta.song_number ?? null,
           },
           validation,
-          next: "Call songs.save with mode=create after user approval.",
+          next: "Call songs_save with mode=create after user approval.",
         });
       } catch (error) {
         return errorResult(error);
@@ -239,7 +295,7 @@ export function registerSongTools(
   );
 
   server.registerTool(
-    "songs.propose_edit",
+    "songs_propose_edit",
     {
       title: "Propose song edit",
       description:
@@ -279,7 +335,7 @@ export function registerSongTools(
           proposal,
           validation: validateChordProContent(content),
           diff: summarizeDiff(current.content, content),
-          next: "Call songs.save with mode=update after user approval.",
+          next: "Call songs_save with mode=update after user approval.",
         });
       } catch (error) {
         return errorResult(error);
@@ -288,7 +344,7 @@ export function registerSongTools(
   );
 
   server.registerTool(
-    "songs.propose_fix",
+    "songs_propose_fix",
     {
       title: "Propose song fix",
       description:
@@ -336,7 +392,7 @@ export function registerSongTools(
           diff: summarizeDiff(current.content, proposed),
           notes: [
             "Do not invent missing lyrics or chords.",
-            "In Studio, Accept in the editor then user Save; songs.save only if asked to persist via MCP.",
+            "In Studio, Accept in the editor then user Save; songs_save only if asked to persist via MCP.",
           ],
         });
       } catch (error) {
@@ -346,7 +402,7 @@ export function registerSongTools(
   );
 
   server.registerTool(
-    "songs.propose_transpose",
+    "songs_propose_transpose",
     {
       title: "Propose transpose",
       description:
@@ -397,7 +453,7 @@ export function registerSongTools(
           transpose: result,
           validation: validateChordProContent(result.content),
           diff: summarizeDiff(current.content, result.content),
-          next: "Studio stages Accept/Decline; songs.save only after explicit persist request.",
+          next: "Studio stages Accept/Decline; songs_save only after explicit persist request.",
         });
       } catch (error) {
         return errorResult(error);
@@ -406,7 +462,7 @@ export function registerSongTools(
   );
 
   server.registerTool(
-    "songs.propose_propagate_chords",
+    "songs_propose_propagate_chords",
     {
       title: "Propose propagate chords",
       description:
@@ -438,7 +494,7 @@ export function registerSongTools(
   );
 
   server.registerTool(
-    "songs.save",
+    "songs_save",
     {
       title: "Save song",
       description:
@@ -551,7 +607,7 @@ export function registerSongTools(
   );
 
   server.registerTool(
-    "songs.move",
+    "songs_move",
     {
       title: "Move song",
       description: "Move a song to another folder (or root). Requires updatedAt.",
@@ -592,7 +648,7 @@ export function registerSongTools(
   );
 
   server.registerTool(
-    "songs.delete",
+    "songs_delete",
     {
       title: "Delete song",
       description:
@@ -615,7 +671,7 @@ export function registerSongTools(
   );
 
   server.registerTool(
-    "songs.restore",
+    "songs_restore",
     {
       title: "Restore song",
       description: "Restore a soft-deleted song from trash.",

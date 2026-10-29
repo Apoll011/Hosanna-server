@@ -19,7 +19,7 @@ import { errorResult, jsonResult } from "../context.js";
 
 export function registerChordProTools(server: McpServer): void {
   server.registerTool(
-    "chordpro.validate",
+    "chordpro_validate",
     {
       title: "Validate ChordPro",
       description:
@@ -38,7 +38,7 @@ export function registerChordProTools(server: McpServer): void {
   );
 
   server.registerTool(
-    "chordpro.propagate_chords",
+    "chordpro_propagate_chords",
     {
       title: "Propagate verse chords",
       description:
@@ -62,7 +62,7 @@ export function registerChordProTools(server: McpServer): void {
   );
 
   server.registerTool(
-    "chordpro.parse_summary",
+    "chordpro_parse_summary",
     {
       title: "Parse ChordPro summary",
       description:
@@ -97,7 +97,7 @@ export function registerChordProTools(server: McpServer): void {
   );
 
   server.registerTool(
-    "chordpro.format",
+    "chordpro_format",
     {
       title: "Format ChordPro",
       description: "Normalize ChordPro directives and chord spelling.",
@@ -126,7 +126,7 @@ export function registerChordProTools(server: McpServer): void {
   );
 
   server.registerTool(
-    "chordpro.transpose",
+    "chordpro_transpose",
     {
       title: "Transpose ChordPro",
       description:
@@ -167,7 +167,7 @@ export function registerChordProTools(server: McpServer): void {
   );
 
   server.registerTool(
-    "chordpro.convert",
+    "chordpro_convert",
     {
       title: "Convert to ChordPro",
       description:
@@ -205,7 +205,7 @@ export function registerChordProTools(server: McpServer): void {
   );
 
   server.registerTool(
-    "chordpro.directives",
+    "chordpro_directives",
     {
       title: "ChordPro directives",
       description:
@@ -235,7 +235,7 @@ export function registerChordProTools(server: McpServer): void {
             return jsonResult(
               {
                 error: `Unknown directive: ${name}`,
-                hint: "Use chordpro.directives without name to list known directives.",
+                hint: "Use chordpro_directives without name to list known directives.",
               },
               true,
             );

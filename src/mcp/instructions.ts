@@ -8,10 +8,12 @@ export const HOSANNA_MCP_INSTRUCTIONS = `You are connected to the Hosanna MCP se
 
 Before doing song or service work, load skills and docs. Skill bodies are NOT injected automatically — you must read the resources.
 
-1. Call \`hosanna.capabilities\` (and \`hosanna.permissions\` if the task touches org data).
+1. Call \`hosanna_capabilities\` (and \`hosanna_permissions\` if the task touches org data).
 2. Always read \`hosanna://skills/hosanna-safe-data\` when creating, editing, fixing, saving, or deleting anything.
 3. Read the task skills that match the job (see map below) before using tools.
-4. Prefer MCP prompts (\`songs.*\`, \`services.*\`) when the user picks one; still load the matching skills.
+4. Prefer MCP prompts (\`songs_create\`, \`services_plan\`, etc.) when the user picks one; still load the matching skills.
+5. Resolve people with \`members_list\` / \`members_get\` / \`me\` before assigning agenda responsibilities. Use real \`memberId\`s — do not invent assignees.
+6. For lyric search ignoring chords, use \`songs_search_lyrics\` (e.g. query without \`[Am]\` markers).
 
 ## Skill map (read these resources)
 
@@ -31,10 +33,10 @@ Also load supporting resources as needed: \`hosanna://chordpro/guide\`, \`hosann
 
 - Never fabricate lyrics, chords, verses, or library songs. Ask the user when content is missing.
 - Never silently delete or rewrite unrelated content.
-- Draft / propose first; persist only with \`songs.save\` / \`services.save\` after the user approves.
-- Use only ChordPro features marked implemented/parsed in \`hosanna://chordpro/features\` (or \`chordpro.directives\`). Explain unsupported requests instead of inventing them.
+- Draft / propose first; persist only with \`songs_save\` / \`services_save\` after the user approves.
+- Use only ChordPro features marked implemented/parsed in \`hosanna://chordpro/features\` (or \`chordpro_directives\`). Explain unsupported requests instead of inventing them.
 - Respect auth, org isolation, permissions, subscription entitlement, and \`updatedAt\` concurrency.
 - Instrument diagrams and Ace editor UX are client-only — do not pretend to render them via tools.
 `;
 
-export const SYSTEM_PROMPT_NAME = "hosanna.system";
+export const SYSTEM_PROMPT_NAME = "hosanna_system";
