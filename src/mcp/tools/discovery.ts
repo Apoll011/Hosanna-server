@@ -46,7 +46,14 @@ export function registerDiscoveryTools(
         return jsonResult({
           server: { name: "hosanna", version: "1.0.0" },
           tools: {
-            discovery: ["hosanna.capabilities", "hosanna.permissions"],
+            discovery: [
+              "hosanna.capabilities",
+              "hosanna.permissions",
+              "hosanna.skills_list",
+              "hosanna.skill_read",
+              "hosanna.resources_list",
+              "hosanna.resource_read",
+            ],
             chordpro: [
               "chordpro.validate",
               "chordpro.parse_summary",
