@@ -359,6 +359,37 @@ export function registerSongTools(
   );
 
   server.registerTool(
+    "songs.move",
+    {
+      title: "Move song",
+      description: "Move a song to another folder (or root). Requires updatedAt.",
+      inputSchema: z.object({
+        songId: z.string().uuid(),
+        updatedAt: z.string(),
+        folderId: z.string().uuid().nullable(),
+      }),
+    },
+    async ({ songId, updatedAt, folderId }) => {
+      try {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "song.update");
+        requireWriteEntitlement(ctx);
+        const moved = await songService(ctx).move(
+          songId,
+          new Date(updatedAt),
+          folderId,
+        );
+        return jsonResult({
+          moved: true,
+          song: serializeSong(moved),
+        });
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
     "songs.delete",
     {
       title: "Delete song",

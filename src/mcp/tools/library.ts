@@ -1,14 +1,29 @@
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { prisma } from "../../database/prisma.js";
-import type { PermissionString } from "../../permissions/index.js";
 import {
   errorResult,
   jsonResult,
   requireMcpContext,
-  requirePermission,
 } from "../context.js";
+import {
+  collectionAddSongs,
+  collectionRemoveSongs,
+  createAgendaEvent,
+  createCollection,
+  createFolder,
+  deleteAgendaEvent,
+  deleteCollection,
+  deleteFolder,
+  getAgendaEvent,
+  getCollection,
+  listAgenda,
+  listCollections,
+  listFolders,
+  updateAgendaEvent,
+  updateCollection,
+  updateFolder,
+} from "../lib/libraryCrud.js";
 import { searchMusicBrainzRecordings } from "../lib/musicbrainz.js";
 
 export function registerLibraryTools(
@@ -26,25 +41,73 @@ export function registerLibraryTools(
     },
     async ({ parentId }) => {
       try {
-        const ctx = requireMcpContext(authInfo);
-        requirePermission(ctx, "folder.access" as PermissionString);
-        const folders = await prisma.folder.findMany({
-          where: {
-            orgId: ctx.orgId,
-            deleted: false,
-            ...(parentId !== undefined ? { parentId } : {}),
-          },
-          select: {
-            id: true,
-            name: true,
-            parentId: true,
-            color: true,
-            updatedAt: true,
-          },
-          orderBy: { name: "asc" },
-          take: 200,
-        });
-        return jsonResult({ folders, count: folders.length });
+        return jsonResult(
+          await listFolders(requireMcpContext(authInfo), parentId),
+        );
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "folders.create",
+    {
+      title: "Create folder",
+      description: "Create a folder in the library tree.",
+      inputSchema: z.object({
+        name: z.string().min(1),
+        parentId: z.string().uuid().nullable().optional(),
+        color: z.string().optional(),
+        icon: z.string().optional(),
+      }),
+    },
+    async (args) => {
+      try {
+        return jsonResult(await createFolder(requireMcpContext(authInfo), args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "folders.update",
+    {
+      title: "Update folder",
+      description: "Rename/move/recolor a folder. Requires updatedAt for concurrency.",
+      inputSchema: z.object({
+        folderId: z.string().uuid(),
+        updatedAt: z.string(),
+        name: z.string().min(1).optional(),
+        parentId: z.string().uuid().nullable().optional(),
+        color: z.string().optional(),
+        icon: z.string().optional(),
+      }),
+    },
+    async (args) => {
+      try {
+        return jsonResult(await updateFolder(requireMcpContext(authInfo), args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "folders.delete",
+    {
+      title: "Delete folder",
+      description:
+        "Soft-delete a folder. action=move_to_root (default) keeps songs; delete_songs trashes nested content.",
+      inputSchema: z.object({
+        folderId: z.string().uuid(),
+        action: z.enum(["move_to_root", "delete_songs"]).optional(),
+      }),
+    },
+    async (args) => {
+      try {
+        return jsonResult(await deleteFolder(requireMcpContext(authInfo), args));
       } catch (error) {
         return errorResult(error);
       }
@@ -60,29 +123,134 @@ export function registerLibraryTools(
     },
     async () => {
       try {
-        const ctx = requireMcpContext(authInfo);
-        requirePermission(ctx, "collection.access" as PermissionString);
-        const collections = await prisma.collection.findMany({
-          where: { orgId: ctx.orgId, deleted: false },
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            updatedAt: true,
-            _count: { select: { songs: true } },
-          },
-          orderBy: { name: "asc" },
-          take: 100,
-        });
-        return jsonResult({
-          collections: collections.map((c) => ({
-            id: c.id,
-            name: c.name,
-            description: c.description,
-            songCount: c._count.songs,
-            updatedAt: c.updatedAt.toISOString(),
-          })),
-        });
+        return jsonResult(await listCollections(requireMcpContext(authInfo)));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "collections.get",
+    {
+      title: "Get collection",
+      description: "Get a collection with its song ids/titles.",
+      inputSchema: z.object({ collectionId: z.string().uuid() }),
+    },
+    async ({ collectionId }) => {
+      try {
+        return jsonResult(
+          await getCollection(requireMcpContext(authInfo), collectionId),
+        );
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "collections.create",
+    {
+      title: "Create collection",
+      description: "Create a song collection, optionally with initial song ids.",
+      inputSchema: z.object({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        color: z.string().optional(),
+        icon: z.string().optional(),
+        songIds: z.array(z.string().uuid()).optional(),
+      }),
+    },
+    async (args) => {
+      try {
+        return jsonResult(
+          await createCollection(requireMcpContext(authInfo), args),
+        );
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "collections.update",
+    {
+      title: "Update collection",
+      description: "Update collection metadata. Requires updatedAt.",
+      inputSchema: z.object({
+        collectionId: z.string().uuid(),
+        updatedAt: z.string(),
+        name: z.string().min(1).optional(),
+        description: z.string().nullable().optional(),
+        color: z.string().optional(),
+        icon: z.string().optional(),
+      }),
+    },
+    async (args) => {
+      try {
+        return jsonResult(
+          await updateCollection(requireMcpContext(authInfo), args),
+        );
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "collections.delete",
+    {
+      title: "Delete collection",
+      description: "Soft-delete a collection (songs stay in the library).",
+      inputSchema: z.object({ collectionId: z.string().uuid() }),
+    },
+    async ({ collectionId }) => {
+      try {
+        return jsonResult(
+          await deleteCollection(requireMcpContext(authInfo), collectionId),
+        );
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "collections.add_songs",
+    {
+      title: "Add songs to collection",
+      description: "Connect songs to a collection.",
+      inputSchema: z.object({
+        collectionId: z.string().uuid(),
+        songIds: z.array(z.string().uuid()).min(1),
+      }),
+    },
+    async (args) => {
+      try {
+        return jsonResult(
+          await collectionAddSongs(requireMcpContext(authInfo), args),
+        );
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "collections.remove_songs",
+    {
+      title: "Remove songs from collection",
+      description: "Disconnect songs from a collection (does not delete songs).",
+      inputSchema: z.object({
+        collectionId: z.string().uuid(),
+        songIds: z.array(z.string().uuid()).min(1),
+      }),
+    },
+    async (args) => {
+      try {
+        return jsonResult(
+          await collectionRemoveSongs(requireMcpContext(authInfo), args),
+        );
       } catch (error) {
         return errorResult(error);
       }
@@ -102,32 +270,101 @@ export function registerLibraryTools(
         limit: z.number().int().min(1).max(50).optional(),
       }),
     },
-    async ({ from, limit }) => {
+    async (args) => {
       try {
-        const ctx = requireMcpContext(authInfo);
-        requirePermission(ctx, "agenda.access" as PermissionString);
-        const since =
-          from?.trim() || new Date().toISOString().slice(0, 10);
-        const events = await prisma.agendaEvent.findMany({
-          where: {
-            orgId: ctx.orgId,
-            deleted: false,
-            date: { gte: since },
-          },
-          select: {
-            id: true,
-            title: true,
-            date: true,
-            time: true,
-            type: true,
-            location: true,
-            notes: true,
-            linkedServiceId: true,
-          },
-          orderBy: [{ date: "asc" }, { time: "asc" }],
-          take: limit ?? 20,
-        });
-        return jsonResult({ events });
+        return jsonResult(await listAgenda(requireMcpContext(authInfo), args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "agenda.get",
+    {
+      title: "Get agenda event",
+      description: "Get a single agenda event by id.",
+      inputSchema: z.object({ eventId: z.string().uuid() }),
+    },
+    async ({ eventId }) => {
+      try {
+        return jsonResult(
+          await getAgendaEvent(requireMcpContext(authInfo), eventId),
+        );
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "agenda.create",
+    {
+      title: "Create agenda event",
+      description: "Create an agenda event.",
+      inputSchema: z.object({
+        title: z.string().min(1),
+        date: z.string().min(1).describe("YYYY-MM-DD"),
+        time: z.string().min(1).describe("HH:mm"),
+        type: z.string().min(1),
+        durationMinutes: z.number().int().positive().optional(),
+        location: z.string().optional(),
+        notes: z.string().optional(),
+        linkedServiceId: z.string().uuid().nullable().optional(),
+      }),
+    },
+    async (args) => {
+      try {
+        return jsonResult(
+          await createAgendaEvent(requireMcpContext(authInfo), args),
+        );
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "agenda.update",
+    {
+      title: "Update agenda event",
+      description: "Update an agenda event. Requires updatedAt.",
+      inputSchema: z.object({
+        eventId: z.string().uuid(),
+        updatedAt: z.string(),
+        title: z.string().min(1).optional(),
+        date: z.string().optional(),
+        time: z.string().optional(),
+        type: z.string().optional(),
+        durationMinutes: z.number().int().positive().optional(),
+        location: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
+        linkedServiceId: z.string().uuid().nullable().optional(),
+      }),
+    },
+    async (args) => {
+      try {
+        return jsonResult(
+          await updateAgendaEvent(requireMcpContext(authInfo), args),
+        );
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "agenda.delete",
+    {
+      title: "Delete agenda event",
+      description: "Soft-delete an agenda event.",
+      inputSchema: z.object({ eventId: z.string().uuid() }),
+    },
+    async ({ eventId }) => {
+      try {
+        return jsonResult(
+          await deleteAgendaEvent(requireMcpContext(authInfo), eventId),
+        );
       } catch (error) {
         return errorResult(error);
       }
@@ -149,7 +386,6 @@ export function registerLibraryTools(
     },
     async (args) => {
       try {
-        // Auth optional for metadata lookup, but prefer org session when present
         if (authInfo) {
           try {
             requireMcpContext(authInfo);

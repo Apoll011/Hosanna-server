@@ -281,6 +281,28 @@ export function registerServiceTools(
   );
 
   server.registerTool(
+    "services.delete",
+    {
+      title: "Delete service",
+      description: "Soft-delete a service plan.",
+      inputSchema: z.object({
+        serviceId: z.string().uuid(),
+      }),
+    },
+    async ({ serviceId }) => {
+      try {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "service.delete");
+        requireWriteEntitlement(ctx);
+        await serviceService(ctx).delete(serviceId);
+        return jsonResult({ deleted: true, serviceId });
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
     "services.plan_suggest",
     {
       title: "Suggest a service plan",
