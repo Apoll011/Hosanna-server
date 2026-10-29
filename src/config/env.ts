@@ -88,4 +88,10 @@ export const env = {
   mcpResourceUrl:
     optional("MCP_RESOURCE_URL") ??
     `http://127.0.0.1:${parseInt(process.env.PORT ?? "3000", 10)}/mcp`,
+
+  // ── Metadata search (Studio AI / MCP) ─────────────────────────────────────
+  /** YouTube Data API v3 key — improves `{youtube:}` lookups. */
+  youtubeApiKey: optional("YOUTUBE_API_KEY"),
+  /** Brave Search API key — preferred web search for metadata. */
+  braveSearchApiKey: optional("BRAVE_SEARCH_API_KEY"),
 };

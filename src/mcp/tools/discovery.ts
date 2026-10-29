@@ -84,6 +84,8 @@ export function registerDiscoveryTools(
               "agenda.update",
               "agenda.delete",
               "metadata.musicbrainz_search",
+              "metadata.youtube_search",
+              "metadata.web_search",
             ],
           },
           resources: [

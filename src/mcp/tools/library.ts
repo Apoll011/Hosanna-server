@@ -25,6 +25,8 @@ import {
   updateFolder,
 } from "../lib/libraryCrud.js";
 import { searchMusicBrainzRecordings } from "../lib/musicbrainz.js";
+import { searchWeb } from "../lib/webSearch.js";
+import { searchYouTube } from "../lib/youtubeSearch.js";
 
 export function registerLibraryTools(
   server: McpServer,
@@ -395,6 +397,62 @@ export function registerLibraryTools(
         }
         const result = await searchMusicBrainzRecordings(args);
         return jsonResult(result);
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "metadata.youtube_search",
+    {
+      title: "Search YouTube",
+      description:
+        "Find a reference video for ChordPro `{youtube: URL}`. Returns hits with ready-to-paste `directive` values. Prefer YouTube API when YOUTUBE_API_KEY is set.",
+      inputSchema: z.object({
+        title: z.string().optional(),
+        artist: z.string().optional(),
+        query: z.string().optional(),
+        limit: z.number().int().min(1).max(10).optional(),
+      }),
+    },
+    async (args) => {
+      try {
+        if (authInfo) {
+          try {
+            requireMcpContext(authInfo);
+          } catch {
+            /* allow unauthenticated metadata search */
+          }
+        }
+        return jsonResult(await searchYouTube(args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "metadata.web_search",
+    {
+      title: "Web search",
+      description:
+        "General web search for song metadata, CCLI, artist pages, or reference links. Prefer Brave when BRAVE_SEARCH_API_KEY is set.",
+      inputSchema: z.object({
+        query: z.string().min(1),
+        limit: z.number().int().min(1).max(10).optional(),
+      }),
+    },
+    async (args) => {
+      try {
+        if (authInfo) {
+          try {
+            requireMcpContext(authInfo);
+          } catch {
+            /* allow unauthenticated metadata search */
+          }
+        }
+        return jsonResult(await searchWeb(args));
       } catch (error) {
         return errorResult(error);
       }

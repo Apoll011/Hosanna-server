@@ -57,6 +57,8 @@ import { searchMusicBrainzRecordings } from "../mcp/lib/musicbrainz.js";
 import { propagateVerseChords } from "../mcp/lib/propagateChords.js";
 import { validateServicePlan } from "../mcp/lib/serviceElements.js";
 import { transposeChordProSource } from "../mcp/lib/transposeSource.js";
+import { searchWeb } from "../mcp/lib/webSearch.js";
+import { searchYouTube } from "../mcp/lib/youtubeSearch.js";
 import type { AiProvider } from "./orgAiConfig.service.js";
 import {
   AI_PROVIDER_DEFAULT_BASE_URL,
@@ -321,6 +323,26 @@ function buildHosannaTools(authInfo: AuthInfo) {
       }),
       execute: async (args) =>
         textResult(await searchMusicBrainzRecordings(args)),
+    }),
+    metadata_youtube_search: tool({
+      description:
+        "Search YouTube for a reference video. Returns hits with `directive` like `{youtube: https://www.youtube.com/watch?v=...}` ready to paste into ChordPro. Use when completing metadata or the user asks for a YouTube link.",
+      inputSchema: z.object({
+        title: z.string().optional(),
+        artist: z.string().optional(),
+        query: z.string().optional(),
+        limit: z.number().int().min(1).max(10).optional(),
+      }),
+      execute: async (args) => textResult(await searchYouTube(args)),
+    }),
+    metadata_web_search: tool({
+      description:
+        "General web search for song metadata, CCLI, lyrics sources, or reference pages. Prefer for artist/title confirmation when MusicBrainz is thin.",
+      inputSchema: z.object({
+        query: z.string().min(1),
+        limit: z.number().int().min(1).max(10).optional(),
+      }),
+      execute: async (args) => textResult(await searchWeb(args)),
     }),
     chordpro_validate: tool({
       description: "Lint and parse ChordPro text.",
@@ -897,7 +919,8 @@ const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church son
 - Folders: list/create/update/delete
 - Collections: list/get/create/update/delete, add_songs/remove_songs
 - Agenda: list/get/create/update/delete
-- Metadata: MusicBrainz search; ChordPro validate/format/transpose/convert/propagate
+- Metadata: MusicBrainz, YouTube (for \`{youtube:}\`), web search; ChordPro validate/format/transpose/convert/propagate
+- When completing metadata: MusicBrainz for title/artist/release; YouTube search for \`{youtube: URL}\` (use hits[].directive); web search for extra confirmation. Propose the ChordPro edit — do not invent lyrics.
 
 ## Hard rules
 - Never invent lyrics, chords, or library songs. Ask when content is missing.
