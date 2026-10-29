@@ -24,7 +24,6 @@
     "@ai-sdk/anthropic": "^4.0.92",
     "@ai-sdk/google": "^4.0.108",
     "@ai-sdk/openai": "^4.0.105",
-    "@better-auth/cimd": "^1.7.14",
     "@better-auth/i18n": "^1.7.14",
     "@better-auth/infra": "^0.4.5",
     "@better-auth/mcp": "^1.7.14",
@@ -66,5 +65,8 @@
     "prisma": "^7.*",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
+  },
+  "overrides": {
+    "better-call": "1.4.4"
   }
 }
