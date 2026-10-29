@@ -2,6 +2,10 @@ import { Router } from "express";
 import { z } from "zod";
 import { assertUser } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
+import {
+  nativeWebFetch,
+  resolveNativeWebAuth,
+} from "../mcp/lib/nativeWeb.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 export const cifraRouter = Router();
@@ -30,6 +34,25 @@ const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
   "AppleWebKit/537.36 (KHTML, like Gecko) " +
   "Chrome/131.0.0.0 Safari/537.36";
+
+/** Browser-like headers — Cifra Club sits behind Akamai bot protection. */
+const BROWSER_HEADERS: Record<string, string> = {
+  "User-Agent": USER_AGENT,
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+  "Cache-Control": "no-cache",
+  Pragma: "no-cache",
+  "Sec-Ch-Ua":
+    '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+  "Sec-Ch-Ua-Mobile": "?0",
+  "Sec-Ch-Ua-Platform": '"Windows"',
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-User": "?1",
+  "Upgrade-Insecure-Requests": "1",
+};
 
 const importSchema = z.object({
   url: z.string().url(),
@@ -282,7 +305,60 @@ function extractUltimateGuitar(html: string): string | undefined {
   return undefined;
 }
 
-async function fetchSong(url: URL): Promise<SongResult> {
+/** Best-effort chord body from provider Fetch Markdown (DeepSeek). */
+function extractCifraFromMarkdown(markdown: string): string | undefined {
+  const fenced = [
+    ...markdown.matchAll(/```(?:text|chordpro|cifra)?\n([\s\S]*?)```/gi),
+  ]
+    .map((m) => m[1]?.trim())
+    .filter((b): b is string => Boolean(b && /\[[A-G]/.test(b)));
+  if (fenced[0]) return fenced[0];
+
+  // Longest indented / pre-like block that looks like chords+lyrics
+  const blocks = markdown
+    .split(/\n{2,}/)
+    .map((b) => b.trim())
+    .filter((b) => b.length > 40 && /\[[A-G][#b]?/.test(b));
+  blocks.sort((a, b) => b.length - a.length);
+  return blocks[0];
+}
+
+async function fetchSongViaNative(
+  url: URL,
+  source: SongResult["source"],
+  orgId: string,
+): Promise<SongResult | null> {
+  const auth = await resolveNativeWebAuth(orgId);
+  if (!auth) return null;
+
+  const page = await nativeWebFetch(auth, url.toString());
+  if (!page.content?.trim()) return null;
+
+  const result: SongResult = {
+    source,
+    source_url: url.toString(),
+  };
+
+  // Title often like "Song - Artist | Cifra Club"
+  const titleLine = page.title || "";
+  const dash = titleLine.match(/^(.+?)\s*[-–|]\s*(.+?)(?:\s*[-|].*)?$/);
+  if (dash) {
+    result.name = dash[1].trim();
+    result.artist = dash[2].replace(/\s*Cifra Club.*/i, "").trim();
+  } else if (titleLine) {
+    result.name = titleLine.replace(/\s*[-|].*Cifra Club.*/i, "").trim();
+  }
+
+  result.youtube_url = extractYouTubeUrl(page.content);
+  result.cifra =
+    extractCifraFromMarkdown(page.content) ||
+    extractCifraClub(page.content) ||
+    page.content.slice(0, 20_000);
+
+  return result;
+}
+
+async function fetchSong(url: URL, orgId?: string): Promise<SongResult> {
   const source = detectSource(url);
 
   if (!source) {
@@ -298,13 +374,30 @@ async function fetchSong(url: URL): Promise<SongResult> {
 
   const response = await fetch(url.toString(), {
     headers: {
-      "User-Agent": USER_AGENT,
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.9",
+      ...BROWSER_HEADERS,
+      Referer:
+        source === "cifraclub"
+          ? "https://www.cifraclub.com.br/"
+          : "https://www.ultimate-guitar.com/",
+      "Sec-Fetch-Site": "same-origin",
     },
+    redirect: "follow",
   });
 
   if (!response.ok) {
+    if (response.status === 403 && orgId) {
+      try {
+        const viaNative = await fetchSongViaNative(url, source, orgId);
+        if (viaNative?.cifra) return viaNative;
+      } catch {
+        /* fall through to error */
+      }
+    }
+    if (response.status === 403 && source === "cifraclub") {
+      throw new Error(
+        "Failed to fetch page (Status 403): Cifra Club blocked this server via Akamai. Set org AI to DeepSeek (native Fetch) or paste ChordPro / use Ultimate Guitar.",
+      );
+    }
     throw new Error(`Failed to fetch page (Status ${response.status})`);
   }
 
@@ -352,7 +445,7 @@ cifraRouter.get(
     }
 
     try {
-      const result = await fetchSong(url);
+      const result = await fetchSong(url, req.orgId);
 
       return res
         .set("Cache-Control", "public, max-age=300, s-maxage=3600")

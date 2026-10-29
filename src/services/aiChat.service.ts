@@ -77,6 +77,13 @@ import {
 } from "../mcp/lib/serviceElements.js";
 import { mapToolError } from "../mcp/lib/toolErrors.js";
 import { transposeChordProSource } from "../mcp/lib/transposeSource.js";
+import {
+  nativeWebAuthFromRuntime,
+  nativeWebFetch,
+  type NativeWebAuth,
+  NATIVE_WEB_CAPABILITIES,
+  providerSupportsNativeFetch,
+} from "../mcp/lib/nativeWeb.js";
 import { searchWeb } from "../mcp/lib/webSearch.js";
 import { searchYouTube } from "../mcp/lib/youtubeSearch.js";
 import type { AiProvider } from "./orgAiConfig.service.js";
@@ -155,7 +162,14 @@ function textResult(data: unknown) {
   return typeof data === "string" ? data : JSON.stringify(data, null, 2);
 }
 
-function buildHosannaTools(authInfo: AuthInfo) {
+function buildHosannaTools(
+  authInfo: AuthInfo,
+  opts?: { nativeWebAuth?: NativeWebAuth | null },
+) {
+  const nativeWebAuth = opts?.nativeWebAuth ?? null;
+  const webBackend = nativeWebAuth
+    ? `native(${nativeWebAuth.provider})→duckduckgo`
+    : "duckduckgo";
   return {
     hosanna_capabilities: tool({
       description: "Summarize Hosanna tools and ChordPro feature support.",
@@ -166,6 +180,13 @@ function buildHosannaTools(authInfo: AuthInfo) {
           skills: SKILL_NAMES.map((n) => `hosanna://skills/${n}`),
           howToReadSkills:
             "Call hosanna_skills_list then hosanna_skill_read({name}). Skill bodies are NOT auto-injected — you must read them.",
+          nativeWeb: {
+            active: nativeWebAuth?.provider ?? null,
+            capabilities: NATIVE_WEB_CAPABILITIES,
+            note: nativeWebAuth
+              ? `Org AI is ${nativeWebAuth.provider} — metadata_web_search/fetch use that provider's Search & Fetch APIs.`
+              : "Org AI has no native Search/Fetch; metadata_web_search uses DuckDuckGo.",
+          },
           tools: {
             docs: [
               "hosanna_skills_list",
@@ -203,7 +224,15 @@ function buildHosannaTools(authInfo: AuthInfo) {
               "agenda CRUD",
               "trash_list",
             ],
-            metadata: ["musicbrainz", "youtube", "web(duckduckgo)"],
+            metadata: [
+              "musicbrainz",
+              "youtube",
+              `web(${webBackend})`,
+              ...(nativeWebAuth &&
+              providerSupportsNativeFetch(nativeWebAuth.provider)
+                ? ["web_fetch"]
+                : []),
+            ],
             chordpro: [
               "validate",
               "format",
@@ -563,17 +592,44 @@ function buildHosannaTools(authInfo: AuthInfo) {
         query: z.string().optional(),
         limit: z.number().int().min(1).max(10).optional(),
       }),
-      execute: async (args) => textResult(await searchYouTube(args)),
+      execute: async (args) =>
+        textResult(await searchYouTube({ ...args, nativeAuth: nativeWebAuth })),
     }),
     metadata_web_search: tool({
-      description:
-        "General web search for song metadata, CCLI, lyrics sources, or reference pages. Prefer for artist/title confirmation when MusicBrainz is thin.",
+      description: nativeWebAuth
+        ? `Web search via ${nativeWebAuth.provider} Search API (falls back to DuckDuckGo). Song metadata, CCLI, reference pages.`
+        : "General web search (DuckDuckGo). Switch org AI to DeepSeek to use native Search & Fetch with the same API key.",
       inputSchema: z.object({
-        query: z.string().min(1),
+        query: z.string().min(1).max(128),
         limit: z.number().int().min(1).max(10).optional(),
+        oriQuestion: z
+          .string()
+          .max(128)
+          .optional()
+          .describe("Original user question — improves native search ranking."),
       }),
-      execute: async (args) => textResult(await searchWeb(args)),
+      execute: async (args) =>
+        textResult(
+          await searchWeb({
+            query: args.query,
+            limit: args.limit,
+            oriQuestion: args.oriQuestion,
+            nativeAuth: nativeWebAuth,
+          }),
+        ),
     }),
+    ...(nativeWebAuth && providerSupportsNativeFetch(nativeWebAuth.provider)
+      ? {
+          metadata_web_fetch: tool({
+            description: `Fetch a URL as Markdown via ${nativeWebAuth.provider} Fetch. Use for CCLI pages, artist pages, or when Cifra Club HTML scrape is blocked.`,
+            inputSchema: z.object({
+              url: z.string().url().max(8192),
+            }),
+            execute: async ({ url }) =>
+              textResult(await nativeWebFetch(nativeWebAuth, url)),
+          }),
+        }
+      : {}),
     chordpro_validate: tool({
       description: "Lint and parse ChordPro text.",
       inputSchema: z.object({ content: z.string() }),
@@ -1447,7 +1503,7 @@ const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church son
 - Collections: list/get/create/update/delete, add_songs/remove_songs
 - Agenda: list/get/create/update/delete
 - Metadata: MusicBrainz, YouTube (for \`{youtube:}\`), DuckDuckGo web search; ChordPro validate/format/transpose/convert/propagate
-- When completing metadata: MusicBrainz for title/artist/release; YouTube search for \`{youtube: URL}\` (use hits[].directive); web search for extra confirmation. Propose the ChordPro edit — do not invent lyrics.
+- When completing metadata: MusicBrainz for title/artist/release; YouTube search for \`{youtube: URL}\` (use hits[].directive); web search for extra confirmation. If \`metadata_web_fetch\` is available (DeepSeek org AI), use it to read CCLI/artist pages or Cifra URLs blocked by Akamai. Call metadata tools one at a time (MusicBrainz rate-limits parallel bursts with 503). If a tool returns 403/503, report the structured error — do not claim success. Propose the ChordPro edit — do not invent lyrics.
 
 ## Hard rules
 - Never invent lyrics, chords, or library songs. Ask when content is missing.
@@ -1503,7 +1559,8 @@ export class AiChatService {
       runtime.apiKey,
       runtime.baseUrl,
     );
-    const tools = buildHosannaTools(opts.authInfo);
+    const nativeWebAuth = nativeWebAuthFromRuntime(runtime);
+    const tools = buildHosannaTools(opts.authInfo, { nativeWebAuth });
     const system = STUDIO_CHAT_SYSTEM + contextBlock(opts.pageContext);
     const modelMessages = await convertToModelMessages(opts.messages);
 

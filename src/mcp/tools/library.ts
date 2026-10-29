@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   errorResult,
   folders as folderService,
+  getMcpContext,
   jsonResult,
   requireMcpContext,
   requirePermission,
@@ -30,8 +31,19 @@ import {
   updateFolder,
 } from "../lib/libraryCrud.js";
 import { searchMusicBrainzRecordings } from "../lib/musicbrainz.js";
+import {
+  nativeWebFetch,
+  providerSupportsNativeFetch,
+  resolveNativeWebAuth,
+} from "../lib/nativeWeb.js";
 import { searchWeb } from "../lib/webSearch.js";
 import { searchYouTube } from "../lib/youtubeSearch.js";
+
+async function nativeAuthForTools(authInfo?: AuthInfo) {
+  const ctx = getMcpContext(authInfo);
+  if (!ctx) return null;
+  return resolveNativeWebAuth(ctx.orgId);
+}
 
 export function registerLibraryTools(
   server: McpServer,
@@ -499,14 +511,8 @@ export function registerLibraryTools(
     },
     async (args) => {
       try {
-        if (authInfo) {
-          try {
-            requireMcpContext(authInfo);
-          } catch {
-            /* allow unauthenticated metadata search */
-          }
-        }
-        return jsonResult(await searchYouTube(args));
+        const nativeAuth = await nativeAuthForTools(authInfo);
+        return jsonResult(await searchYouTube({ ...args, nativeAuth }));
       } catch (error) {
         return errorResult(error);
       }
@@ -518,22 +524,54 @@ export function registerLibraryTools(
     {
       title: "Web search",
       description:
-        "General web search (DuckDuckGo) for song metadata, CCLI, artist pages, or reference links.",
+        "Web search for song metadata, CCLI, artist pages, or reference links. Uses DeepSeek Search when the org AI provider is DeepSeek; otherwise DuckDuckGo.",
       inputSchema: z.object({
-        query: z.string().min(1),
+        query: z.string().min(1).max(128),
         limit: z.number().int().min(1).max(10).optional(),
+        oriQuestion: z.string().max(128).optional(),
       }),
     },
     async (args) => {
       try {
-        if (authInfo) {
-          try {
-            requireMcpContext(authInfo);
-          } catch {
-            /* allow unauthenticated metadata search */
-          }
+        const nativeAuth = await nativeAuthForTools(authInfo);
+        return jsonResult(
+          await searchWeb({
+            query: args.query,
+            limit: args.limit,
+            oriQuestion: args.oriQuestion,
+            nativeAuth,
+          }),
+        );
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "metadata.web_fetch",
+    {
+      title: "Fetch web page",
+      description:
+        "Fetch a URL as Markdown via the org AI provider's native Fetch API (DeepSeek). Useful when HTML scrapes are blocked (e.g. Cifra Club Akamai).",
+      inputSchema: z.object({
+        url: z.string().url().max(8192),
+      }),
+    },
+    async ({ url }) => {
+      try {
+        const nativeAuth = await nativeAuthForTools(authInfo);
+        if (
+          !nativeAuth ||
+          !providerSupportsNativeFetch(nativeAuth.provider)
+        ) {
+          return errorResult(
+            new Error(
+              "Native web fetch unavailable. Set org AI provider to DeepSeek (with API key) to enable Fetch.",
+            ),
+          );
         }
-        return jsonResult(await searchWeb(args));
+        return jsonResult(await nativeWebFetch(nativeAuth, url));
       } catch (error) {
         return errorResult(error);
       }

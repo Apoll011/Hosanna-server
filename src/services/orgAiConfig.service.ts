@@ -4,6 +4,7 @@ import {
   encryptSecret,
   isAiCryptoConfigured,
 } from "../lib/aiCrypto.js";
+import { NATIVE_WEB_CAPABILITIES } from "../mcp/lib/nativeWebCapabilities.js";
 import { AppError } from "../utils/errors.js";
 
 export type AiProvider =
@@ -79,6 +80,7 @@ export function publicAiSettings(row: {
   apiKeyCiphertext: string | null;
 } | null) {
   const provider = (row?.provider as AiProvider) ?? "openai";
+  const nativeWeb = NATIVE_WEB_CAPABILITIES[provider];
   return {
     provider,
     model: row?.model ?? "gpt-4o-mini",
@@ -89,6 +91,16 @@ export function publicAiSettings(row: {
     providers: AI_PROVIDERS,
     modelPresets: AI_MODEL_PRESETS,
     defaultBaseUrls: AI_PROVIDER_DEFAULT_BASE_URL,
+    /** Per-provider: whether Hosanna can call REST Search/Fetch with the same BYOK key. */
+    nativeWebCapabilities: NATIVE_WEB_CAPABILITIES,
+    nativeWeb: {
+      search: nativeWeb.search,
+      fetch: nativeWeb.fetch,
+      note: nativeWeb.note,
+      active: Boolean(
+        row?.enabled && row?.apiKeyCiphertext && nativeWeb.search,
+      ),
+    },
   };
 }
 
