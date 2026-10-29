@@ -1,26 +1,72 @@
 ---
 name: hosanna-safe-data
-description: Work safely with Hosanna tenant data — auth, permissions, drafts, and concurrency.
+description: Work safely with Hosanna tenant data — auth, permissions, draft-before-save, concurrency, and no fabricated library content.
 ---
 
 # Safe data workflows
 
-## Auth
-- Better Auth bearer (or cookie) session with **active organization**
-- Check `hosanna.permissions` before mutating
-- Writes need active/trialing subscription (`entitled`)
+## Goal
 
-## Isolation
-Org scoping is server-side. Never treat client-supplied org ids as authorization.
+Protect church data: correct tenant, correct permissions, no accidental overwrites, no invented songs/lyrics, and no writes without user approval.
 
-## Draft before save
-Always use `*_draft` / `propose_*` tools, present to the user, then `*.save`.
+## When to use
+
+**Always** before any create/edit/fix/save/delete on songs or services. Load this skill at session start for org work.
+
+## Auth and tenancy
+
+1. Call `hosanna.permissions`.
+2. Require `authenticated: true` with an active organization for org tools.
+3. Check `entitled` before writes — inactive subscriptions are read-only.
+4. Check role permissions (`song.*`, `service.*`) before attempting mutations.
+
+Auth is Better Auth bearer (or cookie) with `activeOrganizationId`. Org scoping is enforced server-side — never treat a client-supplied org id as authorization.
+
+Unauthenticated clients may still use pure ChordPro tools (`chordpro.*`).
+
+## Draft before save (mandatory)
+
+| Intent | Do this first | Persist with |
+|--------|---------------|--------------|
+| New song | `songs.create_draft` | `songs.save` mode=`create` |
+| Edit/fix song | `songs.propose_edit` / `songs.propose_fix` | `songs.save` mode=`update` |
+| New service | `services.create_draft` or `services.plan_suggest` | `services.save` mode=`create` |
+| Edit service | `services.propose_edit` | `services.save` mode=`update` |
+
+Present the proposal (content + validation + diff/reasoning) and wait for explicit user approval. Do not “helpfully” save in the same turn unless the user clearly ordered an immediate save.
 
 ## Concurrency
-Updates require the song/service `updatedAt` from the last read. On conflict, reload and retry.
+
+Song and service updates need the `updatedAt` from the last read/proposal.
+
+- On conflict errors: reload, show the newer version, re-apply only with fresh consent
+- Never invent or omit `updatedAt` on updates
+
+## Validation before persist
+
+- Songs: `chordpro.validate` (or proposal validation). Use `allowInvalid` only if the user accepts known issues.
+- Services: `services.validate` — song elements must have real `songId`s.
+
+## Content integrity
+
+- Never fabricate lyrics, chords, verses, or library songs
+- Never silently delete sections you don’t understand — ask
+- Prefer preserve-and-fix over rewrite-from-scratch
 
 ## Do not
-- Expose raw SQL or unrestricted database tools
-- Bypass RBAC
-- Auto-save destructive changes
-- Fabricate library content
+
+- Expose SQL or unrestricted database access
+- Bypass RBAC or subscription gates
+- Auto-save destructive deletes
+- Claim Studio-only features (print, Ace UX, Bolls scripture fetch, canvas annotations) exist as MCP tools
+
+## Quick preflight
+
+```
+[ ] hosanna.permissions checked
+[ ] Correct skill(s) read for the job
+[ ] Draft/propose done
+[ ] Validation reviewed with user
+[ ] User approved
+[ ] save with correct mode + updatedAt (updates)
+```

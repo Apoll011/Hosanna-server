@@ -13,6 +13,7 @@ function userMessage(text: string) {
 }
 
 const HARD_RULES = `
+Before tools: read hosanna://skills/hosanna-safe-data and the service skill(s) named in this prompt.
 Hard rules:
 - Use only songs that exist in the organization's library (songs.search / songs.get).
 - Validate with services.validate before presenting a final proposal.
@@ -41,10 +42,11 @@ date: ${date ?? "(ask)"}
 instructions: ${instructions ?? "(none)"}
 
 Workflow:
-1. Gather essentials; read hosanna://domain/services and hosanna://schemas/service-element-types.
-2. Discover songs with songs.search as needed.
-3. services.create_draft; services.validate.
-4. Present draft; services.save only after approval.
+1. Read hosanna://skills/services-create-edit and hosanna://skills/hosanna-safe-data.
+2. Gather essentials; read hosanna://domain/services and hosanna://schemas/service-element-types.
+3. Discover songs with songs.search as needed.
+4. services.create_draft; services.validate.
+5. Present draft; services.save only after approval.
 ${HARD_RULES}`),
   );
 
@@ -65,10 +67,11 @@ ${HARD_RULES}`),
 Instructions: ${instructions}
 
 Workflow:
-1. services.get.
-2. Apply only requested changes; preserve unrelated elements.
-3. services.propose_edit; services.validate.
-4. Present; save only after approval.
+1. Read hosanna://skills/services-create-edit and hosanna://skills/hosanna-safe-data.
+2. services.get.
+3. Apply only requested changes; preserve unrelated elements.
+4. services.propose_edit; services.validate.
+5. Present; save only after approval.
 ${HARD_RULES}`),
   );
 
@@ -89,10 +92,11 @@ ${HARD_RULES}`),
 instructions: ${instructions ?? "(none)"}
 
 Workflow:
-1. services.get and services.validate.
-2. Identify missing elements, song refs, or structure.
-3. Suggest additions based on library search and user requirements — do not invent unavailable data.
-4. Propose via services.propose_edit; save only after approval.
+1. Read hosanna://skills/services-plan-complete and hosanna://skills/services-create-edit.
+2. services.get and services.validate.
+3. Identify missing elements, song refs, or structure.
+4. Suggest additions based on library search and user requirements — do not invent unavailable data.
+5. Propose via services.propose_edit; save only after approval.
 ${HARD_RULES}`),
   );
 
@@ -110,9 +114,10 @@ ${HARD_RULES}`),
       userMessage(`Objective: fix validation/structural issues in service ${serviceId}.
 
 Workflow:
-1. services.get; services.validate.
-2. Explain issues; propose fixes that preserve the user's intended plan.
-3. services.propose_edit; present; save only after approval.
+1. Read hosanna://skills/services-create-edit and hosanna://skills/hosanna-safe-data.
+2. services.get; services.validate.
+3. Explain issues; propose fixes that preserve the user's intended plan.
+4. services.propose_edit; present; save only after approval.
 ${HARD_RULES}`),
   );
 
@@ -130,9 +135,10 @@ ${HARD_RULES}`),
       userMessage(`Objective: review service ${serviceId} without changing it.
 
 Workflow:
-1. services.get; services.validate.
-2. Report actionable suggestions (ordering, missing refs, completeness).
-3. Do not call services.save unless the user later asks to apply a fix.
+1. Read hosanna://skills/services-create-edit.
+2. services.get; services.validate.
+3. Report actionable suggestions (ordering, missing refs, completeness).
+4. Do not call services.save unless the user later asks to apply a fix.
 ${HARD_RULES}`),
   );
 
@@ -158,10 +164,11 @@ maxSongs: ${maxSongs ?? "5"}
 instructions: ${instructions ?? "(none)"}
 
 Workflow:
-1. Read hosanna://domain/services.
-2. services.plan_suggest with constraints; optionally refine with songs.search.
-3. Explain reasoning for song choices from the actual library.
-4. Present draft; services.save only after approval.
+1. Read hosanna://skills/services-plan-complete, hosanna://skills/services-create-edit, and hosanna://skills/hosanna-safe-data.
+2. Read hosanna://domain/services.
+3. services.plan_suggest with constraints; optionally refine with songs.search.
+4. Explain reasoning for song choices from the actual library.
+5. Present draft; services.save only after approval.
 ${HARD_RULES}`),
   );
 }

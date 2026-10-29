@@ -81,6 +81,7 @@ export function registerDiscoveryTools(
             "hosanna://skills/{name}",
           ],
           prompts: {
+            system: ["hosanna.system"],
             songs: [
               "songs.create",
               "songs.edit",
@@ -100,8 +101,20 @@ export function registerDiscoveryTools(
               "services.plan",
             ],
           },
+          skills: [
+            "hosanna://skills/hosanna-safe-data",
+            "hosanna://skills/chordpro-create",
+            "hosanna://skills/songs-edit-fix",
+            "hosanna://skills/chordpro-directives-variants",
+            "hosanna://skills/songs-transpose-arrange",
+            "hosanna://skills/songs-validate-review",
+            "hosanna://skills/services-create-edit",
+            "hosanna://skills/services-plan-complete",
+          ],
           chordproFeatures: chordpro.features,
           notes: [
+            "Server instructions tell you to READ skill resources — they are not auto-injected into context.",
+            "Start with prompt hosanna.system (or read hosanna://skills/hosanna-safe-data + job skills).",
             "Org-scoped song/service tools require Better Auth bearer session with activeOrganizationId.",
             "Use draft/propose tools first; persist only with *.save after user approval.",
             "Never fabricate lyrics. Instrument diagrams are client-render-only.",

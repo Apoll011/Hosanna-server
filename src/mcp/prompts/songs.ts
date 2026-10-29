@@ -13,6 +13,7 @@ function userMessage(text: string) {
 }
 
 const HARD_RULES = `
+Before tools: read hosanna://skills/hosanna-safe-data and the song skill(s) named in this prompt.
 Hard rules:
 - Never fabricate lyrics, chords, verses, or present invented content as authentic.
 - Never silently drop information from the document.
@@ -43,11 +44,12 @@ Given:
 - instructions: ${instructions ?? "(none)"}
 
 Workflow:
-1. Ask for missing essential metadata (title, artist, key if needed).
-2. Read hosanna://chordpro/guide and hosanna://chordpro/examples/valid.
-3. Draft ChordPro using supported syntax only.
-4. Call songs.create_draft then chordpro.validate.
-5. Present the proposal; save with songs.save only after approval.
+1. Read hosanna://skills/chordpro-create and hosanna://skills/hosanna-safe-data.
+2. Ask for missing essential metadata (title, artist, key if needed).
+3. Read hosanna://chordpro/guide and hosanna://chordpro/examples/valid.
+4. Draft ChordPro using supported syntax only.
+5. Call songs.create_draft then chordpro.validate.
+6. Present the proposal; save with songs.save only after approval.
 ${HARD_RULES}`),
   );
 
@@ -68,10 +70,11 @@ ${HARD_RULES}`),
 Instructions: ${instructions}
 
 Workflow:
-1. songs.get to load current content.
-2. Make only the requested changes; preserve unrelated lyrics/metadata/variants.
-3. songs.propose_edit with the new content.
-4. Show the diff; songs.save only after approval.
+1. Read hosanna://skills/songs-edit-fix and hosanna://skills/hosanna-safe-data.
+2. songs.get to load current content.
+3. Make only the requested changes; preserve unrelated lyrics/metadata/variants.
+4. songs.propose_edit with the new content.
+5. Show the diff; songs.save only after approval.
 ${HARD_RULES}`),
   );
 
@@ -89,11 +92,12 @@ ${HARD_RULES}`),
       userMessage(`Objective: fix ChordPro issues in song ${songId}.
 
 Workflow:
-1. songs.get and chordpro.validate / songs.propose_fix.
-2. Explain each problem in plain language.
-3. Propose corrections that preserve original lyrics and meaning.
-4. Do not invent missing lyrics or silently remove information.
-5. Present proposal; songs.save only after approval.
+1. Read hosanna://skills/songs-edit-fix and hosanna://skills/hosanna-safe-data.
+2. songs.get and chordpro.validate / songs.propose_fix.
+3. Explain each problem in plain language.
+4. Propose corrections that preserve original lyrics and meaning.
+5. Do not invent missing lyrics or silently remove information.
+6. Present proposal; songs.save only after approval.
 ${HARD_RULES}`),
   );
 
@@ -117,11 +121,12 @@ content provided: ${content ? "yes" : "no"}
 instructions: ${instructions ?? "(none)"}
 
 Workflow:
-1. Load song or use provided content; chordpro.parse_summary.
-2. Identify missing metadata, section markers, or structure.
-3. Distinguish structural inferences (safe) from musical/lyrical content (must ask user).
-4. Never fabricate lyrics/chords/verses as authentic.
-5. Propose via songs.propose_edit or songs.create_draft; save only after approval.
+1. Read hosanna://skills/songs-edit-fix (and chordpro-create if new).
+2. Load song or use provided content; chordpro.parse_summary.
+3. Identify missing metadata, section markers, or structure.
+4. Distinguish structural inferences (safe) from musical/lyrical content (must ask user).
+5. Never fabricate lyrics/chords/verses as authentic.
+6. Propose via songs.propose_edit or songs.create_draft; save only after approval.
 ${HARD_RULES}`),
   );
 
@@ -139,9 +144,10 @@ ${HARD_RULES}`),
       userMessage(`Objective: review song ${songId} without changing it.
 
 Workflow:
-1. songs.get, chordpro.validate, chordpro.parse_summary.
-2. Report findings and suggested improvements.
-3. Do not call songs.save unless the user later asks to apply a specific fix.
+1. Read hosanna://skills/songs-validate-review.
+2. songs.get, chordpro.validate, chordpro.parse_summary.
+3. Report findings and suggested improvements.
+4. Do not call songs.save unless the user later asks to apply a specific fix.
 ${HARD_RULES}`),
   );
 
@@ -160,10 +166,11 @@ ${HARD_RULES}`),
       userMessage(`Objective: transpose song ${songId} to key ${toKey}.
 
 Workflow:
-1. songs.get.
-2. chordpro.transpose with toKey=${toKey}.
-3. Preserve lyrics, sections, variants, unrelated metadata.
-4. songs.propose_edit with transposed content; validate; present; save only after approval.
+1. Read hosanna://skills/songs-transpose-arrange and hosanna://skills/hosanna-safe-data.
+2. songs.get.
+3. chordpro.transpose with toKey=${toKey}.
+4. Preserve lyrics, sections, variants, unrelated metadata.
+5. songs.propose_edit with transposed content; validate; present; save only after approval.
 ${HARD_RULES}`),
   );
 
@@ -184,10 +191,11 @@ ${HARD_RULES}`),
 Instructions: ${instructions}
 
 Workflow:
-1. Read hosanna://chordpro/features and hosanna://chordpro/examples/variants.
-2. songs.get; explain any unsupported requests (e.g. {define}, layout directives).
-3. Apply only supported changes (sections, repeats, variations, chord placement).
-4. Propose via songs.propose_edit; validate; save only after approval.
+1. Read hosanna://skills/songs-transpose-arrange and hosanna://skills/chordpro-directives-variants.
+2. Read hosanna://chordpro/features and hosanna://chordpro/examples/variants.
+3. songs.get; explain any unsupported requests (e.g. {define}, layout directives).
+4. Apply only supported changes (sections, repeats, variations, chord placement).
+5. Propose via songs.propose_edit; validate; save only after approval.
 ${HARD_RULES}`),
   );
 
@@ -205,8 +213,9 @@ ${HARD_RULES}`),
       userMessage(`Objective: explain ChordPro topic "${topic}" for Hosanna.
 
 Workflow:
-1. chordpro.directives with name if it looks like a directive; else read hosanna://chordpro/guide and hosanna://chordpro/features.
-2. Give accurate examples and state limitations (parsed vs formatter-only vs unsupported).
-3. Do not invent features that are not implemented.`),
+1. Read hosanna://skills/chordpro-directives-variants.
+2. chordpro.directives with name if it looks like a directive; else read hosanna://chordpro/guide and hosanna://chordpro/features.
+3. Give accurate examples and state limitations (parsed vs formatter-only vs unsupported).
+4. Do not invent features that are not implemented.`),
   );
 }
