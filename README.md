@@ -18,7 +18,7 @@ Node.js, TypeScript, Express, Prisma ORM, PostgreSQL, Zod, Better Auth,
 Hosanna exposes an MCP interface for AI clients (songs, services, ChordPro):
 
 - **HTTP:** `POST /mcp` (Streamable HTTP). Auth is optional for ChordPro tools; song/service tools need an org context.
-- **OAuth 2.1:** Better Auth MCP plugin — clients discover `/.well-known/oauth-protected-resource` (and AS metadata), then authorize via Studio (`/login` → `/oauth/consent`). Set `MCP_RESOURCE_URL` to the public `/mcp` URL. Session Bearer tokens still work.
+- **OAuth 2.1:** Better Auth MCP plugin — clients discover `/.well-known/oauth-protected-resource[/mcp]` (and AS metadata), then authorize via Studio (`STUDIO_URL/login` → `/oauth/consent`). Set `MCP_RESOURCE_URL` to the exact public `/mcp` URL clients use (audience binding). Session Bearer tokens still work. Claude / ChatGPT / Cursor need DCR (`allowDynamicClientRegistration`) plus CORS/trustedOrigins for their hosts.
 - **Propagate chords:** `chordpro.propagate_chords` copies `[Am]` / `[G]` / … from the first chorded verse onto later verses at the same lyric offsets (does not invent chords).
 - **stdio:** `HOSANNA_BEARER_TOKEN=<token> npm run mcp`
 

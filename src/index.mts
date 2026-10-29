@@ -66,16 +66,45 @@ app.use(
 );
 
 // ── CORS ────────────────────────────────────────────────────────────────────
+const corsOrigins = [
+  "http://localhost:5173",
+  "http://localhost",
+  "http://127.0.0.1:5173",
+  "hosanna://localhost",
+  "https://studio.hosanna.live",
+  "https://dev-studio.hosanna.live",
+  "https://hosanna.live",
+  // External MCP OAuth hosts (browser DCR / authorize)
+  "https://claude.ai",
+  "https://www.claude.ai",
+  "https://chatgpt.com",
+  "https://chat.openai.com",
+  "https://cursor.com",
+];
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "http://localhost",
-      "hosanna://localhost",
-      "https://studio.hosanna.live",
-      "https://dev-studio.hosanna.live",
-      "https://hosanna.live",
-    ],
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (corsOrigins.includes(origin)) return callback(null, true);
+      // Allow any *.hosanna.live / *.openai.com / *.cursor.com studio hosts
+      try {
+        const host = new URL(origin).hostname;
+        if (
+          host === "hosanna.live" ||
+          host.endsWith(".hosanna.live") ||
+          host === "openai.com" ||
+          host.endsWith(".openai.com") ||
+          host === "cursor.com" ||
+          host.endsWith(".cursor.com") ||
+          host.endsWith(".cursor.sh")
+        ) {
+          return callback(null, true);
+        }
+      } catch {
+        /* reject */
+      }
+      return callback(null, false);
+    },
     credentials: true,
     exposedHeaders: ["set-auth-token"],
   }),
@@ -97,7 +126,20 @@ if (!isVercel) {
   );
 }
 
-app.all("/api/auth/*", toNodeHandler(auth));
+const authHandler = toNodeHandler(auth);
+
+// Better Auth owns /api/auth/* (OAuth AS, sessions, JWKS).
+app.all("/api/auth/*", authHandler);
+
+// RFC 9728 / RFC 8414 path-aware well-known documents live at the *origin*
+// root (not under /api/auth). MCP clients (Claude, ChatGPT, Cursor) fetch
+// these before DCR + authorize — without them OAuth never starts.
+app.all("/.well-known/oauth-protected-resource", authHandler);
+app.all("/.well-known/oauth-protected-resource/*", authHandler);
+app.all("/.well-known/oauth-authorization-server", authHandler);
+app.all("/.well-known/oauth-authorization-server/*", authHandler);
+app.all("/.well-known/openid-configuration", authHandler);
+app.all("/.well-known/openid-configuration/*", authHandler);
 
 // ── Body parsing ─────────────────────────────────────────────────────────────
 // 5 MB headroom for large replication push batches (songs with full lyrics)

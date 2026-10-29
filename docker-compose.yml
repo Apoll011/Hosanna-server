@@ -34,7 +34,11 @@ services:
       JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-8h}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
       MUSICIAN_TOKEN_DEFAULT_DAYS: ${MUSICIAN_TOKEN_DEFAULT_DAYS:-30}
-      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:5173}
+      # Better Auth issuer base (API origin). Studio is STUDIO_URL.
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3000}
+      STUDIO_URL: ${STUDIO_URL:-http://localhost:5173}
+      # Must match the public /mcp URL clients connect to (audience binding).
+      MCP_RESOURCE_URL: ${MCP_RESOURCE_URL:-http://127.0.0.1:3000/mcp}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-leader@church.org}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-change_me_immediately}
       SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Worship Director}

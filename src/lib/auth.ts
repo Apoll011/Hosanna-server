@@ -171,9 +171,19 @@ export const auth = betterAuth({
   trustedOrigins: [
     "http://localhost:5173",
     "http://localhost",
+    "http://127.0.0.1:5173",
     "https://*.hosanna.live",
     "https://hosanna.live",
     "hosanna://localhost",
+    // External MCP hosts (Claude / ChatGPT / Cursor) — browser DCR + redirects
+    "https://claude.ai",
+    "https://www.claude.ai",
+    "https://chatgpt.com",
+    "https://chat.openai.com",
+    "https://*.openai.com",
+    "https://cursor.com",
+    "https://*.cursor.com",
+    "https://*.cursor.sh",
   ],
   emailAndPassword: {
     enabled: true,
@@ -332,10 +342,20 @@ export const auth = betterAuth({
     bearer(),
     jwt(),
     mcp({
-      loginPage: "/login",
-      consentPage: "/oauth/consent",
+      // Absolute Studio URLs — relative paths would redirect to the API host.
+      loginPage: `${env.studioUrl.replace(/\/+$/, "")}/login`,
+      consentPage: `${env.studioUrl.replace(/\/+$/, "")}/oauth/consent`,
       resource: env.mcpResourceUrl,
-      // Cursor / Claude Code register custom-scheme or localhost callbacks.
+      // Prisma String[] cannot store null allowedScopes — declare explicitly.
+      scopes: ["openid", "profile", "email", "offline_access"],
+      resources: [
+        {
+          identifier: env.mcpResourceUrl,
+          name: "Hosanna MCP",
+          allowedScopes: ["openid", "profile", "email", "offline_access"],
+        },
+      ],
+      // Cursor / Claude / ChatGPT register custom-scheme or https callbacks.
       allowDynamicClientRegistration: true,
       allowUnauthenticatedClientRegistration: true,
       clientRegistrationDefaultApplicationType: "infer",
