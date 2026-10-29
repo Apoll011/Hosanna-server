@@ -3,6 +3,15 @@ import { z } from "zod";
 import { can } from "../../middleware/auth.js";
 import type { PermissionString } from "../../permissions/index.js";
 import { getChordProCapabilities } from "../lib/capabilities.js";
+import {
+  DOC_RESOURCES,
+  docsAccessReport,
+  listResources,
+  listSkills,
+  readDoc,
+  readSkill,
+  SKILL_NAMES,
+} from "../lib/docsAccess.js";
 import { errorResult, getMcpContext, jsonResult } from "../context.js";
 
 const SONG_PERMS: PermissionString[] = [
@@ -186,6 +195,150 @@ export function registerDiscoveryTools(
           entitled: ctx.entitled,
           locale: ctx.locale,
           permissions: allowed,
+        });
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "hosanna.skills_list",
+    {
+      title: "List skills",
+      description:
+        "List Hosanna skill documents (hosanna://skills/*) with on-disk existence and a short preview. Read full text with hosanna.skill_read.",
+      inputSchema: z.object({}),
+    },
+    async () => {
+      try {
+        return jsonResult({
+          skills: listSkills(),
+          access: docsAccessReport(),
+        });
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "hosanna.skill_read",
+    {
+      title: "Read skill",
+      description:
+        "Read the full SKILL.md body for a skill name (e.g. hosanna-safe-data or hosanna://skills/hosanna-safe-data).",
+      inputSchema: z.object({
+        name: z
+          .string()
+          .describe(`One of: ${SKILL_NAMES.join(", ")}`),
+      }),
+    },
+    async ({ name }) => {
+      try {
+        const skill = readSkill(name);
+        return jsonResult({
+          name: skill.name,
+          uri: skill.uri,
+          mimeType: "text/markdown",
+          bytes: Buffer.byteLength(skill.text, "utf8"),
+          text: skill.text,
+        });
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "hosanna.resources_list",
+    {
+      title: "List resources",
+      description: "List readable hosanna:// resource URIs (docs + skills).",
+      inputSchema: z.object({}),
+    },
+    async () => {
+      try {
+        return jsonResult({ resources: listResources() });
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "hosanna.resource_read",
+    {
+      title: "Read resource",
+      description:
+        "Read a hosanna:// resource by URI (skills, chordpro guide/features, domain docs, examples).",
+      inputSchema: z.object({
+        uri: z.string().describe("e.g. hosanna://chordpro/guide"),
+      }),
+    },
+    async ({ uri }) => {
+      try {
+        const trimmed = uri.trim();
+        if (trimmed.startsWith("hosanna://skills/")) {
+          const skill = readSkill(trimmed);
+          return jsonResult({
+            uri: skill.uri,
+            mimeType: "text/markdown",
+            text: skill.text,
+          });
+        }
+        const caps = getChordProCapabilities();
+        if (trimmed === "hosanna://chordpro/directives") {
+          return jsonResult({
+            uri: trimmed,
+            mimeType: "application/json",
+            text: JSON.stringify(caps.directives, null, 2),
+          });
+        }
+        if (trimmed === "hosanna://chordpro/features") {
+          return jsonResult({
+            uri: trimmed,
+            mimeType: "application/json",
+            text: JSON.stringify(caps.features, null, 2),
+          });
+        }
+        if (trimmed === "hosanna://ops/catalog") {
+          return jsonResult({
+            uri: trimmed,
+            mimeType: "application/json",
+            text: JSON.stringify(
+              {
+                tools: "see hosanna.capabilities",
+                resources: listResources(),
+                skills: SKILL_NAMES,
+              },
+              null,
+              2,
+            ),
+          });
+        }
+        const entry = DOC_RESOURCES.find((r) => r.uri === trimmed);
+        if (!entry?.relativePath) {
+          return jsonResult(
+            {
+              error: true,
+              code: "not_found",
+              message: `Unknown resource ${trimmed}`,
+              hint: "Call hosanna.resources_list",
+            },
+            true,
+          );
+        }
+        const text = readDoc(entry.relativePath);
+        return jsonResult({
+          uri: trimmed,
+          mimeType:
+            entry.kind === "chordpro"
+              ? "text/vnd.chordpro"
+              : entry.kind === "json"
+                ? "application/json"
+                : "text/markdown",
+          text,
         });
       } catch (error) {
         return errorResult(error);

@@ -32,6 +32,15 @@ import {
   getChordProCapabilities,
 } from "../mcp/lib/capabilities.js";
 import {
+  DOC_RESOURCES,
+  docsAccessReport,
+  listResources,
+  listSkills,
+  readDoc,
+  readSkill,
+  SKILL_NAMES,
+} from "../mcp/lib/docsAccess.js";
+import {
   metadataFromChordPro,
   validateChordProContent,
 } from "../mcp/lib/chordproGate.js";
@@ -154,7 +163,16 @@ function buildHosannaTools(authInfo: AuthInfo) {
       execute: async () =>
         textResult({
           features: getChordProCapabilities().features,
+          skills: SKILL_NAMES.map((n) => `hosanna://skills/${n}`),
+          howToReadSkills:
+            "Call hosanna_skills_list then hosanna_skill_read({name}). Skill bodies are NOT auto-injected — you must read them.",
           tools: {
+            docs: [
+              "hosanna_skills_list",
+              "hosanna_skill_read",
+              "hosanna_resources_list",
+              "hosanna_resource_read",
+            ],
             songs: [
               "search",
               "get",
@@ -210,6 +228,102 @@ function buildHosannaTools(authInfo: AuthInfo) {
           orgId: ctx.orgId,
           role: ctx.user.role,
           entitled: ctx.entitled,
+        });
+      },
+    }),
+    hosanna_skills_list: tool({
+      description:
+        "List skill documents with on-disk existence + preview. Then hosanna_skill_read for full SKILL.md text.",
+      inputSchema: z.object({}),
+      execute: async () =>
+        textResult({
+          skills: listSkills(),
+          access: docsAccessReport(),
+        }),
+    }),
+    hosanna_skill_read: tool({
+      description:
+        "Read full SKILL.md for a skill (e.g. hosanna-safe-data). Returns verbatim markdown — do not invent skill content.",
+      inputSchema: z.object({
+        name: z.string().describe(`One of: ${SKILL_NAMES.join(", ")}`),
+      }),
+      execute: async ({ name }) => {
+        const skill = readSkill(name);
+        return textResult({
+          name: skill.name,
+          uri: skill.uri,
+          mimeType: "text/markdown",
+          bytes: Buffer.byteLength(skill.text, "utf8"),
+          text: skill.text,
+        });
+      },
+    }),
+    hosanna_resources_list: tool({
+      description: "List readable hosanna:// resource URIs (docs + skills).",
+      inputSchema: z.object({}),
+      execute: async () => textResult({ resources: listResources() }),
+    }),
+    hosanna_resource_read: tool({
+      description:
+        "Read a hosanna:// resource by URI (skills, chordpro guide/features, domain docs, examples). Returns verbatim content.",
+      inputSchema: z.object({
+        uri: z.string().describe("e.g. hosanna://chordpro/guide"),
+      }),
+      execute: async ({ uri }) => {
+        const trimmed = uri.trim();
+        if (trimmed.startsWith("hosanna://skills/")) {
+          const skill = readSkill(trimmed);
+          return textResult({
+            uri: skill.uri,
+            mimeType: "text/markdown",
+            text: skill.text,
+          });
+        }
+        const caps = getChordProCapabilities();
+        if (trimmed === "hosanna://chordpro/directives") {
+          return textResult({
+            uri: trimmed,
+            mimeType: "application/json",
+            text: JSON.stringify(caps.directives, null, 2),
+          });
+        }
+        if (trimmed === "hosanna://chordpro/features") {
+          return textResult({
+            uri: trimmed,
+            mimeType: "application/json",
+            text: JSON.stringify(caps.features, null, 2),
+          });
+        }
+        if (trimmed === "hosanna://ops/catalog") {
+          return textResult({
+            uri: trimmed,
+            mimeType: "application/json",
+            text: JSON.stringify(
+              { resources: listResources(), skills: SKILL_NAMES },
+              null,
+              2,
+            ),
+          });
+        }
+        const entry = DOC_RESOURCES.find((r) => r.uri === trimmed);
+        if (!entry?.relativePath) {
+          return textResult({
+            error: true,
+            code: "not_found",
+            message: `Unknown resource ${trimmed}`,
+            hint: "Call hosanna_resources_list",
+          });
+        }
+        const text = readDoc(entry.relativePath);
+        return textResult({
+          uri: trimmed,
+          mimeType:
+            entry.kind === "chordpro"
+              ? "text/vnd.chordpro"
+              : entry.kind === "json"
+                ? "application/json"
+                : "text/markdown",
+          text,
         });
       },
     }),
@@ -1318,6 +1432,7 @@ const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church son
 - Be brief. Prefer doing over asking. One short sentence + tools beats essays.
 - Do NOT paste full ChordPro bodies into chat. Call propose/edit tools; the Studio editor shows accept/decline.
 - Prefer pageContext ids + updatedAt. Do NOT call list/search just to discover the open song/service/folder.
+- Skills/docs are NOT in your context until you read them: hosanna_skills_list → hosanna_skill_read, or hosanna_resource_read. Never invent skill contents — quote what the tool returns.
 - For clear requests (transpose to D, repeat a section 2×, duplicate last verse, fix chords, complete metadata, create folder/event), act immediately with a sensible default. Ask at most ONE question only when blocked.
 - Do not offer multiple options when the user already chose (e.g. "transpose into D").
 - ChordPro/song content edits: use propose tools (prefer songs_propose_transpose / songs_propose_edit). Studio stages Accept/Decline in the editor. After Accept, the user saves in the editor — only call songs_save / services_save if they explicitly ask to persist via chat/MCP.
