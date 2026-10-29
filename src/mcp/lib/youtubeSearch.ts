@@ -167,7 +167,7 @@ export async function searchYouTube(opts: {
     query,
     provider: "web_fallback",
     note: hits[0]
-      ? `No YOUTUBE_API_KEY — used web search. Prefer hits[].directive (e.g. ${hits[0].directive}). Set YOUTUBE_API_KEY for better results.`
-      : "No YOUTUBE_API_KEY and web fallback found no youtube.com/watch links. Set YOUTUBE_API_KEY or BRAVE_SEARCH_API_KEY.",
+      ? `No YOUTUBE_API_KEY — used DuckDuckGo web search. Prefer hits[].directive (e.g. ${hits[0].directive}). Set YOUTUBE_API_KEY for better results.`
+      : "No YOUTUBE_API_KEY and DuckDuckGo found no youtube.com/watch links. Set YOUTUBE_API_KEY for reliable YouTube search.",
   };
 }

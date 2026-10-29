@@ -437,7 +437,7 @@ export function registerLibraryTools(
     {
       title: "Web search",
       description:
-        "General web search for song metadata, CCLI, artist pages, or reference links. Prefer Brave when BRAVE_SEARCH_API_KEY is set.",
+        "General web search (DuckDuckGo) for song metadata, CCLI, artist pages, or reference links.",
       inputSchema: z.object({
         query: z.string().min(1),
         limit: z.number().int().min(1).max(10).optional(),

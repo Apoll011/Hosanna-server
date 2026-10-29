@@ -92,6 +92,4 @@ export const env = {
   // ── Metadata search (Studio AI / MCP) ─────────────────────────────────────
   /** YouTube Data API v3 key — improves `{youtube:}` lookups. */
   youtubeApiKey: optional("YOUTUBE_API_KEY"),
-  /** Brave Search API key — preferred web search for metadata. */
-  braveSearchApiKey: optional("BRAVE_SEARCH_API_KEY"),
 };

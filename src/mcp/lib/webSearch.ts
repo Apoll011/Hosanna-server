@@ -1,10 +1,7 @@
 /**
  * General web search for song metadata / reference links.
- * Prefers Brave Search API when BRAVE_SEARCH_API_KEY is set; otherwise
- * falls back to DuckDuckGo HTML results (best-effort, no key).
+ * Uses DuckDuckGo HTML results (no API key).
  */
-
-import { env } from "../../config/env.js";
 
 export type WebSearchHit = {
   title: string;
@@ -23,45 +20,8 @@ function decodeHtml(text: string): string {
     .replace(/&nbsp;/g, " ");
 }
 
-async function searchBrave(
-  query: string,
-  limit: number,
-): Promise<WebSearchHit[]> {
-  const key = env.braveSearchApiKey;
-  if (!key) return [];
-
-  const url = new URL("https://api.search.brave.com/res/v1/web/search");
-  url.searchParams.set("q", query);
-  url.searchParams.set("count", String(limit));
-
-  const res = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "X-Subscription-Token": key,
-    },
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Brave Search error ${res.status}: ${body.slice(0, 200)}`);
-  }
-  const data = (await res.json()) as {
-    web?: {
-      results?: Array<{ title?: string; url?: string; description?: string }>;
-    };
-  };
-  return (data.web?.results ?? [])
-    .filter((r) => r.url && r.title)
-    .slice(0, limit)
-    .map((r) => ({
-      title: r.title!,
-      url: r.url!,
-      snippet: r.description,
-    }));
-}
-
 /**
- * Best-effort DuckDuckGo HTML scrape — used only when no Brave key is set.
- * Not guaranteed; parse failures return an empty list.
+ * Best-effort DuckDuckGo HTML scrape. Parse failures return an empty list.
  */
 async function searchDuckDuckGo(
   query: string,
@@ -118,7 +78,7 @@ export async function searchWeb(opts: {
 }): Promise<{
   results: WebSearchHit[];
   query: string;
-  provider: "brave" | "duckduckgo";
+  provider: "duckduckgo";
   note?: string;
 }> {
   const query = opts.query?.trim();
@@ -126,24 +86,18 @@ export async function searchWeb(opts: {
     return {
       results: [],
       query: "",
-      provider: env.braveSearchApiKey ? "brave" : "duckduckgo",
+      provider: "duckduckgo",
       note: "Provide a non-empty query.",
     };
   }
   const limit = Math.min(Math.max(opts.limit ?? 5, 1), 10);
-
-  if (env.braveSearchApiKey) {
-    const results = await searchBrave(query, limit);
-    return { results, query, provider: "brave" };
-  }
-
   const results = await searchDuckDuckGo(query, limit);
   return {
     results,
     query,
     provider: "duckduckgo",
     note: results.length
-      ? "Using DuckDuckGo HTML fallback. Set BRAVE_SEARCH_API_KEY for better reliability."
-      : "No results from DuckDuckGo fallback. Set BRAVE_SEARCH_API_KEY for reliable web search.",
+      ? undefined
+      : "No DuckDuckGo results for this query.",
   };
 }
