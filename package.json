@@ -11,7 +11,7 @@
     "start": "node dist/index.mjs",
     "dev": "tsx watch src/index.mts",
     "mcp": "tsx src/mcp/stdio.ts",
-    "test:mcp": "tsx --test src/mcp/lib/diff.test.ts src/mcp/lib/propagateComments.test.ts src/mcp/tools/chordpro.test.ts src/lib/aiCrypto.test.ts",
+    "test:mcp": "tsx --test src/mcp/lib/diff.test.ts src/mcp/lib/propagateChords.test.ts src/mcp/tools/chordpro.test.ts src/lib/aiCrypto.test.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",

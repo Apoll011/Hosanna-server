@@ -36,7 +36,7 @@ import {
   validateChordProContent,
 } from "../mcp/lib/chordproGate.js";
 import { summarizeDiff } from "../mcp/lib/diff.js";
-import { propagateVerseComments } from "../mcp/lib/propagateComments.js";
+import { propagateVerseChords } from "../mcp/lib/propagateChords.js";
 import { validateServicePlan } from "../mcp/lib/serviceElements.js";
 import { transposeChordProSource } from "../mcp/lib/transposeSource.js";
 import type { AiProvider } from "./orgAiConfig.service.js";
@@ -130,12 +130,12 @@ function buildHosannaTools(authInfo: AuthInfo) {
       execute: async ({ content }) =>
         textResult(validateChordProContent(content)),
     }),
-    chordpro_propagate_notes: tool({
+    chordpro_propagate_chords: tool({
       description:
-        "Copy {c:}/{ci:}/{cb:} performance notes from the first annotated verse onto other verses at the same relative lyric/chord positions. Does not invent new notes.",
+        "Copy [Am]/[G]/… chord markers from the first chorded verse onto later verses at the same lyric-character offsets. Does not invent chords.",
       inputSchema: z.object({ content: z.string() }),
       execute: async ({ content }) => {
-        const result = propagateVerseComments(content);
+        const result = propagateVerseChords(content);
         return textResult({
           ...result,
           diff: summarizeDiff(content, result.content),
