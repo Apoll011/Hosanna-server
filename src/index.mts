@@ -7,6 +7,7 @@ import helmetImport from "helmet";
 import { env } from "./config/env.js";
 import { auth } from "./lib/auth.js";
 import { DEFAULT_LOCALE, t } from "./lib/i18n.js";
+import { withOauthNavigationRedirect } from "./lib/oauthNavigationRedirect.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { mcpRouter } from "./mcp/http.js";
 import { apiRouter } from "./routes/index.js";
@@ -126,7 +127,9 @@ if (!isVercel) {
   );
 }
 
-const authHandler = toNodeHandler(auth);
+// Convert Better Auth JSON `{ redirect, url }` to HTTP 302 for browser
+// navigations (MCP Connect opens /oauth2/authorize as a document).
+const authHandler = toNodeHandler(withOauthNavigationRedirect(auth.handler));
 
 // Better Auth owns /api/auth/* (OAuth AS, sessions, JWKS).
 app.all("/api/auth/*", authHandler);
@@ -136,7 +139,14 @@ app.all("/api/auth/*", authHandler);
 // these before DCR + authorize — without them OAuth never starts.
 app.all("/.well-known/oauth-protected-resource", authHandler);
 app.all("/.well-known/oauth-protected-resource/*", authHandler);
-app.all("/.well-known/oauth-authorization-server", authHandler);
+// Issuer is /api/auth — RFC 8414 appendix path-aware URL works; bare root
+// 404s from Better Auth, so alias it for clients that omit the path suffix.
+app.all(
+  "/.well-known/oauth-authorization-server",
+  (_req, res) => {
+    res.redirect(302, "/.well-known/oauth-authorization-server/api/auth");
+  },
+);
 app.all("/.well-known/oauth-authorization-server/*", authHandler);
 app.all("/.well-known/openid-configuration", authHandler);
 app.all("/.well-known/openid-configuration/*", authHandler);
