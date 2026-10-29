@@ -1,0 +1,10 @@
+{title: Grid Example}
+{key: G}
+
+{start_of_grid}
+| [G] | [C] | [D] | [G] |
+| [Em] | [C] | [D] | [G] ||
+{end_of_grid}
+
+{c: Soft entry|warning}
+[G]Sing it [C]loud

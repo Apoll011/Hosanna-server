@@ -8,6 +8,7 @@ import { env } from "./config/env.js";
 import { auth } from "./lib/auth.js";
 import { DEFAULT_LOCALE, t } from "./lib/i18n.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
+import { mcpRouter } from "./mcp/http.js";
 import { apiRouter } from "./routes/index.js";
 
 /**
@@ -133,6 +134,11 @@ const globalLimiter = rateLimit({
   },
   skip: () => env.nodeEnv !== "production",
 });
+
+// ── MCP (Streamable HTTP) ───────────────────────────────────────────────────
+// Mounted outside /api so MCP clients can use a stable /mcp path.
+// Auth is optional; org-scoped tools enforce Better Auth + permissions.
+app.use("/mcp", globalLimiter, mcpRouter);
 
 // ── API routes ──────────────────────────────────────────────────────────────
 app.use("/api", globalLimiter, apiRouter);

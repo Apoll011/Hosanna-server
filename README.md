@@ -10,27 +10,39 @@ a separate project that talks to this server over HTTP.
 
 ## Stack
 
-Node.js, TypeScript, Express, Prisma ORM, PostgreSQL, Zod, JWT, bcrypt, `qrcode`.
+Node.js, TypeScript, Express, Prisma ORM, PostgreSQL, Zod, Better Auth,
+`@hosanna/chordpro`, Model Context Protocol (`@modelcontextprotocol/server`).
+
+## MCP server
+
+Hosanna exposes an MCP interface for AI clients (songs, services, ChordPro):
+
+- **HTTP:** `POST /mcp` (Streamable HTTP). Optional `Authorization: Bearer <Better Auth session>` with an active organization for song/service tools. ChordPro tools work without auth.
+- **stdio:** `HOSANNA_BEARER_TOKEN=<token> npm run mcp`
+
+Resources live under `hosanna://…` (guide, schemas, skills). Task prompts include `songs.*` and `services.*`. Workflow skills are in `docs/mcp/skills/` and also served as MCP resources.
 
 ## Project layout
 
 ```
 src/
-  auth/            (JWT + musician token verification lives in middleware/utils)
   config/          env loading
   database/        Prisma client singleton
-  middleware/      auth guards, Zod validation, error handler
-  repositories/     Prisma data-access layer, one file per entity
-  routes/          Express routers, one file per entity
-  services/        business logic (validation-independent of HTTP layer)
+  lib/             Better Auth, email, i18n, …
+  middleware/      auth guards, Zod validation, error handler, subscription
+  mcp/             MCP tools, resources, prompts (HTTP + stdio)
+  repositories/    Prisma data-access layer
+  routes/          Express routers
+  services/        business logic
   validators/      Zod schemas
-  utils/           errors, tokens, password hashing, QR generation
-  types/           Express Request augmentation
-  index.ts         app entrypoint
+  utils/
+  types/
+  index.mts        app entrypoint
+docs/mcp/          ChordPro guide, domain docs, and AI workflow skills
+                   (copied to dist/mcp/docs on build for Vercel/Docker)
 prisma/
   schema.prisma
-  migrations/      hand-written initial migration (see note below)
-  seed.ts
+  migrations/
 ```
 
 ## Running with Docker (recommended)
