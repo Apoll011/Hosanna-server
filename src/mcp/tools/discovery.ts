@@ -12,6 +12,7 @@ import {
   readSkill,
   SKILL_NAMES,
 } from "../lib/docsAccess.js";
+import { STUDIO_UI_CATALOG } from "../lib/studioUi.js";
 import { errorResult, getMcpContext, jsonResult } from "../context.js";
 
 const SONG_PERMS: PermissionString[] = [
@@ -124,6 +125,7 @@ export function registerDiscoveryTools(
             "hosanna://ops/catalog",
             "hosanna://domain/songs",
             "hosanna://domain/services",
+            "hosanna://domain/library",
             "hosanna://skills/{name}",
           ],
           prompts: {
@@ -158,12 +160,14 @@ export function registerDiscoveryTools(
             "hosanna://skills/services-plan-complete",
           ],
           chordproFeatures: chordpro.features,
+          studioUi: STUDIO_UI_CATALOG,
           notes: [
             "Server instructions tell you to READ skill resources — they are not auto-injected into context.",
             "Start with prompt hosanna.system (or read hosanna://skills/hosanna-safe-data + job skills).",
             "Org-scoped song/service tools require Better Auth bearer session with activeOrganizationId.",
             "Use draft/propose tools first; persist only with *.save after user approval.",
             "Never fabricate lyrics. Instrument diagrams are client-render-only.",
+            "Folder/collection icon and color must use studioUi ids (or hosanna://domain/library).",
           ],
         });
       } catch (error) {

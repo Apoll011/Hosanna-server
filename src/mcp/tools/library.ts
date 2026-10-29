@@ -36,8 +36,12 @@ import {
   providerSupportsNativeFetch,
   resolveNativeWebAuth,
 } from "../lib/nativeWeb.js";
+import { FOLDER_COLOR_IDS, FOLDER_ICON_IDS } from "../lib/studioUi.js";
 import { searchWeb } from "../lib/webSearch.js";
 import { searchYouTube } from "../lib/youtubeSearch.js";
+
+const folderIconSchema = z.enum(FOLDER_ICON_IDS);
+const folderColorSchema = z.enum(FOLDER_COLOR_IDS);
 
 async function nativeAuthForTools(authInfo?: AuthInfo) {
   const ctx = getMcpContext(authInfo);
@@ -73,12 +77,13 @@ export function registerLibraryTools(
     "folders.create",
     {
       title: "Create folder",
-      description: "Create a folder in the library tree.",
+      description:
+        "Create a folder. color/icon must be Studio ids from hosanna://domain/library (e.g. music, book-open, default).",
       inputSchema: z.object({
         name: z.string().min(1),
         parentId: z.string().uuid().nullable().optional(),
-        color: z.string().optional(),
-        icon: z.string().optional(),
+        color: folderColorSchema.optional(),
+        icon: folderIconSchema.optional(),
       }),
     },
     async (args) => {
@@ -94,14 +99,15 @@ export function registerLibraryTools(
     "folders.update",
     {
       title: "Update folder",
-      description: "Rename/move/recolor a folder. Requires updatedAt for concurrency.",
+      description:
+        "Rename/move/recolor a folder. Requires updatedAt. color/icon = Studio ids only (hosanna://domain/library). Use icon=default to reset.",
       inputSchema: z.object({
         folderId: z.string().uuid(),
         updatedAt: z.string(),
         name: z.string().min(1).optional(),
         parentId: z.string().uuid().nullable().optional(),
-        color: z.string().optional(),
-        icon: z.string().optional(),
+        color: folderColorSchema.optional(),
+        icon: folderIconSchema.optional(),
       }),
     },
     async (args) => {
@@ -171,12 +177,13 @@ export function registerLibraryTools(
     "collections.create",
     {
       title: "Create collection",
-      description: "Create a song collection, optionally with initial song ids.",
+      description:
+        "Create a song collection. color/icon = Studio ids from hosanna://domain/library.",
       inputSchema: z.object({
         name: z.string().min(1),
         description: z.string().optional(),
-        color: z.string().optional(),
-        icon: z.string().optional(),
+        color: folderColorSchema.optional(),
+        icon: folderIconSchema.optional(),
         songIds: z.array(z.string().uuid()).optional(),
       }),
     },
@@ -195,14 +202,15 @@ export function registerLibraryTools(
     "collections.update",
     {
       title: "Update collection",
-      description: "Update collection metadata. Requires updatedAt.",
+      description:
+        "Update collection metadata. Requires updatedAt. color/icon = Studio ids (hosanna://domain/library).",
       inputSchema: z.object({
         collectionId: z.string().uuid(),
         updatedAt: z.string(),
         name: z.string().min(1).optional(),
         description: z.string().nullable().optional(),
-        color: z.string().optional(),
-        icon: z.string().optional(),
+        color: folderColorSchema.optional(),
+        icon: folderIconSchema.optional(),
       }),
     },
     async (args) => {

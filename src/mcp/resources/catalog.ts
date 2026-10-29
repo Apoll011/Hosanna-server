@@ -266,6 +266,16 @@ export function registerResources(
     async (uri) => textResource(uri.href, readDoc("domain-services.md")),
   );
 
+  server.registerResource(
+    "domain-library",
+    "hosanna://domain/library",
+    {
+      title: "Library domain (folder icons/colors)",
+      mimeType: "text/markdown",
+    },
+    async (uri) => textResource(uri.href, readDoc("domain-library.md")),
+  );
+
   for (const name of SKILL_NAMES) {
     server.registerResource(
       `skill-${name}`,

@@ -149,6 +149,12 @@ export const DOC_RESOURCES: Array<{
     relativePath: "domain-services.md",
   },
   {
+    uri: "hosanna://domain/library",
+    title: "Domain: library (folder icons/colors)",
+    kind: "markdown",
+    relativePath: "domain-library.md",
+  },
+  {
     uri: "hosanna://ops/catalog",
     title: "Ops catalog",
     kind: "json",

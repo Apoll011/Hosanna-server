@@ -81,8 +81,16 @@ import {
   NATIVE_WEB_CAPABILITIES,
   providerSupportsNativeFetch,
 } from "../mcp/lib/nativeWeb.js";
+import {
+  FOLDER_COLOR_IDS,
+  FOLDER_ICON_IDS,
+  STUDIO_UI_CATALOG,
+} from "../mcp/lib/studioUi.js";
 import { searchWeb } from "../mcp/lib/webSearch.js";
 import { searchYouTube } from "../mcp/lib/youtubeSearch.js";
+
+const folderIconSchema = z.enum(FOLDER_ICON_IDS);
+const folderColorSchema = z.enum(FOLDER_COLOR_IDS);
 import type { AiProvider } from "./orgAiConfig.service.js";
 import {
   AI_PROVIDER_DEFAULT_BASE_URL,
@@ -206,6 +214,12 @@ function buildHosannaTools(
               ? `Org AI is ${nativeWebAuth.provider} — metadata_web_search/fetch use that provider's Search & Fetch APIs.`
               : "Org AI has no native Search/Fetch; metadata_web_search uses DuckDuckGo.",
           },
+          studioUi: STUDIO_UI_CATALOG,
+          readAlso: [
+            "hosanna://domain/library — folder/collection icon + color ids",
+            "hosanna://domain/songs",
+            "hosanna://domain/services",
+          ],
           tools: {
             docs: [
               "hosanna_skills_list",
@@ -242,6 +256,7 @@ function buildHosannaTools(
               "collections CRUD+songs",
               "agenda CRUD",
               "trash_list",
+              "studio_sync",
             ],
             metadata: [
               "musicbrainz",
@@ -384,29 +399,46 @@ function buildHosannaTools(
         textResult(await listFolders(requireMcpContext(authInfo), parentId)),
     }),
     folders_create: tool({
-      description: "Create a folder in the library tree.",
+      description:
+        "Create a folder. color/icon must be Studio ids (see hosanna_capabilities.studioUi or hosanna://domain/library). Then call studio_sync.",
       inputSchema: z.object({
         name: z.string().min(1),
         parentId: z.string().nullable().optional(),
-        color: z.string().optional(),
-        icon: z.string().optional(),
+        color: folderColorSchema.optional(),
+        icon: folderIconSchema.optional(),
       }),
       execute: async (args) =>
         textResult(await createFolder(requireMcpContext(authInfo), args)),
     }),
     folders_update: tool({
       description:
-        "Rename/move/recolor a folder. Requires updatedAt for concurrency.",
+        "Rename/move/recolor a folder. Requires updatedAt. color/icon = Studio ids only (hosanna://domain/library). Use icon=default to reset. Then call studio_sync.",
       inputSchema: z.object({
         folderId: z.string(),
         updatedAt: z.string(),
         name: z.string().min(1).optional(),
         parentId: z.string().nullable().optional(),
-        color: z.string().optional(),
-        icon: z.string().optional(),
+        color: folderColorSchema.optional(),
+        icon: folderIconSchema.optional(),
       }),
       execute: async (args) =>
         textResult(await updateFolder(requireMcpContext(authInfo), args)),
+    }),
+    studio_sync: tool({
+      description:
+        "Studio-only: ask the open Studio tab to pull replication now so explorer/lists show server changes immediately. Call after folders/collections/songs/services mutations. Not needed on MCP hosts.",
+      inputSchema: z.object({
+        reason: z
+          .string()
+          .optional()
+          .describe("Short why, e.g. after_folder_update"),
+      }),
+      execute: async ({ reason }) =>
+        textResult({
+          studioSync: true,
+          reason: reason ?? "refresh",
+          note: "Studio will run triggerSyncCheck + refetch. Tell the user the UI should update shortly.",
+        }),
     }),
     folders_delete: tool({
       description:
@@ -492,26 +524,28 @@ function buildHosannaTools(
         ),
     }),
     collections_create: tool({
-      description: "Create a song collection.",
+      description:
+        "Create a song collection. color/icon = Studio ids (hosanna://domain/library). Then call studio_sync.",
       inputSchema: z.object({
         name: z.string().min(1),
         description: z.string().optional(),
-        color: z.string().optional(),
-        icon: z.string().optional(),
+        color: folderColorSchema.optional(),
+        icon: folderIconSchema.optional(),
         songIds: z.array(z.string()).optional(),
       }),
       execute: async (args) =>
         textResult(await createCollection(requireMcpContext(authInfo), args)),
     }),
     collections_update: tool({
-      description: "Update collection metadata. Requires updatedAt.",
+      description:
+        "Update collection metadata. Requires updatedAt. color/icon = Studio ids. Then call studio_sync.",
       inputSchema: z.object({
         collectionId: z.string(),
         updatedAt: z.string(),
         name: z.string().min(1).optional(),
         description: z.string().nullable().optional(),
-        color: z.string().optional(),
-        icon: z.string().optional(),
+        color: folderColorSchema.optional(),
+        icon: folderIconSchema.optional(),
       }),
       execute: async (args) =>
         textResult(await updateCollection(requireMcpContext(authInfo), args)),
@@ -1556,7 +1590,8 @@ const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church son
 - For clear requests (transpose to D, repeat a section 2×, duplicate last verse, fix chords, complete metadata, create folder/event), act immediately with a sensible default. Ask at most ONE question only when blocked.
 - Do not offer multiple options when the user already chose (e.g. "transpose into D").
 - ChordPro/song content edits: use propose tools (prefer songs_propose_transpose / songs_propose_edit). Studio stages Accept/Decline in the editor. After Accept, the user saves in the editor — only call songs_save / services_save if they explicitly ask to persist via chat/MCP.
-- Library structural edits (folders, collections, agenda create/update, move song, add songs to collection): do them with tools when the request is clear.
+- Library structural edits (folders, collections, agenda create/update, move song, add songs to collection): do them with tools when the request is clear. After those mutations, call \`studio_sync\` so the explorer refreshes immediately.
+- Folder/collection \`icon\` and \`color\` must be Studio ids only (see hosanna_capabilities.studioUi or hosanna://domain/library). Never invent Lucide names. Use \`icon=default\` / \`color=default\` to reset.
 - Deletes (songs/services/folders/collections/agenda): call the matching \`*_delete\` tool immediately when the user asks to delete — it only STAGES a Confirm button in Studio and does not delete. Do NOT ask for chat confirmation ("are you sure?") and do NOT claim the item is deleted until the user clicks Confirm. If they already confirmed in chat, still only stage the button.
 - When the user says "repeat" / "2x" a verse or chorus: duplicate that section's body in the ChordPro (or add \`{c: 2x}\` if they ask for a note only). Prefer physical duplication when they ask to "write a copy".
 - On stale/concurrency errors, use the returned \`current\` object (do not re-fetch blindly).
@@ -1564,11 +1599,13 @@ const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church son
 ## Capabilities (use them)
 - Songs: search/get/get_many, draft, propose_edit/fix/transpose, save, move, delete, restore; trash_list
 - Services: search/get (expandSongs), propose_edit, plan_suggest, validate, save, delete, restore
-- Folders: list/create/update/delete/restore
-- Collections: list/get/create/update/delete, add_songs/remove_songs
+- Folders: list/create/update/delete/restore (icon/color ids from studioUi)
+- Collections: list/get/create/update/delete, add_songs/remove_songs (same icon/color ids)
 - Agenda: list/get/create/update/delete
+- studio_sync: pull replication in this Studio tab after library mutations
 - Metadata: MusicBrainz, YouTube (for \`{youtube:}\`), DuckDuckGo web search; ChordPro validate/format/transpose/convert/propagate
 - When completing metadata: MusicBrainz for title/artist/release; YouTube search for \`{youtube: URL}\` (use hits[].directive); web search for extra confirmation. If \`metadata_web_fetch\` is available (DeepSeek org AI), use it to read CCLI/artist pages or Cifra URLs blocked by Akamai. Call metadata tools one at a time (MusicBrainz rate-limits parallel bursts with 503). If a tool returns 403/503, report the structured error — do not claim success. Propose the ChordPro edit — do not invent lyrics.
+- Unknown Studio UI constants (icons, colors, etc.): call hosanna_capabilities or hosanna_resource_read on hosanna://domain/library — do not guess.
 
 ## Hard rules
 - Never invent lyrics, chords, or library songs. Ask when content is missing.
