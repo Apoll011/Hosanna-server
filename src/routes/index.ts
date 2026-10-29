@@ -21,8 +21,17 @@ import {
 import { requireSubscription } from "../middleware/subscription.js";
 import { cifraRouter } from "./cifra.route.js";
 import anotationRouter from "./serviceSongAnnotation.routes.js";
+import { aiRouter } from "./ai.routes.js";
+import { rateLimit } from "express-rate-limit";
 
 export const apiRouter = Router();
+
+const aiChatLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+});
 
 apiRouter.use("/health", healthLimiter, healthRouter);
 apiRouter.use("/cron", cronRouter);
@@ -36,6 +45,7 @@ apiRouter.use("/folders", requireSubscription, apiLimiter, folderRouter);
 apiRouter.use("/services", requireSubscription, apiLimiter, serviceRouter);
 apiRouter.use("/cifra", requireSubscription, apiLimiter, cifraRouter);
 apiRouter.use("/backup", requireSubscription, backupLimiter, backupRouter);
+apiRouter.use("/ai", requireSubscription, aiChatLimiter, aiRouter);
 
 apiRouter.use("/notifications", apiLimiter, notificationsRouter);
 apiRouter.use("/trash", apiLimiter, trashRouter);

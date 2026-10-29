@@ -73,4 +73,11 @@ export const env = {
   fcmClientEmail: optional("FCM_CLIENT_EMAIL"),
   /** Service-account private key with literal \n escapes (as in the JSON file). */
   fcmPrivateKey: optional("FCM_PRIVATE_KEY"),
+
+  // ── AI (Studio BYOK) ─────────────────────────────────────────────────────
+  /**
+   * AES-256-GCM key for encrypting per-org LLM API keys at rest.
+   * Prefer 64 hex characters (32 bytes). Required to save/use org AI keys.
+   */
+  aiSettingsEncryptionKey: optional("AI_SETTINGS_ENCRYPTION_KEY"),
 };

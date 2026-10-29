@@ -383,11 +383,32 @@ model Organization {
   agendaEvents           AgendaEvent[]
   serviceSongAnnotations ServiceSongAnnotation[]
   serviceNotes           ServiceNote[]
+  aiConfig               OrgAiConfig?
 
   stripeCustomerId String?
 
   @@unique([slug])
   @@map("organization")
+}
+
+/// Per-organization BYOK AI provider settings. API keys are encrypted at rest
+/// and must never be returned to clients.
+model OrgAiConfig {
+  orgId String       @id
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  provider String  @default("openai") // openai | anthropic | google
+  model    String  @default("gpt-4o-mini")
+  enabled  Boolean @default(false)
+
+  apiKeyCiphertext String? @db.Text
+  apiKeyIv         String?
+  apiKeyTag        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("org_ai_config")
 }
 
 model Team {

@@ -8,6 +8,7 @@ export const owner = ac.newRole({
   collection: ["create", "update", "access", "delete"],
   agenda: ["create", "access", "update", "delete"],
   settings: ["manage"],
+  ai: ["manage", "use"],
   export: ["pdf"],
   billing: ["manage", "access"],
   backup: ["export", "import"],
@@ -22,6 +23,7 @@ export const admin = ac.newRole({
   collection: ["create", "update", "access", "delete"],
   agenda: ["create", "access", "update", "delete"],
   settings: ["manage"],
+  ai: ["manage", "use"],
   export: ["pdf"],
   backup: ["export"],
   notification: ["sent"],
@@ -38,6 +40,7 @@ export const teamLeader = ac.newRole({
   team: ["create", "update"],
   notification: ["sent"],
   export: ["pdf"],
+  ai: ["use"],
 });
 
 export const editor = ac.newRole({
@@ -47,6 +50,7 @@ export const editor = ac.newRole({
   collection: ["create", "update", "access"],
   agenda: ["create", "access", "update"],
   export: ["pdf"],
+  ai: ["use"],
 });
 
 export const musician = ac.newRole({
@@ -55,6 +59,7 @@ export const musician = ac.newRole({
   collection: ["access"],
   agenda: ["access", "update"],
   export: ["pdf"],
+  ai: ["use"],
 });
 
 export const guest = ac.newRole({
