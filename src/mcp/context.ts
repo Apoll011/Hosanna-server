@@ -14,6 +14,7 @@ import { prisma } from "../database/prisma.js";
 import { FolderService } from "../services/folder.service.js";
 import { ServiceService } from "../services/service.service.js";
 import { SongService } from "../services/song.service.js";
+import { mapToolError } from "./lib/toolErrors.js";
 
 const apiOrigin = env.mcpResourceUrl.replace(/\/mcp\/?$/, "");
 const jwksUrl = new URL("/api/auth/jwks", apiOrigin || `http://127.0.0.1:${env.port}`);
@@ -311,7 +312,9 @@ export function jsonResult(data: unknown, isError = false) {
   };
 }
 
-export function errorResult(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return jsonResult({ error: message }, true);
+export function errorResult(
+  error: unknown,
+  opts?: { current?: unknown; field?: string },
+) {
+  return jsonResult(mapToolError(error, opts), true);
 }

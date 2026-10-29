@@ -3,8 +3,13 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import {
   errorResult,
+  folders as folderService,
   jsonResult,
   requireMcpContext,
+  requirePermission,
+  requireWriteEntitlement,
+  services as serviceService,
+  songs as songService,
 } from "../context.js";
 import {
   collectionAddSongs,
@@ -101,7 +106,7 @@ export function registerLibraryTools(
     {
       title: "Delete folder",
       description:
-        "Soft-delete a folder. action=move_to_root (default) keeps songs; delete_songs trashes nested content.",
+        "Soft-delete a folder. Requires explicit user confirmation. action=move_to_root (default): songs in this folder move to library root; nested child folders are NOT recursively moved (only this folder is trashed). action=delete_songs: recursively soft-deletes this folder, nested folders, and their songs.",
       inputSchema: z.object({
         folderId: z.string().uuid(),
         action: z.enum(["move_to_root", "delete_songs"]).optional(),
@@ -303,12 +308,21 @@ export function registerLibraryTools(
     "agenda.create",
     {
       title: "Create agenda event",
-      description: "Create an agenda event.",
+      description: "Create an agenda event (org-local date/time, no timezone conversion).",
       inputSchema: z.object({
         title: z.string().min(1),
-        date: z.string().min(1).describe("YYYY-MM-DD"),
-        time: z.string().min(1).describe("HH:mm"),
-        type: z.string().min(1),
+        date: z
+          .string()
+          .min(1)
+          .describe("Calendar date YYYY-MM-DD (org-local, no TZ)"),
+        time: z
+          .string()
+          .min(1)
+          .describe("Local time HH:mm (24h), e.g. 09:30"),
+        type: z
+          .string()
+          .min(1)
+          .describe('Free string, e.g. "Culto Dominical", "Ensaio", "Rehearsal"'),
         durationMinutes: z.number().int().positive().optional(),
         location: z.string().optional(),
         notes: z.string().optional(),
@@ -367,6 +381,73 @@ export function registerLibraryTools(
         return jsonResult(
           await deleteAgendaEvent(requireMcpContext(authInfo), eventId),
         );
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "trash.list",
+    {
+      title: "List trash",
+      description: "List soft-deleted songs, folders, and services.",
+      inputSchema: z.object({}),
+    },
+    async () => {
+      try {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "song.access");
+        const [songs, folders, services] = await Promise.all([
+          songService(ctx).listTrashed(),
+          folderService(ctx).listTrashed(),
+          serviceService(ctx).listTrashed(),
+        ]);
+        return jsonResult({
+          songs: songs.map((s) => ({
+            id: s.id,
+            title: s.title,
+            artist: s.artist,
+            updatedAt: s.updatedAt.toISOString(),
+            purgeAt: s.purgeAt?.toISOString() ?? null,
+          })),
+          folders: folders.map((f) => ({
+            id: f.id,
+            name: f.name,
+            parentId: f.parentId,
+            updatedAt: f.updatedAt.toISOString(),
+            purgeAt: f.purgeAt?.toISOString() ?? null,
+          })),
+          services: services.map((s) => ({
+            id: s.id,
+            name: s.name,
+            updatedAt: s.updatedAt.toISOString(),
+            purgeAt:
+              "purgeAt" in s && s.purgeAt instanceof Date
+                ? s.purgeAt.toISOString()
+                : null,
+          })),
+        });
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "folders.restore",
+    {
+      title: "Restore folder",
+      description: "Restore a soft-deleted folder from trash.",
+      inputSchema: z.object({ folderId: z.string().uuid() }),
+    },
+    async ({ folderId }) => {
+      try {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "folder.update");
+        requireWriteEntitlement(ctx);
+        const folder = await folderService(ctx).restore(folderId);
+        return jsonResult({ restored: true, folder });
       } catch (error) {
         return errorResult(error);
       }

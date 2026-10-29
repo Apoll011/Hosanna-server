@@ -19,6 +19,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
+  folders as folderService,
   getMcpContext,
   requireMcpContext,
   requirePermission,
@@ -34,7 +35,13 @@ import {
   metadataFromChordPro,
   validateChordProContent,
 } from "../mcp/lib/chordproGate.js";
+import {
+  clipContent,
+  FULL_CONTENT_MAX,
+  SEARCH_CONTENT_MAX,
+} from "../mcp/lib/contentClip.js";
 import { summarizeDiff } from "../mcp/lib/diff.js";
+import { withClientRequestId } from "../mcp/lib/idempotency.js";
 import {
   collectionAddSongs,
   collectionRemoveSongs,
@@ -55,7 +62,11 @@ import {
 } from "../mcp/lib/libraryCrud.js";
 import { searchMusicBrainzRecordings } from "../mcp/lib/musicbrainz.js";
 import { propagateVerseChords } from "../mcp/lib/propagateChords.js";
-import { validateServicePlan } from "../mcp/lib/serviceElements.js";
+import {
+  serviceElementsSchema,
+  validateServicePlan,
+} from "../mcp/lib/serviceElements.js";
+import { mapToolError } from "../mcp/lib/toolErrors.js";
 import { transposeChordProSource } from "../mcp/lib/transposeSource.js";
 import { searchWeb } from "../mcp/lib/webSearch.js";
 import { searchYouTube } from "../mcp/lib/youtubeSearch.js";
@@ -71,12 +82,29 @@ export type ChatPageContext = {
     | "service_editor"
     | "songs_list"
     | "services_list"
+    | "explorer"
+    | "collection_detail"
+    | "agenda"
+    | "trash"
     | "general";
   route?: string;
   songId?: string;
   serviceId?: string;
+  folderId?: string | null;
+  collectionId?: string | null;
   title?: string;
+  updatedAt?: string;
+  artist?: string;
   contentExcerpt?: string;
+  contentTruncated?: boolean;
+  selectedSongIds?: string[];
+  selectedFolderIds?: string[];
+  serviceElementsSummary?: Array<{
+    id: string;
+    type: string;
+    title?: string;
+    songId?: string;
+  }>;
 };
 
 /**
@@ -121,12 +149,53 @@ function textResult(data: unknown) {
 function buildHosannaTools(authInfo: AuthInfo) {
   return {
     hosanna_capabilities: tool({
-      description: "Summarize Hosanna tools, resources, prompts, and skills.",
+      description: "Summarize Hosanna tools and ChordPro feature support.",
       inputSchema: z.object({}),
       execute: async () =>
         textResult({
           features: getChordProCapabilities().features,
-          note: "Use draft/propose tools before songs.save / services.save.",
+          tools: {
+            songs: [
+              "search",
+              "get",
+              "get_many",
+              "create_draft",
+              "propose_edit",
+              "propose_fix",
+              "propose_transpose",
+              "propose_propagate_chords",
+              "save",
+              "move",
+              "delete",
+              "restore",
+            ],
+            services: [
+              "search",
+              "get(expandSongs)",
+              "propose_edit",
+              "plan_suggest",
+              "validate",
+              "save",
+              "delete",
+              "restore",
+            ],
+            library: [
+              "folders CRUD+restore",
+              "collections CRUD+songs",
+              "agenda CRUD",
+              "trash_list",
+            ],
+            metadata: ["musicbrainz", "youtube", "web(duckduckgo)"],
+            chordpro: [
+              "validate",
+              "format",
+              "transpose",
+              "convert",
+              "propagate_chords",
+              "directives",
+            ],
+          },
+          note: "Studio: propose tools stage Accept/Decline in the editor; user Save there. songs_save/services_save only after explicit persist request (MCP hosts).",
         }),
     }),
     hosanna_permissions: tool({
@@ -179,13 +248,56 @@ function buildHosannaTools(authInfo: AuthInfo) {
     }),
     folders_delete: tool({
       description:
-        "Soft-delete a folder. move_to_root (default) keeps songs; delete_songs trashes nested content. Confirm with user first.",
+        "Soft-delete a folder. Confirm with user first. move_to_root (default): songs in this folder go to library root; nested child folders are not recursively moved. delete_songs: recursively trash this folder, nested folders, and their songs.",
       inputSchema: z.object({
         folderId: z.string(),
         action: z.enum(["move_to_root", "delete_songs"]).optional(),
       }),
       execute: async (args) =>
         textResult(await deleteFolder(requireMcpContext(authInfo), args)),
+    }),
+    folders_restore: tool({
+      description: "Restore a soft-deleted folder from trash.",
+      inputSchema: z.object({ folderId: z.string() }),
+      execute: async ({ folderId }) => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "folder.update");
+        requireWriteEntitlement(ctx);
+        const folder = await folderService(ctx).restore(folderId);
+        return textResult({ restored: true, folder });
+      },
+    }),
+    trash_list: tool({
+      description: "List soft-deleted songs, folders, and services.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "song.access");
+        const [songs, folders, services] = await Promise.all([
+          songService(ctx).listTrashed(),
+          folderService(ctx).listTrashed(),
+          serviceService(ctx).listTrashed(),
+        ]);
+        return textResult({
+          songs: songs.map((s) => ({
+            id: s.id,
+            title: s.title,
+            artist: s.artist,
+            updatedAt: s.updatedAt.toISOString(),
+          })),
+          folders: folders.map((f) => ({
+            id: f.id,
+            name: f.name,
+            parentId: f.parentId,
+            updatedAt: f.updatedAt.toISOString(),
+          })),
+          services: services.map((s) => ({
+            id: s.id,
+            name: s.name,
+            updatedAt: s.updatedAt.toISOString(),
+          })),
+        });
+      },
     }),
     collections_list: tool({
       description: "List organization collections.",
@@ -273,12 +385,16 @@ function buildHosannaTools(authInfo: AuthInfo) {
         textResult(await getAgendaEvent(requireMcpContext(authInfo), eventId)),
     }),
     agenda_create: tool({
-      description: "Create an agenda event.",
+      description:
+        "Create an agenda event (org-local date/time, no timezone conversion).",
       inputSchema: z.object({
         title: z.string().min(1),
-        date: z.string().min(1),
-        time: z.string().min(1),
-        type: z.string().min(1),
+        date: z.string().min(1).describe("YYYY-MM-DD org-local"),
+        time: z.string().min(1).describe("HH:mm 24h org-local"),
+        type: z
+          .string()
+          .min(1)
+          .describe('Free string e.g. "Culto Dominical", "Ensaio"'),
         durationMinutes: z.number().int().positive().optional(),
         location: z.string().optional(),
         notes: z.string().optional(),
@@ -403,15 +519,26 @@ function buildHosannaTools(authInfo: AuthInfo) {
     }),
     chordpro_transpose: tool({
       description:
-        "Source-preserving transpose by semitones or toKey. Returns a proposal for the Studio editor.",
-      inputSchema: z.object({
-        content: z.string(),
-        semitones: z.number().optional(),
-        toKey: z.string().optional(),
-      }),
+        "Source-preserving transpose. Pass exactly one of toKey or semitones. Prefer songs_propose_transpose when a songId is known. Returns a proposal for the Studio editor.",
+      inputSchema: z
+        .object({
+          content: z.string(),
+          semitones: z.number().int().optional(),
+          toKey: z.string().optional(),
+        })
+        .superRefine((v, ctx) => {
+          const hasKey = v.toKey != null && String(v.toKey).trim() !== "";
+          const hasSemi = v.semitones != null;
+          if (hasKey === hasSemi) {
+            ctx.addIssue({
+              code: "custom",
+              message: "Provide exactly one of toKey or semitones",
+            });
+          }
+        }),
       execute: async ({ content, semitones, toKey }) => {
         const result =
-          toKey != null
+          toKey != null && String(toKey).trim() !== ""
             ? transposeChordProSource(content, { toKey })
             : transposeChordProSource(content, { semitones: semitones ?? 0 });
         return textResult({
@@ -453,37 +580,61 @@ function buildHosannaTools(authInfo: AuthInfo) {
       },
     }),
     songs_search: tool({
-      description: "Search the organization song library.",
+      description:
+        "Search library by title/artist/lyrics/tags. key is exact (not enharmonic). Default page=1 limit=20. includeContent clips to 8k + truncated flag.",
       inputSchema: z.object({
         search: z.string().optional(),
-        key: z.string().optional(),
+        key: z.string().optional().describe("Exact key e.g. Db"),
         tag: z.string().optional(),
-        limit: z.number().optional(),
+        page: z.number().int().positive().optional(),
+        limit: z.number().int().positive().max(50).optional(),
         includeContent: z.boolean().optional(),
       }),
       execute: async (args) => {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "song.access");
+        const page = args.page ?? 1;
         const result = await songService(ctx).list({
           search: args.search,
           key: args.key,
           tag: args.tag,
-          page: 1,
+          page,
           limit: Math.min(args.limit ?? 20, 50),
           sortBy: "title",
           sortOrder: "asc",
         });
         return textResult({
           total: result.total,
-          songs: result.songs.map((s) => ({
-            id: s.id,
-            title: s.title,
-            artist: s.artist,
-            tags: s.tags,
-            path: s.path,
-            content: args.includeContent ? s.content : undefined,
-            contentPreview: s.content.slice(0, 200),
-          })),
+          page: result.page,
+          totalPages: result.totalPages,
+          nextPage: result.page < result.totalPages ? result.page + 1 : null,
+          songs: result.songs.map((s) => {
+            if (!args.includeContent) {
+              return {
+                id: s.id,
+                title: s.title,
+                artist: s.artist,
+                tags: s.tags,
+                path: s.path,
+                folderId: s.folderId,
+                updatedAt: s.updatedAt.toISOString(),
+                contentPreview: s.content.slice(0, 200),
+              };
+            }
+            const clipped = clipContent(s.content, SEARCH_CONTENT_MAX);
+            return {
+              id: s.id,
+              title: s.title,
+              artist: s.artist,
+              tags: s.tags,
+              path: s.path,
+              folderId: s.folderId,
+              updatedAt: s.updatedAt.toISOString(),
+              content: clipped.content,
+              truncated: clipped.truncated,
+              contentLength: clipped.contentLength,
+            };
+          }),
         });
       },
     }),
@@ -494,26 +645,74 @@ function buildHosannaTools(authInfo: AuthInfo) {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "song.access");
         const song = await songService(ctx).getById(songId);
+        const clipped = clipContent(song.content, FULL_CONTENT_MAX);
         return textResult({
           song: {
             id: song.id,
             title: song.title,
             artist: song.artist,
-            content: song.content,
+            content: clipped.content,
+            truncated: clipped.truncated,
+            contentLength: clipped.contentLength,
             tags: song.tags,
+            folderId: song.folderId,
             updatedAt: song.updatedAt.toISOString(),
           },
           validation: validateChordProContent(song.content),
         });
       },
     }),
+    songs_get_many: tool({
+      description: "Batch-fetch up to 20 songs by id.",
+      inputSchema: z.object({
+        songIds: z.array(z.string()).min(1).max(20),
+        includeContent: z.boolean().optional(),
+      }),
+      execute: async ({ songIds, includeContent }) => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "song.access");
+        const songs = [];
+        const missing: string[] = [];
+        for (const id of songIds) {
+          try {
+            const song = await songService(ctx).getById(id);
+            if (includeContent === false) {
+              songs.push({
+                id: song.id,
+                title: song.title,
+                artist: song.artist,
+                tags: song.tags,
+                updatedAt: song.updatedAt.toISOString(),
+                contentPreview: song.content.slice(0, 200),
+              });
+            } else {
+              const clipped = clipContent(song.content, FULL_CONTENT_MAX);
+              songs.push({
+                id: song.id,
+                title: song.title,
+                artist: song.artist,
+                tags: song.tags,
+                updatedAt: song.updatedAt.toISOString(),
+                content: clipped.content,
+                truncated: clipped.truncated,
+                contentLength: clipped.contentLength,
+              });
+            }
+          } catch {
+            missing.push(id);
+          }
+        }
+        return textResult({ songs, missing, count: songs.length });
+      },
+    }),
     songs_create_draft: tool({
-      description: "Draft a new song without saving.",
+      description: "Draft a new song without saving. Optional folderId.",
       inputSchema: z.object({
         title: z.string(),
         artist: z.string().optional(),
         content: z.string().optional(),
         tags: z.array(z.string()).optional(),
+        folderId: z.string().nullable().optional(),
       }),
       execute: async (args) => {
         const ctx = requireMcpContext(authInfo);
@@ -527,13 +726,15 @@ function buildHosannaTools(authInfo: AuthInfo) {
             artist: args.artist ?? "Unknown",
             content,
             tags: args.tags ?? [],
+            folderId: args.folderId ?? null,
           },
           validation: validateChordProContent(content),
         });
       },
     }),
     songs_propose_edit: tool({
-      description: "Propose an edit to an existing song (not saved).",
+      description:
+        "Propose an edit to an existing song (not saved). Studio stages Accept/Decline.",
       inputSchema: z.object({
         songId: z.string(),
         content: z.string().optional(),
@@ -584,9 +785,75 @@ function buildHosannaTools(authInfo: AuthInfo) {
         });
       },
     }),
+    songs_propose_transpose: tool({
+      description:
+        "One-shot transpose of a library song. Pass exactly one of toKey or semitones. Stages proposal in Studio.",
+      inputSchema: z
+        .object({
+          songId: z.string(),
+          toKey: z.string().optional(),
+          semitones: z.number().int().optional(),
+        })
+        .superRefine((v, ctx) => {
+          const hasKey = v.toKey != null && String(v.toKey).trim() !== "";
+          const hasSemi = v.semitones != null;
+          if (hasKey === hasSemi) {
+            ctx.addIssue({
+              code: "custom",
+              message: "Provide exactly one of toKey or semitones",
+            });
+          }
+        }),
+      execute: async (args) => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "song.update");
+        const current = await songService(ctx).getById(args.songId);
+        const result =
+          args.toKey != null && String(args.toKey).trim() !== ""
+            ? transposeChordProSource(current.content, { toKey: args.toKey })
+            : transposeChordProSource(current.content, {
+                semitones: args.semitones ?? 0,
+              });
+        return textResult({
+          proposal: {
+            id: current.id,
+            title: current.title,
+            artist: current.artist,
+            content: result.content,
+            updatedAt: current.updatedAt.toISOString(),
+          },
+          transpose: result,
+          validation: validateChordProContent(result.content),
+          diff: summarizeDiff(current.content, result.content),
+        });
+      },
+    }),
+    songs_propose_propagate_chords: tool({
+      description:
+        "Propagate verse chords onto later verses for a library song. Does not invent chords.",
+      inputSchema: z.object({ songId: z.string() }),
+      execute: async ({ songId }) => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "song.update");
+        const current = await songService(ctx).getById(songId);
+        const result = propagateVerseChords(current.content);
+        return textResult({
+          proposal: {
+            id: current.id,
+            title: current.title,
+            artist: current.artist,
+            content: result.content,
+            updatedAt: current.updatedAt.toISOString(),
+          },
+          ...result,
+          validation: validateChordProContent(result.content),
+          diff: summarizeDiff(current.content, result.content),
+        });
+      },
+    }),
     songs_save: tool({
       description:
-        "Persist song create/update after user approval. Updates need updatedAt.",
+        "Persist song create/update after explicit approval (MCP). Studio users usually Accept in editor then Save there. Updates need updatedAt.",
       inputSchema: z.object({
         mode: z.enum(["create", "update"]),
         songId: z.string().optional(),
@@ -598,57 +865,83 @@ function buildHosannaTools(authInfo: AuthInfo) {
         tags: z.array(z.string()).optional(),
         song_number: z.number().positive().nullable().optional(),
         allowInvalid: z.boolean().optional(),
+        clientRequestId: z.string().optional(),
       }),
       execute: async (args) => {
         const ctx = requireMcpContext(authInfo);
         requireWriteEntitlement(ctx);
-        const validation = validateChordProContent(args.content);
-        if (!validation.ok && !args.allowInvalid) {
-          return textResult({ error: "Validation failed", validation });
-        }
-        if (args.mode === "create") {
-          requirePermission(ctx, "song.create");
-          const created = await songService(ctx).create({
-            title: args.title,
-            artist: args.artist,
-            content: args.content,
-            folderId: args.folderId,
-            tags: args.tags,
-            song_number: args.song_number,
-          });
-          return textResult({
-            saved: true,
-            song: {
-              id: created.id,
-              title: created.title,
-              updatedAt: created.updatedAt.toISOString(),
-            },
-          });
-        }
-        requirePermission(ctx, "song.update");
-        if (!args.songId || !args.updatedAt) {
-          return textResult({ error: "songId and updatedAt required" });
-        }
-        const updated = await songService(ctx).update(
-          args.songId,
-          new Date(args.updatedAt),
-          {
-            title: args.title,
-            artist: args.artist,
-            content: args.content,
-            folderId: args.folderId,
-            tags: args.tags,
-            song_number: args.song_number,
-          },
+        return textResult(
+          await withClientRequestId(ctx.orgId, args.clientRequestId, async () => {
+            const validation = validateChordProContent(args.content);
+            if (!validation.ok && !args.allowInvalid) {
+              return mapToolError(new Error("Validation failed"), {
+                current: { validation },
+              });
+            }
+            if (args.mode === "create") {
+              requirePermission(ctx, "song.create");
+              const created = await songService(ctx).create({
+                title: args.title,
+                artist: args.artist,
+                content: args.content,
+                folderId: args.folderId,
+                tags: args.tags,
+                song_number: args.song_number,
+              });
+              return {
+                saved: true,
+                song: {
+                  id: created.id,
+                  title: created.title,
+                  updatedAt: created.updatedAt.toISOString(),
+                },
+              };
+            }
+            requirePermission(ctx, "song.update");
+            if (!args.songId || !args.updatedAt) {
+              return mapToolError(
+                new Error("songId and updatedAt required"),
+              );
+            }
+            try {
+              const updated = await songService(ctx).update(
+                args.songId,
+                new Date(args.updatedAt),
+                {
+                  title: args.title,
+                  artist: args.artist,
+                  content: args.content,
+                  folderId: args.folderId,
+                  tags: args.tags,
+                  song_number: args.song_number,
+                },
+              );
+              return {
+                saved: true,
+                song: {
+                  id: updated.id,
+                  title: updated.title,
+                  updatedAt: updated.updatedAt.toISOString(),
+                },
+              };
+            } catch (error) {
+              let current: unknown;
+              try {
+                const song = await songService(ctx).getById(args.songId);
+                current = {
+                  id: song.id,
+                  title: song.title,
+                  artist: song.artist,
+                  content: song.content,
+                  updatedAt: song.updatedAt.toISOString(),
+                };
+              } catch {
+                /* ignore */
+              }
+              return mapToolError(error, { current, field: "updatedAt" });
+            }
+          }),
         );
-        return textResult({
-          saved: true,
-          song: {
-            id: updated.id,
-            title: updated.title,
-            updatedAt: updated.updatedAt.toISOString(),
-          },
-        });
       },
     }),
     songs_move: tool({
@@ -662,24 +955,41 @@ function buildHosannaTools(authInfo: AuthInfo) {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "song.update");
         requireWriteEntitlement(ctx);
-        const moved = await songService(ctx).move(
-          songId,
-          new Date(updatedAt),
-          folderId,
-        );
-        return textResult({
-          moved: true,
-          song: {
-            id: moved.id,
-            title: moved.title,
-            folderId: moved.folderId,
-            updatedAt: moved.updatedAt.toISOString(),
-          },
-        });
+        try {
+          const moved = await songService(ctx).move(
+            songId,
+            new Date(updatedAt),
+            folderId,
+          );
+          return textResult({
+            moved: true,
+            song: {
+              id: moved.id,
+              title: moved.title,
+              folderId: moved.folderId,
+              updatedAt: moved.updatedAt.toISOString(),
+            },
+          });
+        } catch (error) {
+          let current: unknown;
+          try {
+            const song = await songService(ctx).getById(songId);
+            current = {
+              id: song.id,
+              title: song.title,
+              folderId: song.folderId,
+              updatedAt: song.updatedAt.toISOString(),
+            };
+          } catch {
+            /* ignore */
+          }
+          return textResult(mapToolError(error, { current, field: "updatedAt" }));
+        }
       },
     }),
     songs_delete: tool({
-      description: "Soft-delete a song (trash). Confirm with user first.",
+      description:
+        "Soft-delete a song (trash). Requires explicit user confirmation before calling.",
       inputSchema: z.object({ songId: z.string() }),
       execute: async ({ songId }) => {
         const ctx = requireMcpContext(authInfo);
@@ -687,6 +997,26 @@ function buildHosannaTools(authInfo: AuthInfo) {
         requireWriteEntitlement(ctx);
         await songService(ctx).delete(songId);
         return textResult({ deleted: true, songId });
+      },
+    }),
+    songs_restore: tool({
+      description: "Restore a soft-deleted song from trash.",
+      inputSchema: z.object({ songId: z.string() }),
+      execute: async ({ songId }) => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "song.update");
+        requireWriteEntitlement(ctx);
+        const song = await songService(ctx).restore(songId);
+        return textResult({
+          restored: true,
+          song: song
+            ? {
+                id: song.id,
+                title: song.title,
+                updatedAt: song.updatedAt.toISOString(),
+              }
+            : { id: songId },
+        });
       },
     }),
     services_search: tool({
@@ -709,9 +1039,14 @@ function buildHosannaTools(authInfo: AuthInfo) {
       },
     }),
     services_get: tool({
-      description: "Get a service plan with elements.",
-      inputSchema: z.object({ serviceId: z.string() }),
-      execute: async ({ serviceId }) => {
+      description:
+        "Get a service plan with elements. expandSongs attaches song metadata for song elements (avoids N+1 songs_get).",
+      inputSchema: z.object({
+        serviceId: z.string(),
+        expandSongs: z.boolean().optional(),
+        includeSongContent: z.boolean().optional(),
+      }),
+      execute: async ({ serviceId, expandSongs, includeSongContent }) => {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "service.access");
         const service = await serviceService(ctx).getByIdSerialized(serviceId);
@@ -719,12 +1054,51 @@ function buildHosannaTools(authInfo: AuthInfo) {
           service.elements,
           songService(ctx),
         );
-        return textResult({ service, validation });
+        let expandedSongs: unknown[] | undefined;
+        if (expandSongs) {
+          const rawElements = Array.isArray(service.elements)
+            ? service.elements
+            : [];
+          const ids = [
+            ...new Set(
+              rawElements
+                .map((el) =>
+                  el && typeof el === "object" && "songId" in el
+                    ? String((el as { songId?: unknown }).songId ?? "")
+                    : "",
+                )
+                .filter((id) => id.length > 0),
+            ),
+          ].slice(0, 40);
+          expandedSongs = [];
+          for (const id of ids) {
+            try {
+              const song = await songService(ctx).getById(id);
+              expandedSongs.push({
+                id: song.id,
+                title: song.title,
+                artist: song.artist,
+                updatedAt: song.updatedAt.toISOString(),
+                ...(includeSongContent
+                  ? {
+                      content: song.content.slice(0, SEARCH_CONTENT_MAX),
+                      truncated: song.content.length > SEARCH_CONTENT_MAX,
+                      contentLength: song.content.length,
+                    }
+                  : { contentPreview: song.content.slice(0, 200) }),
+              });
+            } catch {
+              expandedSongs.push({ id, missing: true });
+            }
+          }
+        }
+        return textResult({ service, validation, expandedSongs });
       },
     }),
     services_validate: tool({
-      description: "Validate service elements and song references.",
-      inputSchema: z.object({ elements: z.array(z.any()) }),
+      description:
+        "Validate service elements and song references. elements must match service element schema (id, type, title, …).",
+      inputSchema: z.object({ elements: serviceElementsSchema }),
       execute: async ({ elements }) => {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "service.access");
@@ -804,7 +1178,7 @@ function buildHosannaTools(authInfo: AuthInfo) {
         serviceId: z.string(),
         name: z.string().optional(),
         notes: z.string().optional(),
-        elements: z.array(z.any()).optional(),
+        elements: serviceElementsSchema.optional(),
       }),
       execute: async (args) => {
         const ctx = requireMcpContext(authInfo);
@@ -832,7 +1206,7 @@ function buildHosannaTools(authInfo: AuthInfo) {
     }),
     services_save: tool({
       description:
-        "Persist service create/update after user approval. Updates need updatedAt.",
+        "Persist service create/update after explicit approval. Updates need updatedAt.",
       inputSchema: z.object({
         mode: z.enum(["create", "update"]),
         serviceId: z.string().optional(),
@@ -840,51 +1214,77 @@ function buildHosannaTools(authInfo: AuthInfo) {
         name: z.string().min(1),
         date: z.string().min(1),
         notes: z.string().optional(),
-        elements: z.array(z.any()).optional(),
+        elements: serviceElementsSchema.optional(),
         archived: z.boolean().optional(),
         allowInvalid: z.boolean().optional(),
+        clientRequestId: z.string().optional(),
       }),
       execute: async (args) => {
         const ctx = requireMcpContext(authInfo);
         requireWriteEntitlement(ctx);
-        const elements = args.elements ?? [];
-        const validation = await validateServicePlan(
-          elements,
-          songService(ctx),
+        return textResult(
+          await withClientRequestId(ctx.orgId, args.clientRequestId, async () => {
+            const elements = args.elements ?? [];
+            const validation = await validateServicePlan(
+              elements,
+              songService(ctx),
+            );
+            if (!validation.ok && !args.allowInvalid) {
+              return {
+                error: true,
+                code: "validation",
+                message: "Validation failed",
+                retryable: false,
+                validation,
+              };
+            }
+            if (args.mode === "create") {
+              requirePermission(ctx, "service.create");
+              const created = await serviceService(ctx).create({
+                name: args.name,
+                date: new Date(args.date),
+                notes: args.notes,
+                elements,
+              });
+              return { saved: true, service: created, validation };
+            }
+            requirePermission(ctx, "service.update");
+            if (!args.serviceId || !args.updatedAt) {
+              return mapToolError(
+                new Error("serviceId and updatedAt required"),
+              );
+            }
+            try {
+              const updated = await serviceService(ctx).update(
+                args.serviceId,
+                new Date(args.updatedAt),
+                {
+                  name: args.name,
+                  date: new Date(args.date),
+                  notes: args.notes,
+                  elements,
+                  archived: args.archived,
+                },
+              );
+              return { saved: true, service: updated, validation };
+            } catch (error) {
+              let current: unknown;
+              try {
+                current = await serviceService(ctx).getByIdSerialized(
+                  args.serviceId,
+                );
+              } catch {
+                /* ignore */
+              }
+              return mapToolError(error, { current, field: "updatedAt" });
+            }
+          }),
         );
-        if (!validation.ok && !args.allowInvalid) {
-          return textResult({ error: "Validation failed", validation });
-        }
-        if (args.mode === "create") {
-          requirePermission(ctx, "service.create");
-          const created = await serviceService(ctx).create({
-            name: args.name,
-            date: new Date(args.date),
-            notes: args.notes,
-            elements,
-          });
-          return textResult({ saved: true, service: created, validation });
-        }
-        requirePermission(ctx, "service.update");
-        if (!args.serviceId || !args.updatedAt) {
-          return textResult({ error: "serviceId and updatedAt required" });
-        }
-        const updated = await serviceService(ctx).update(
-          args.serviceId,
-          new Date(args.updatedAt),
-          {
-            name: args.name,
-            date: new Date(args.date),
-            notes: args.notes,
-            elements,
-            archived: args.archived,
-          },
-        );
-        return textResult({ saved: true, service: updated, validation });
       },
     }),
     services_delete: tool({
-      description: "Soft-delete a service. Confirm with user first.",
+      description:
+        "Soft-delete a service. Requires explicit user confirmation before calling.",
       inputSchema: z.object({ serviceId: z.string() }),
       execute: async ({ serviceId }) => {
         const ctx = requireMcpContext(authInfo);
@@ -892,6 +1292,17 @@ function buildHosannaTools(authInfo: AuthInfo) {
         requireWriteEntitlement(ctx);
         await serviceService(ctx).delete(serviceId);
         return textResult({ deleted: true, serviceId });
+      },
+    }),
+    services_restore: tool({
+      description: "Restore a soft-deleted service from trash.",
+      inputSchema: z.object({ serviceId: z.string() }),
+      execute: async ({ serviceId }) => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "service.update");
+        requireWriteEntitlement(ctx);
+        const service = await serviceService(ctx).restore(serviceId);
+        return textResult({ restored: true, service });
       },
     }),
   };
@@ -906,20 +1317,21 @@ const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church son
 ## Style (strict)
 - Be brief. Prefer doing over asking. One short sentence + tools beats essays.
 - Do NOT paste full ChordPro bodies into chat. Call propose/edit tools; the Studio editor shows accept/decline.
+- Prefer pageContext ids + updatedAt. Do NOT call list/search just to discover the open song/service/folder.
 - For clear requests (transpose to D, repeat a section 2×, duplicate last verse, fix chords, complete metadata, create folder/event), act immediately with a sensible default. Ask at most ONE question only when blocked.
-- Never call discovery/capability tools for trivial edits when page context already has the song/service content.
 - Do not offer multiple options when the user already chose (e.g. "transpose into D").
-- ChordPro/song content edits: propose first; Studio stages accept/decline. Persist with songs_save / services_save only after explicit approval.
+- ChordPro/song content edits: use propose tools (prefer songs_propose_transpose / songs_propose_edit). Studio stages Accept/Decline in the editor. After Accept, the user saves in the editor — only call songs_save / services_save if they explicitly ask to persist via chat/MCP.
 - Library structural edits (folders, collections, agenda create/update, move song, add songs to collection): do them with tools when the request is clear. Confirm once before any delete.
 - When the user says "repeat" / "2x" a verse or chorus: duplicate that section's body in the ChordPro (or add \`{c: 2x}\` if they ask for a note only). Prefer physical duplication when they ask to "write a copy".
+- On stale/concurrency errors, use the returned \`current\` object (do not re-fetch blindly).
 
 ## Capabilities (use them)
-- Songs: search/get, draft, propose_edit/fix, save, move, delete
-- Services: search/get, propose_edit, plan_suggest, validate, save, delete
-- Folders: list/create/update/delete
+- Songs: search/get/get_many, draft, propose_edit/fix/transpose, save, move, delete, restore; trash_list
+- Services: search/get (expandSongs), propose_edit, plan_suggest, validate, save, delete, restore
+- Folders: list/create/update/delete/restore
 - Collections: list/get/create/update/delete, add_songs/remove_songs
 - Agenda: list/get/create/update/delete
-- Metadata: MusicBrainz, YouTube (for \`{youtube:}\`), web search; ChordPro validate/format/transpose/convert/propagate
+- Metadata: MusicBrainz, YouTube (for \`{youtube:}\`), DuckDuckGo web search; ChordPro validate/format/transpose/convert/propagate
 - When completing metadata: MusicBrainz for title/artist/release; YouTube search for \`{youtube: URL}\` (use hits[].directive); web search for extra confirmation. Propose the ChordPro edit — do not invent lyrics.
 
 ## Hard rules
@@ -936,18 +1348,27 @@ function contextBlock(page?: ChatPageContext): string {
   return `
 
 ## Current Studio page context
+Prefer these ids/updatedAt over discovery tools.
 ${JSON.stringify(
   {
     kind: page.kind ?? "general",
     route: page.route,
     songId: page.songId,
     serviceId: page.serviceId,
+    folderId: page.folderId,
+    collectionId: page.collectionId,
     title: page.title,
+    artist: page.artist,
+    updatedAt: page.updatedAt,
+    contentTruncated: page.contentTruncated,
+    selectedSongIds: page.selectedSongIds,
+    selectedFolderIds: page.selectedFolderIds,
+    serviceElementsSummary: page.serviceElementsSummary,
   },
   null,
   2,
 )}
-${excerpt ? `\n### Content excerpt\n\`\`\`chordpro\n${excerpt}\n\`\`\`` : ""}
+${excerpt ? `\n### Content excerpt${page.contentTruncated ? " (truncated)" : ""}\n\`\`\`chordpro\n${excerpt}\n\`\`\`` : ""}
 `;
 }
 

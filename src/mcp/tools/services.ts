@@ -54,12 +54,15 @@ export function registerServiceTools(
     "services.get",
     {
       title: "Get service",
-      description: "Retrieve a service plan including elements.",
+      description:
+        "Retrieve a service plan including elements. Set expandSongs=true to attach song metadata (and optional content) for each song element in one call.",
       inputSchema: z.object({
         serviceId: z.string().uuid(),
+        expandSongs: z.boolean().optional().default(false),
+        includeSongContent: z.boolean().optional().default(false),
       }),
     },
-    async ({ serviceId }) => {
+    async ({ serviceId, expandSongs, includeSongContent }) => {
       try {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "service.access");
@@ -68,7 +71,42 @@ export function registerServiceTools(
           service.elements,
           songService(ctx),
         );
-        return jsonResult({ service, validation });
+        let expandedSongs: unknown[] | undefined;
+        if (expandSongs) {
+          const rawElements = Array.isArray(service.elements)
+            ? service.elements
+            : [];
+          const ids = [
+            ...new Set(
+              rawElements
+                .map((el) =>
+                  el && typeof el === "object" && "songId" in el
+                    ? String((el as { songId?: unknown }).songId ?? "")
+                    : "",
+                )
+                .filter((id) => id.length > 0),
+            ),
+          ].slice(0, 40);
+          expandedSongs = [];
+          for (const id of ids) {
+            try {
+              const song = await songService(ctx).getById(id);
+              expandedSongs.push({
+                id: song.id,
+                title: song.title,
+                artist: song.artist,
+                updatedAt: song.updatedAt.toISOString(),
+                tags: song.tags,
+                ...(includeSongContent
+                  ? { content: song.content.slice(0, 8_000), truncated: song.content.length > 8_000, contentLength: song.content.length }
+                  : { contentPreview: song.content.slice(0, 200) }),
+              });
+            } catch {
+              expandedSongs.push({ id, missing: true });
+            }
+          }
+        }
+        return jsonResult({ service, validation, expandedSongs });
       } catch (error) {
         return errorResult(error);
       }
@@ -284,7 +322,8 @@ export function registerServiceTools(
     "services.delete",
     {
       title: "Delete service",
-      description: "Soft-delete a service plan.",
+      description:
+        "Soft-delete a service plan. Requires explicit user confirmation before calling.",
       inputSchema: z.object({
         serviceId: z.string().uuid(),
       }),
@@ -296,6 +335,26 @@ export function registerServiceTools(
         requireWriteEntitlement(ctx);
         await serviceService(ctx).delete(serviceId);
         return jsonResult({ deleted: true, serviceId });
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "services.restore",
+    {
+      title: "Restore service",
+      description: "Restore a soft-deleted service from trash.",
+      inputSchema: z.object({ serviceId: z.string().uuid() }),
+    },
+    async ({ serviceId }) => {
+      try {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "service.update");
+        requireWriteEntitlement(ctx);
+        const service = await serviceService(ctx).restore(serviceId);
+        return jsonResult({ restored: true, service });
       } catch (error) {
         return errorResult(error);
       }

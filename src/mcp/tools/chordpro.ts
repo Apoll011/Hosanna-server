@@ -137,19 +137,28 @@ export function registerChordProTools(server: McpServer): void {
           semitones: z.number().int().optional(),
           toKey: z.string().optional(),
         })
-        .refine((v) => v.semitones != null || v.toKey != null, {
-          message: "Provide semitones or toKey",
+        .superRefine((v, ctx) => {
+          const hasKey = v.toKey != null && String(v.toKey).trim() !== "";
+          const hasSemi = v.semitones != null;
+          if (hasKey === hasSemi) {
+            ctx.addIssue({
+              code: "custom",
+              message: "Provide exactly one of toKey or semitones",
+            });
+          }
         }),
     },
     async ({ content, semitones, toKey }) => {
       try {
         const result =
-          toKey != null
+          toKey != null && String(toKey).trim() !== ""
             ? transposeChordProSource(content, { toKey })
             : transposeChordProSource(content, { semitones: semitones! });
         return jsonResult({
           ...result,
+          proposal: { content: result.content },
           validation: validateChordProContent(result.content),
+          diff: summarizeDiff(content, result.content),
         });
       } catch (error) {
         return errorResult(error);

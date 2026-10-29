@@ -13,7 +13,15 @@ import {
   metadataFromChordPro,
   validateChordProContent,
 } from "../lib/chordproGate.js";
+import {
+  clipContent,
+  FULL_CONTENT_MAX,
+  SEARCH_CONTENT_MAX,
+} from "../lib/contentClip.js";
 import { summarizeDiff } from "../lib/diff.js";
+import { withClientRequestId } from "../lib/idempotency.js";
+import { propagateVerseChords } from "../lib/propagateChords.js";
+import { transposeChordProSource } from "../lib/transposeSource.js";
 
 function serializeSong(song: {
   id: string;
@@ -49,12 +57,19 @@ export function registerSongTools(
     "songs.search",
     {
       title: "Search songs",
-      description: "Search the active organization's song library.",
+      description:
+        "Search the org library by title/artist/lyrics/tags (combined). key is exact metadata key string (not enharmonic-normalized). Default page=1, limit=20 (max 100). includeContent clips bodies to 8k chars and sets truncated.",
       inputSchema: z.object({
-        search: z.string().optional(),
-        key: z.string().optional(),
+        search: z
+          .string()
+          .optional()
+          .describe("Matches title, artist, lyrics content, and tags"),
+        key: z
+          .string()
+          .optional()
+          .describe("Exact key filter as stored (e.g. Db not C#)"),
         tag: z.string().optional(),
-        folder: z.string().optional(),
+        folder: z.string().optional().describe("Folder id filter"),
         page: z.number().int().positive().optional().default(1),
         limit: z.number().int().positive().max(100).optional().default(20),
         includeContent: z.boolean().optional().default(false),
@@ -74,10 +89,13 @@ export function registerSongTools(
           sortBy: "title",
           sortOrder: "asc",
         });
+        const nextPage =
+          result.page < result.totalPages ? result.page + 1 : null;
         return jsonResult({
           total: result.total,
           page: result.page,
           totalPages: result.totalPages,
+          nextPage,
           songs: result.songs.map((s) => {
             const base = serializeSong(s);
             if (!args.includeContent) {
@@ -87,7 +105,13 @@ export function registerSongTools(
                 contentPreview: s.content.slice(0, 200),
               };
             }
-            return base;
+            const clipped = clipContent(s.content, SEARCH_CONTENT_MAX);
+            return {
+              ...base,
+              content: clipped.content,
+              truncated: clipped.truncated,
+              contentLength: clipped.contentLength,
+            };
           }),
         });
       } catch (error) {
@@ -110,10 +134,62 @@ export function registerSongTools(
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "song.access");
         const song = await songService(ctx).getById(songId);
+        const clipped = clipContent(song.content, FULL_CONTENT_MAX);
         return jsonResult({
-          song: serializeSong(song),
+          song: {
+            ...serializeSong(song),
+            content: clipped.content,
+            truncated: clipped.truncated,
+            contentLength: clipped.contentLength,
+          },
           validation: validateChordProContent(song.content),
         });
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "songs.get_many",
+    {
+      title: "Get many songs",
+      description:
+        "Batch-fetch up to 20 songs by id. Set includeContent=false for metadata-only (cheaper).",
+      inputSchema: z.object({
+        songIds: z.array(z.string().uuid()).min(1).max(20),
+        includeContent: z.boolean().optional().default(true),
+      }),
+    },
+    async ({ songIds, includeContent }) => {
+      try {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "song.access");
+        const songs = [];
+        const missing: string[] = [];
+        for (const id of songIds) {
+          try {
+            const song = await songService(ctx).getById(id);
+            if (!includeContent) {
+              const { content: _c, ...rest } = serializeSong(song);
+              songs.push({
+                ...rest,
+                contentPreview: song.content.slice(0, 200),
+              });
+            } else {
+              const clipped = clipContent(song.content, FULL_CONTENT_MAX);
+              songs.push({
+                ...serializeSong(song),
+                content: clipped.content,
+                truncated: clipped.truncated,
+                contentLength: clipped.contentLength,
+              });
+            }
+          } catch {
+            missing.push(id);
+          }
+        }
+        return jsonResult({ songs, missing, count: songs.length });
       } catch (error) {
         return errorResult(error);
       }
@@ -216,7 +292,7 @@ export function registerSongTools(
     {
       title: "Propose song fix",
       description:
-        "Lint/format an existing song and propose corrections without inventing lyrics. Does not save.",
+        "Lint/format an existing song and propose corrections without inventing lyrics. Does not save. Studio stages Accept/Decline.",
       inputSchema: z.object({
         songId: z.string().uuid(),
         applyFormat: z.boolean().optional().default(true),
@@ -260,8 +336,100 @@ export function registerSongTools(
           diff: summarizeDiff(current.content, proposed),
           notes: [
             "Do not invent missing lyrics or chords.",
-            "Review remaining diagnostics before songs.save.",
+            "In Studio, Accept in the editor then user Save; songs.save only if asked to persist via MCP.",
           ],
+        });
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "songs.propose_transpose",
+    {
+      title: "Propose transpose",
+      description:
+        "One-shot: load song, source-preserving transpose, return staged proposal + diff. Pass exactly one of toKey or semitones.",
+      inputSchema: z
+        .object({
+          songId: z.string().uuid(),
+          toKey: z.string().optional().describe("Target key, e.g. D or Bb"),
+          semitones: z
+            .number()
+            .int()
+            .optional()
+            .describe("Signed semitone shift, e.g. 2 or -5"),
+        })
+        .superRefine((v, ctx) => {
+          const hasKey = v.toKey != null && String(v.toKey).trim() !== "";
+          const hasSemi = v.semitones != null;
+          if (hasKey === hasSemi) {
+            ctx.addIssue({
+              code: "custom",
+              message: "Provide exactly one of toKey or semitones",
+            });
+          }
+        }),
+    },
+    async (args) => {
+      try {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "song.update");
+        const current = await songService(ctx).getById(args.songId);
+        const result =
+          args.toKey != null && String(args.toKey).trim() !== ""
+            ? transposeChordProSource(current.content, { toKey: args.toKey })
+            : transposeChordProSource(current.content, {
+                semitones: args.semitones ?? 0,
+              });
+        return jsonResult({
+          proposal: {
+            id: current.id,
+            title: current.title,
+            artist: current.artist,
+            content: result.content,
+            tags: current.tags,
+            folderId: current.folderId,
+            song_number: current.song_number,
+            updatedAt: current.updatedAt.toISOString(),
+          },
+          transpose: result,
+          validation: validateChordProContent(result.content),
+          diff: summarizeDiff(current.content, result.content),
+          next: "Studio stages Accept/Decline; songs.save only after explicit persist request.",
+        });
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "songs.propose_propagate_chords",
+    {
+      title: "Propose propagate chords",
+      description:
+        "Copy [chord] markers from the first chorded verse onto later verses. Does not invent chords. Returns a proposal.",
+      inputSchema: z.object({ songId: z.string().uuid() }),
+    },
+    async ({ songId }) => {
+      try {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "song.update");
+        const current = await songService(ctx).getById(songId);
+        const result = propagateVerseChords(current.content);
+        return jsonResult({
+          proposal: {
+            id: current.id,
+            title: current.title,
+            artist: current.artist,
+            content: result.content,
+            updatedAt: current.updatedAt.toISOString(),
+          },
+          ...result,
+          validation: validateChordProContent(result.content),
+          diff: summarizeDiff(current.content, result.content),
         });
       } catch (error) {
         return errorResult(error);
@@ -274,7 +442,7 @@ export function registerSongTools(
     {
       title: "Save song",
       description:
-        "Persist a validated song create or update. Requires prior user approval of a draft/proposal.",
+        "Persist a validated song create or update after explicit user approval (MCP hosts). Studio users usually Accept in the editor then Save there.",
       inputSchema: z.object({
         mode: z.enum(["create", "update"]),
         songId: z.string().uuid().optional(),
@@ -293,64 +461,88 @@ export function registerSongTools(
           .optional()
           .default(false)
           .describe("Allow save despite ChordPro lint errors"),
+        clientRequestId: z
+          .string()
+          .optional()
+          .describe("Idempotency key to dedupe retries"),
       }),
     },
     async (args) => {
       try {
         const ctx = requireMcpContext(authInfo);
         requireWriteEntitlement(ctx);
-        const validation = validateChordProContent(args.content);
-        if (!validation.ok && !args.allowInvalid) {
-          return jsonResult(
-            {
-              error: "ChordPro validation failed",
+        return await withClientRequestId(ctx.orgId, args.clientRequestId, async () => {
+          const validation = validateChordProContent(args.content);
+          if (!validation.ok && !args.allowInvalid) {
+            return jsonResult(
+              {
+                error: true,
+                code: "validation",
+                message: "ChordPro validation failed",
+                retryable: false,
+                validation,
+                hint: "Fix issues or set allowInvalid=true after user confirmation.",
+              },
+              true,
+            );
+          }
+
+          if (args.mode === "create") {
+            requirePermission(ctx, "song.create");
+            const created = await songService(ctx).create({
+              title: args.title,
+              artist: args.artist,
+              content: args.content,
+              folderId: args.folderId,
+              tags: args.tags,
+              song_number: args.song_number,
+            });
+            return jsonResult({
+              saved: true,
+              song: serializeSong(created),
               validation,
-              hint: "Fix issues or set allowInvalid=true after user confirmation.",
-            },
-            true,
-          );
-        }
+            });
+          }
 
-        if (args.mode === "create") {
-          requirePermission(ctx, "song.create");
-          const created = await songService(ctx).create({
-            title: args.title,
-            artist: args.artist,
-            content: args.content,
-            folderId: args.folderId,
-            tags: args.tags,
-            song_number: args.song_number,
-          });
-          return jsonResult({
-            saved: true,
-            song: serializeSong(created),
-            validation,
-          });
-        }
-
-        requirePermission(ctx, "song.update");
-        if (!args.songId || !args.updatedAt) {
-          return jsonResult(
-            { error: "songId and updatedAt are required for update" },
-            true,
-          );
-        }
-        const updated = await songService(ctx).update(
-          args.songId,
-          new Date(args.updatedAt),
-          {
-            title: args.title,
-            artist: args.artist,
-            content: args.content,
-            folderId: args.folderId,
-            tags: args.tags,
-            song_number: args.song_number,
-          },
-        );
-        return jsonResult({
-          saved: true,
-          song: serializeSong(updated),
-          validation,
+          requirePermission(ctx, "song.update");
+          if (!args.songId || !args.updatedAt) {
+            return jsonResult(
+              {
+                error: true,
+                code: "validation",
+                message: "songId and updatedAt are required for update",
+                retryable: false,
+              },
+              true,
+            );
+          }
+          try {
+            const updated = await songService(ctx).update(
+              args.songId,
+              new Date(args.updatedAt),
+              {
+                title: args.title,
+                artist: args.artist,
+                content: args.content,
+                folderId: args.folderId,
+                tags: args.tags,
+                song_number: args.song_number,
+              },
+            );
+            return jsonResult({
+              saved: true,
+              song: serializeSong(updated),
+              validation,
+            });
+          } catch (error) {
+            let current: unknown;
+            try {
+              current = serializeSong(await songService(ctx).getById(args.songId));
+            } catch {
+              /* ignore */
+            }
+            return errorResult(error, { current, field: "updatedAt" });
+          }
         });
       } catch (error) {
         return errorResult(error);
@@ -374,15 +566,25 @@ export function registerSongTools(
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "song.update");
         requireWriteEntitlement(ctx);
-        const moved = await songService(ctx).move(
-          songId,
-          new Date(updatedAt),
-          folderId,
-        );
-        return jsonResult({
-          moved: true,
-          song: serializeSong(moved),
-        });
+        try {
+          const moved = await songService(ctx).move(
+            songId,
+            new Date(updatedAt),
+            folderId,
+          );
+          return jsonResult({
+            moved: true,
+            song: serializeSong(moved),
+          });
+        } catch (error) {
+          let current: unknown;
+          try {
+            current = serializeSong(await songService(ctx).getById(songId));
+          } catch {
+            /* ignore */
+          }
+          return errorResult(error, { current, field: "updatedAt" });
+        }
       } catch (error) {
         return errorResult(error);
       }
@@ -393,7 +595,8 @@ export function registerSongTools(
     "songs.delete",
     {
       title: "Delete song",
-      description: "Soft-delete a song (moves to trash).",
+      description:
+        "Soft-delete a song (moves to trash). Requires explicit user confirmation before calling.",
       inputSchema: z.object({
         songId: z.string().uuid(),
       }),
@@ -405,6 +608,29 @@ export function registerSongTools(
         requireWriteEntitlement(ctx);
         await songService(ctx).delete(songId);
         return jsonResult({ deleted: true, songId });
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "songs.restore",
+    {
+      title: "Restore song",
+      description: "Restore a soft-deleted song from trash.",
+      inputSchema: z.object({ songId: z.string().uuid() }),
+    },
+    async ({ songId }) => {
+      try {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "song.update");
+        requireWriteEntitlement(ctx);
+        const song = await songService(ctx).restore(songId);
+        return jsonResult({
+          restored: true,
+          song: song ? serializeSong(song as never) : { id: songId },
+        });
       } catch (error) {
         return errorResult(error);
       }
