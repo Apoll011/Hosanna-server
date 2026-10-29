@@ -57,9 +57,6 @@ import {
   createAgendaEvent,
   createCollection,
   createFolder,
-  deleteAgendaEvent,
-  deleteCollection,
-  deleteFolder,
   getAgendaEvent,
   getCollection,
   listAgenda,
@@ -162,6 +159,28 @@ function textResult(data: unknown) {
   return typeof data === "string" ? data : JSON.stringify(data, null, 2);
 }
 
+/** Studio-only: stage a destructive action for the Confirm button (does not mutate). */
+function deleteConfirmation(opts: {
+  action:
+    | "delete_song"
+    | "delete_service"
+    | "delete_folder"
+    | "delete_collection"
+    | "delete_agenda";
+  id: string;
+  title: string;
+  detail?: string;
+  folderAction?: "move_to_root" | "delete_songs";
+}) {
+  return {
+    confirmation: {
+      ...opts,
+      requiresUiConfirm: true,
+      message: `Staged in Studio — the user must click Confirm to ${opts.action.replace(/_/g, " ")} "${opts.title}". Do NOT claim it is deleted until they confirm.`,
+    },
+  };
+}
+
 function buildHosannaTools(
   authInfo: AuthInfo,
   opts?: { nativeWebAuth?: NativeWebAuth | null },
@@ -242,7 +261,7 @@ function buildHosannaTools(
               "directives",
             ],
           },
-          note: "Studio: propose tools stage Accept/Decline in the editor; user Save there. songs_save/services_save only after explicit persist request (MCP hosts).",
+          note: "Studio: propose tools stage Accept/Decline in the editor; user Save there. *_delete tools only STAGE a Confirm button (do not mutate). songs_save/services_save only after explicit persist request (MCP hosts).",
         }),
     }),
     hosanna_permissions: tool({
@@ -391,13 +410,29 @@ function buildHosannaTools(
     }),
     folders_delete: tool({
       description:
-        "Soft-delete a folder. Confirm with user first. move_to_root (default): songs in this folder go to library root; nested child folders are not recursively moved. delete_songs: recursively trash this folder, nested folders, and their songs.",
+        "Stage folder soft-delete for Studio Confirm (does NOT delete yet). move_to_root (default): songs go to library root; delete_songs: recursively trash folder + songs. User must click Confirm.",
       inputSchema: z.object({
         folderId: z.string(),
         action: z.enum(["move_to_root", "delete_songs"]).optional(),
       }),
-      execute: async (args) =>
-        textResult(await deleteFolder(requireMcpContext(authInfo), args)),
+      execute: async (args) => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "folder.delete");
+        const folder = await folderService(ctx).getById(args.folderId);
+        const folderAction = args.action ?? "move_to_root";
+        return textResult(
+          deleteConfirmation({
+            action: "delete_folder",
+            id: folder.id,
+            title: folder.name,
+            folderAction,
+            detail:
+              folderAction === "delete_songs"
+                ? "Also trash songs inside this folder (and nested folders)."
+                : "Songs in this folder move to library root.",
+          }),
+        );
+      },
     }),
     folders_restore: tool({
       description: "Restore a soft-deleted folder from trash.",
@@ -483,12 +518,21 @@ function buildHosannaTools(
     }),
     collections_delete: tool({
       description:
-        "Soft-delete a collection (songs stay in the library). Confirm with user first.",
+        "Stage collection soft-delete for Studio Confirm (does NOT delete yet). Songs stay in the library. User must click Confirm.",
       inputSchema: z.object({ collectionId: z.string() }),
-      execute: async ({ collectionId }) =>
-        textResult(
-          await deleteCollection(requireMcpContext(authInfo), collectionId),
-        ),
+      execute: async ({ collectionId }) => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "collection.delete");
+        const { collection } = await getCollection(ctx, collectionId);
+        return textResult(
+          deleteConfirmation({
+            action: "delete_collection",
+            id: collection.id,
+            title: collection.name,
+            detail: "Songs remain in the library.",
+          }),
+        );
+      },
     }),
     collections_add_songs: tool({
       description: "Add songs to a collection.",
@@ -564,12 +608,21 @@ function buildHosannaTools(
         textResult(await updateAgendaEvent(requireMcpContext(authInfo), args)),
     }),
     agenda_delete: tool({
-      description: "Soft-delete an agenda event. Confirm with user first.",
+      description:
+        "Stage agenda event soft-delete for Studio Confirm (does NOT delete yet). User must click Confirm.",
       inputSchema: z.object({ eventId: z.string() }),
-      execute: async ({ eventId }) =>
-        textResult(
-          await deleteAgendaEvent(requireMcpContext(authInfo), eventId),
-        ),
+      execute: async ({ eventId }) => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "agenda.delete");
+        const { event } = await getAgendaEvent(ctx, eventId);
+        return textResult(
+          deleteConfirmation({
+            action: "delete_agenda",
+            id: event.id,
+            title: event.title || eventId,
+          }),
+        );
+      },
     }),
     metadata_musicbrainz_search: tool({
       description:
@@ -1159,14 +1212,20 @@ function buildHosannaTools(
     }),
     songs_delete: tool({
       description:
-        "Soft-delete a song (trash). Requires explicit user confirmation before calling.",
+        "Stage song soft-delete (trash) for Studio Confirm — does NOT delete. Call when the user wants to delete; Studio shows a Confirm button. Never claim deleted until they click Confirm.",
       inputSchema: z.object({ songId: z.string() }),
       execute: async ({ songId }) => {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "song.delete");
-        requireWriteEntitlement(ctx);
-        await songService(ctx).delete(songId);
-        return textResult({ deleted: true, songId });
+        const song = await songService(ctx).getById(songId);
+        return textResult(
+          deleteConfirmation({
+            action: "delete_song",
+            id: song.id,
+            title: song.title,
+            detail: song.artist ? `Artist: ${song.artist}` : undefined,
+          }),
+        );
       },
     }),
     songs_restore: tool({
@@ -1454,14 +1513,19 @@ function buildHosannaTools(
     }),
     services_delete: tool({
       description:
-        "Soft-delete a service. Requires explicit user confirmation before calling.",
+        "Stage service soft-delete for Studio Confirm — does NOT delete. Studio shows a Confirm button. Never claim deleted until they click Confirm.",
       inputSchema: z.object({ serviceId: z.string() }),
       execute: async ({ serviceId }) => {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "service.delete");
-        requireWriteEntitlement(ctx);
-        await serviceService(ctx).delete(serviceId);
-        return textResult({ deleted: true, serviceId });
+        const service = await serviceService(ctx).getById(serviceId);
+        return textResult(
+          deleteConfirmation({
+            action: "delete_service",
+            id: service.id,
+            title: service.name,
+          }),
+        );
       },
     }),
     services_restore: tool({
@@ -1492,7 +1556,8 @@ const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church son
 - For clear requests (transpose to D, repeat a section 2×, duplicate last verse, fix chords, complete metadata, create folder/event), act immediately with a sensible default. Ask at most ONE question only when blocked.
 - Do not offer multiple options when the user already chose (e.g. "transpose into D").
 - ChordPro/song content edits: use propose tools (prefer songs_propose_transpose / songs_propose_edit). Studio stages Accept/Decline in the editor. After Accept, the user saves in the editor — only call songs_save / services_save if they explicitly ask to persist via chat/MCP.
-- Library structural edits (folders, collections, agenda create/update, move song, add songs to collection): do them with tools when the request is clear. Confirm once before any delete.
+- Library structural edits (folders, collections, agenda create/update, move song, add songs to collection): do them with tools when the request is clear.
+- Deletes (songs/services/folders/collections/agenda): call the matching \`*_delete\` tool immediately when the user asks to delete — it only STAGES a Confirm button in Studio and does not delete. Do NOT ask for chat confirmation ("are you sure?") and do NOT claim the item is deleted until the user clicks Confirm. If they already confirmed in chat, still only stage the button.
 - When the user says "repeat" / "2x" a verse or chorus: duplicate that section's body in the ChordPro (or add \`{c: 2x}\` if they ask for a note only). Prefer physical duplication when they ask to "write a copy".
 - On stale/concurrency errors, use the returned \`current\` object (do not re-fetch blindly).
 
