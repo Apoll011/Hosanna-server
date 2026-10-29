@@ -24,17 +24,22 @@ export function registerServiceTools(
     "services_search",
     {
       title: "Search services",
-      description: "List services in the active organization.",
+      description:
+        "List/search services. archived=true → archived only; includeArchived=true → active+archived; default active only. Each row includes archived flag.",
       inputSchema: z.object({
         archived: z.boolean().optional().default(false),
+        includeArchived: z.boolean().optional().default(false),
         search: z.string().optional(),
       }),
     },
-    async ({ archived, search }) => {
+    async ({ archived, includeArchived, search }) => {
       try {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "service.access");
-        let list = await serviceService(ctx).list({ archived });
+        let list = await serviceService(ctx).list({
+          archived,
+          includeArchived,
+        });
         if (search?.trim()) {
           const q = search.toLowerCase();
           list = list.filter(

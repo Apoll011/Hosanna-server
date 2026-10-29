@@ -26,6 +26,7 @@ function serialize(service: NonNullable<ServiceWithSongs>) {
     date: service.date,
     notes: service.notes ?? "",
     elements: service.elements ?? [],
+    archived: Boolean(service.archived),
     createdAt: service.createdAt,
     updatedAt: service.updatedAt,
   };
@@ -48,8 +49,14 @@ export class ServiceService {
     syncCache.invalidate(this.tenantId);
   }
 
-  async list(body: { archived: boolean }) {
-    const services = await this.serviceRepo.findAll(body.archived);
+  async list(body: {
+    archived?: boolean;
+    includeArchived?: boolean;
+  }) {
+    const mode: boolean | "all" = body.includeArchived
+      ? "all"
+      : (body.archived ?? false);
+    const services = await this.serviceRepo.findAll(mode);
     return services.map(serialize);
   }
 

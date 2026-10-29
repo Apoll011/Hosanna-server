@@ -88,6 +88,12 @@ import {
   listMembers,
 } from "../mcp/lib/orgDirectory.js";
 import {
+  STUDIO_NAVIGATE_KINDS,
+  STUDIO_PRINT_KINDS,
+  studioNavigateDirective,
+  studioPrintDirective,
+} from "../mcp/lib/studioActions.js";
+import {
   FOLDER_COLOR_IDS,
   FOLDER_ICON_IDS,
   STUDIO_UI_CATALOG,
@@ -265,6 +271,9 @@ function buildHosannaTools(
               "agenda CRUD+responsibilities",
               "trash_list",
               "studio_sync",
+              "studio_navigate",
+              "studio_generate_pdf",
+              "studio_search",
             ],
             metadata: [
               "musicbrainz",
@@ -499,6 +508,204 @@ function buildHosannaTools(
           reason: reason ?? "refresh",
           note: "Studio will run triggerSyncCheck + refetch. Tell the user the UI should update shortly.",
         }),
+    }),
+    studio_navigate: tool({
+      description:
+        "Studio-only: navigate the open Studio tab to a page (song/service/folder/collection/agenda/list/settings). Prefer kind+id over inventing routes.",
+      inputSchema: z.object({
+        kind: z.enum(STUDIO_NAVIGATE_KINDS),
+        id: z
+          .string()
+          .optional()
+          .describe("Entity id when kind is song/service/folder/collection/agenda"),
+        route: z
+          .string()
+          .optional()
+          .describe("Optional absolute path under the org slug when kind=route"),
+        reason: z.string().optional(),
+      }),
+      execute: async (args) =>
+        textResult(
+          studioNavigateDirective({
+            kind: args.kind,
+            id: args.id,
+            route: args.route,
+            reason: args.reason,
+          }),
+        ),
+    }),
+    studio_generate_pdf: tool({
+      description:
+        "Studio-only: open the print/PDF modal for song(s), service(s), folder, collection, or agenda event. Resolves ids in the open Studio tab.",
+      inputSchema: z.object({
+        kind: z.enum(STUDIO_PRINT_KINDS),
+        ids: z
+          .array(z.string().min(1))
+          .min(1)
+          .describe("One or more entity ids to print"),
+        title: z.string().optional(),
+        options: z
+          .object({
+            showChords: z.boolean().optional(),
+            twoColumnLayout: z.boolean().optional(),
+            fontSize: z.number().optional(),
+            showChurchHeader: z.boolean().optional(),
+            showMetadata: z.boolean().optional(),
+            includeServiceSongs: z.boolean().optional(),
+            includeFolderSongs: z.boolean().optional(),
+            includeCollectionSongs: z.boolean().optional(),
+            pageBreakBetweenItems: z.boolean().optional(),
+          })
+          .optional(),
+        reason: z.string().optional(),
+      }),
+      execute: async (args) =>
+        textResult(
+          studioPrintDirective({
+            kind: args.kind,
+            ids: args.ids,
+            title: args.title,
+            options: args.options,
+            reason: args.reason,
+          }),
+        ),
+    }),
+    studio_search: tool({
+      description:
+        "Studio-oriented global search across songs, services (incl. archived when asked), folders, collections, and agenda. Prefer this when the user says \"find X in Studio\".",
+      inputSchema: z.object({
+        query: z.string().min(1),
+        types: z
+          .array(
+            z.enum([
+              "song",
+              "service",
+              "folder",
+              "collection",
+              "agenda",
+            ]),
+          )
+          .optional()
+          .describe("Defaults to all types"),
+        includeArchivedServices: z.boolean().optional().default(true),
+        limitPerType: z.number().int().positive().max(20).optional().default(8),
+      }),
+      execute: async (args) => {
+        const ctx = requireMcpContext(authInfo);
+        const q = args.query.trim().toLowerCase();
+        const types = new Set(
+          args.types?.length
+            ? args.types
+            : (["song", "service", "folder", "collection", "agenda"] as const),
+        );
+        const limit = args.limitPerType ?? 8;
+        const hits: Array<{
+          type: string;
+          id: string;
+          title: string;
+          subtitle?: string;
+          archived?: boolean;
+        }> = [];
+
+        if (types.has("song")) {
+          requirePermission(ctx, "song.access");
+          const songs = await songService(ctx).list({
+            search: args.query,
+            page: 1,
+            limit,
+            sortBy: "title",
+            sortOrder: "asc",
+          });
+          for (const s of songs.songs) {
+            hits.push({
+              type: "song",
+              id: s.id,
+              title: s.title,
+              subtitle: s.artist || undefined,
+            });
+          }
+        }
+
+        if (types.has("service")) {
+          requirePermission(ctx, "service.access");
+          let services = await serviceService(ctx).list({
+            includeArchived: args.includeArchivedServices ?? true,
+          });
+          services = services.filter(
+            (s) =>
+              s.name.toLowerCase().includes(q) ||
+              (s.notes ?? "").toLowerCase().includes(q),
+          );
+          for (const s of services.slice(0, limit)) {
+            hits.push({
+              type: "service",
+              id: s.id,
+              title: s.name,
+              subtitle: s.date
+                ? new Date(s.date).toISOString().slice(0, 10)
+                : undefined,
+              archived: s.archived,
+            });
+          }
+        }
+
+        if (types.has("folder")) {
+          requirePermission(ctx, "folder.access");
+          const { folders } = await listFolders(ctx);
+          for (const f of folders
+            .filter((f) => f.name.toLowerCase().includes(q))
+            .slice(0, limit)) {
+            hits.push({ type: "folder", id: f.id, title: f.name });
+          }
+        }
+
+        if (types.has("collection")) {
+          requirePermission(ctx, "collection.access");
+          const { collections } = await listCollections(ctx);
+          for (const c of collections
+            .filter(
+              (c) =>
+                c.name.toLowerCase().includes(q) ||
+                (c.description ?? "").toLowerCase().includes(q),
+            )
+            .slice(0, limit)) {
+            hits.push({
+              type: "collection",
+              id: c.id,
+              title: c.name,
+              subtitle: c.description || undefined,
+            });
+          }
+        }
+
+        if (types.has("agenda")) {
+          requirePermission(ctx, "agenda.access");
+          const { events } = await listAgenda(ctx, { limit: 100 });
+          for (const e of events
+            .filter(
+              (e) =>
+                e.title.toLowerCase().includes(q) ||
+                e.type.toLowerCase().includes(q) ||
+                (e.notes ?? "").toLowerCase().includes(q) ||
+                e.location?.toLowerCase().includes(q),
+            )
+            .slice(0, limit)) {
+            hits.push({
+              type: "agenda",
+              id: e.id,
+              title: e.title,
+              subtitle: `${e.date} ${e.time} · ${e.type}`,
+            });
+          }
+        }
+
+        return textResult({
+          query: args.query,
+          total: hits.length,
+          hits,
+          tip: "Use studio_navigate({ kind, id }) to open a hit, or studio_generate_pdf({ kind, ids }) to print.",
+        });
+      },
     }),
     folders_delete: tool({
       description:
@@ -1435,9 +1642,11 @@ function buildHosannaTools(
       },
     }),
     services_search: tool({
-      description: "List services in the organization.",
+      description:
+        "List/search services. archived=true → archived only; includeArchived=true → active+archived; default active only. Rows include archived.",
       inputSchema: z.object({
         archived: z.boolean().optional(),
+        includeArchived: z.boolean().optional(),
         search: z.string().optional(),
       }),
       execute: async (args) => {
@@ -1445,10 +1654,15 @@ function buildHosannaTools(
         requirePermission(ctx, "service.access");
         let list = await serviceService(ctx).list({
           archived: args.archived ?? false,
+          includeArchived: args.includeArchived ?? false,
         });
         if (args.search?.trim()) {
           const q = args.search.toLowerCase();
-          list = list.filter((s) => s.name.toLowerCase().includes(q));
+          list = list.filter(
+            (s) =>
+              s.name.toLowerCase().includes(q) ||
+              (s.notes ?? "").toLowerCase().includes(q),
+          );
         }
         return textResult({ services: list, total: list.length });
       },
@@ -1755,7 +1969,8 @@ const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church son
 - Folders: list/create/update/delete/restore (icon/color ids from studioUi)
 - Collections: list/get/create/update/delete, add_songs/remove_songs (same icon/color ids)
 - Agenda: list/get/create/update/delete — set responsibilities with real memberIds (not only notes on service elements)
-- studio_sync: pull replication in this Studio tab after library mutations
+- Services: services_search supports archived / includeArchived (rows include archived flag)
+- Studio-only UX: studio_sync, studio_navigate (open pages), studio_generate_pdf (print modal), studio_search (global find across library)
 - Metadata: MusicBrainz, YouTube (for \`{youtube:}\`), DuckDuckGo web search; ChordPro validate/format/transpose/convert/propagate
 - When completing metadata: MusicBrainz for title/artist/release; YouTube search for \`{youtube: URL}\` (use hits[].directive); web search for extra confirmation. If \`metadata_web_fetch\` is available (DeepSeek org AI), use it to read CCLI/artist pages or Cifra URLs blocked by Akamai. Call metadata tools one at a time (MusicBrainz rate-limits parallel bursts with 503). If a tool returns 403/503, report the structured error — do not claim success. Propose the ChordPro edit — do not invent lyrics.
 - Unknown Studio UI constants (icons, colors, etc.): call hosanna_capabilities or hosanna_resource_read on hosanna://domain/library — do not guess.

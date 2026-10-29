@@ -4,9 +4,12 @@ import type { OrgScopedPrisma } from "../database/prisma.js";
 export class ServiceRepository {
   constructor(private readonly db: OrgScopedPrisma) {}
 
-  findAll(archived: boolean) {
+  findAll(archived: boolean | "all") {
     return this.db.service.findMany({
-      where: { archived, deleted: false },
+      where: {
+        deleted: false,
+        ...(archived === "all" ? {} : { archived }),
+      },
       orderBy: { date: "asc" },
     });
   }

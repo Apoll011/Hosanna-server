@@ -84,7 +84,7 @@ export function registerDiscoveryTools(
               "songs_restore",
             ],
             services: [
-              "services_search",
+              "services_search (archived / includeArchived)",
               "services_get",
               "services_create_draft",
               "services_propose_edit",
