@@ -7,6 +7,7 @@ import { registerSystemPrompts } from "./prompts/system.js";
 import { registerResources } from "./resources/catalog.js";
 import { registerChordProTools } from "./tools/chordpro.js";
 import { registerDiscoveryTools } from "./tools/discovery.js";
+import { registerLibraryTools } from "./tools/library.js";
 import { registerServiceTools } from "./tools/services.js";
 import { registerSongTools } from "./tools/songs.js";
 
@@ -25,6 +26,7 @@ export function createHosannaMcpServer(authInfo?: AuthInfo): McpServer {
   registerChordProTools(server);
   registerSongTools(server, authInfo);
   registerServiceTools(server, authInfo);
+  registerLibraryTools(server, authInfo);
   registerResources(server, authInfo);
   registerSystemPrompts(server);
   registerSongPrompts(server);

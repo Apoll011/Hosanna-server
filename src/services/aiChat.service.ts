@@ -18,6 +18,7 @@ import {
 } from "ai";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { prisma } from "../database/prisma.js";
 import {
   getMcpContext,
   requireMcpContext,
@@ -26,7 +27,8 @@ import {
   services as serviceService,
   songs as songService,
 } from "../mcp/context.js";
-import { HOSANNA_MCP_INSTRUCTIONS } from "../mcp/instructions.js";
+import { searchMusicBrainzRecordings } from "../mcp/lib/musicbrainz.js";
+import type { PermissionString } from "../permissions/index.js";
 import {
   explainChordProDirective,
   getChordProCapabilities,
@@ -124,6 +126,92 @@ function buildHosannaTools(authInfo: AuthInfo) {
         });
       },
     }),
+    folders_list: tool({
+      description: "List organization folders.",
+      inputSchema: z.object({
+        parentId: z.string().nullable().optional(),
+      }),
+      execute: async ({ parentId }) => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "folder.access" as PermissionString);
+        const folders = await prisma.folder.findMany({
+          where: {
+            orgId: ctx.orgId,
+            deleted: false,
+            ...(parentId !== undefined ? { parentId } : {}),
+          },
+          select: { id: true, name: true, parentId: true },
+          orderBy: { name: "asc" },
+          take: 200,
+        });
+        return textResult({ folders });
+      },
+    }),
+    collections_list: tool({
+      description: "List organization collections.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "collection.access" as PermissionString);
+        const collections = await prisma.collection.findMany({
+          where: { orgId: ctx.orgId, deleted: false },
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            _count: { select: { songs: true } },
+          },
+          orderBy: { name: "asc" },
+          take: 100,
+        });
+        return textResult({
+          collections: collections.map((c) => ({
+            id: c.id,
+            name: c.name,
+            description: c.description,
+            songCount: c._count.songs,
+          })),
+        });
+      },
+    }),
+    agenda_list: tool({
+      description: "List upcoming agenda events.",
+      inputSchema: z.object({
+        from: z.string().optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+      }),
+      execute: async ({ from, limit }) => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "agenda.access" as PermissionString);
+        const since = from?.trim() || new Date().toISOString().slice(0, 10);
+        const events = await prisma.agendaEvent.findMany({
+          where: { orgId: ctx.orgId, deleted: false, date: { gte: since } },
+          select: {
+            id: true,
+            title: true,
+            date: true,
+            time: true,
+            type: true,
+            location: true,
+          },
+          orderBy: [{ date: "asc" }, { time: "asc" }],
+          take: limit ?? 20,
+        });
+        return textResult({ events });
+      },
+    }),
+    metadata_musicbrainz_search: tool({
+      description:
+        "Search MusicBrainz for title/artist/release metadata to complete song tags. Does not invent lyrics.",
+      inputSchema: z.object({
+        title: z.string().optional(),
+        artist: z.string().optional(),
+        query: z.string().optional(),
+        limit: z.number().int().min(1).max(10).optional(),
+      }),
+      execute: async (args) =>
+        textResult(await searchMusicBrainzRecordings(args)),
+    }),
     chordpro_validate: tool({
       description: "Lint and parse ChordPro text.",
       inputSchema: z.object({ content: z.string() }),
@@ -166,7 +254,7 @@ function buildHosannaTools(authInfo: AuthInfo) {
       },
     }),
     chordpro_format: tool({
-      description: "Normalize ChordPro formatting.",
+      description: "Normalize ChordPro formatting. Returns a proposal for the Studio editor.",
       inputSchema: z.object({ content: z.string() }),
       execute: async ({ content }) => {
         const result = formatChordPro(content, {
@@ -175,12 +263,15 @@ function buildHosannaTools(authInfo: AuthInfo) {
         });
         return textResult({
           content: result.content,
+          proposal: { content: result.content },
           validation: validateChordProContent(result.content),
+          diff: summarizeDiff(content, result.content),
         });
       },
     }),
     chordpro_transpose: tool({
-      description: "Source-preserving transpose by semitones or toKey.",
+      description:
+        "Source-preserving transpose by semitones or toKey. Returns a proposal for the Studio editor.",
       inputSchema: z.object({
         content: z.string(),
         semitones: z.number().optional(),
@@ -193,12 +284,15 @@ function buildHosannaTools(authInfo: AuthInfo) {
             : transposeChordProSource(content, { semitones: semitones ?? 0 });
         return textResult({
           ...result,
+          proposal: { content: result.content },
           validation: validateChordProContent(result.content),
+          diff: summarizeDiff(content, result.content),
         });
       },
     }),
     chordpro_convert: tool({
-      description: "Convert UG/Cifra/plain sheets to ChordPro.",
+      description:
+        "Convert UG/Cifra/plain sheets to ChordPro. Returns a proposal for the Studio editor.",
       inputSchema: z.object({ input: z.string() }),
       execute: async ({ input }) => {
         const detailed = convertToChordProDetailed(input);
@@ -206,6 +300,10 @@ function buildHosannaTools(authInfo: AuthInfo) {
           content: detailed.chordpro,
           title: detailed.title,
           warnings: detailed.warnings,
+          proposal: {
+            content: detailed.chordpro,
+            title: detailed.title,
+          },
           validation: validateChordProContent(detailed.chordpro),
         });
       },
@@ -523,8 +621,63 @@ function buildHosannaTools(authInfo: AuthInfo) {
         });
       },
     }),
+    services_propose_edit: tool({
+      description:
+        "Propose an edit to an existing service plan (not saved). Studio stages it in the editor.",
+      inputSchema: z.object({
+        serviceId: z.string(),
+        name: z.string().optional(),
+        notes: z.string().optional(),
+        elements: z.array(z.any()).optional(),
+      }),
+      execute: async (args) => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "service.update");
+        const current = await serviceService(ctx).getByIdSerialized(
+          args.serviceId,
+        );
+        const elements =
+          args.elements ??
+          (Array.isArray(current.elements) ? current.elements : []);
+        return textResult({
+          proposal: {
+            id: current.id,
+            name: args.name ?? current.name,
+            notes: args.notes ?? current.notes ?? "",
+            elements,
+            updatedAt:
+              current.updatedAt instanceof Date
+                ? current.updatedAt.toISOString()
+                : new Date(current.updatedAt).toISOString(),
+          },
+          validation: await validateServicePlan(elements, songService(ctx)),
+        });
+      },
+    }),
   };
 }
+
+/**
+ * Studio chat system — intentionally shorter than MCP host instructions.
+ * Avoids mandatory skill/resource loading that burns tokens on trivial edits.
+ */
+const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church song libraries and service planning.
+
+## Style (strict)
+- Be brief. Prefer doing over asking. One short sentence + tools beats essays.
+- Do NOT paste full ChordPro bodies into chat. Call propose/edit tools; the Studio editor shows accept/decline.
+- For clear requests (transpose to D, repeat a section 2×, duplicate last verse, fix chords, complete metadata), act immediately with a sensible default. Ask at most ONE question only when blocked.
+- Never call discovery/capability tools for trivial edits when page context already has the song/service content.
+- Do not offer multiple options when the user already chose (e.g. "transpose into D").
+- Never save without explicit user approval. Prefer propose tools; Studio stages the proposal in the editor.
+- When the user says "repeat" / "2x" a verse or chorus: duplicate that section's body in the ChordPro (or add \`{c: 2x}\` if they ask for a note only). Prefer physical duplication when they ask to "write a copy".
+
+## Hard rules
+- Never invent lyrics, chords, or library songs. Ask when content is missing.
+- Never silently delete or rewrite unrelated content.
+- Use tools for folders, collections, agenda, MusicBrainz metadata, ChordPro, songs, and services as needed.
+- Respect permissions and \`updatedAt\` concurrency on saves.
+`;
 
 function contextBlock(page?: ChatPageContext): string {
   if (!page) return "";
@@ -566,7 +719,7 @@ export class AiChatService {
       runtime.baseUrl,
     );
     const tools = buildHosannaTools(opts.authInfo);
-    const system = HOSANNA_MCP_INSTRUCTIONS + contextBlock(opts.pageContext);
+    const system = STUDIO_CHAT_SYSTEM + contextBlock(opts.pageContext);
     const modelMessages = await convertToModelMessages(opts.messages);
 
     return streamText({
