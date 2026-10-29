@@ -17,7 +17,9 @@ Node.js, TypeScript, Express, Prisma ORM, PostgreSQL, Zod, Better Auth,
 
 Hosanna exposes an MCP interface for AI clients (songs, services, ChordPro):
 
-- **HTTP:** `POST /mcp` (Streamable HTTP). Optional `Authorization: Bearer <Better Auth session>` with an active organization for song/service tools. ChordPro tools work without auth.
+- **HTTP:** `POST /mcp` (Streamable HTTP). Auth is optional for ChordPro tools; song/service tools need an org context.
+- **OAuth 2.1:** Better Auth MCP plugin — clients discover `/.well-known/oauth-protected-resource` (and AS metadata), then authorize via Studio (`/login` → `/oauth/consent`). Set `MCP_RESOURCE_URL` to the public `/mcp` URL. Session Bearer tokens still work.
+- **Complete notes:** `chordpro.propagate_notes` copies `{c:}` / `{ci:}` / `{cb:}` from the first annotated verse onto later verses (does not invent notes).
 - **stdio:** `HOSANNA_BEARER_TOKEN=<token> npm run mcp`
 
 Resources live under `hosanna://…` (guide, schemas, skills). Task prompts include `songs.*` and `services.*`. Workflow skills are in `docs/mcp/skills/` and also served as MCP resources.

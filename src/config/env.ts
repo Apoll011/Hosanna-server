@@ -80,4 +80,12 @@ export const env = {
    * Prefer 64 hex characters (32 bytes). Required to save/use org AI keys.
    */
   aiSettingsEncryptionKey: optional("AI_SETTINGS_ENCRYPTION_KEY"),
+
+  /**
+   * Public URL of this API's MCP endpoint (RFC 9728 resource identifier).
+   * Loopback HTTP is OK for local; production should be https://.../mcp.
+   */
+  mcpResourceUrl:
+    optional("MCP_RESOURCE_URL") ??
+    `http://127.0.0.1:${parseInt(process.env.PORT ?? "3000", 10)}/mcp`,
 };

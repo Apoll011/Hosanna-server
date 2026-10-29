@@ -1,7 +1,9 @@
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import type { Request } from "express";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import { forOrganization } from "../database/prisma.js";
 import type { OrgScopedPrisma } from "../database/prisma.js";
+import { env } from "../config/env.js";
 import { auth } from "../lib/auth.js";
 import { DEFAULT_LOCALE } from "../lib/i18n.js";
 import { can } from "../middleware/auth.js";
@@ -12,6 +14,10 @@ import { prisma } from "../database/prisma.js";
 import { FolderService } from "../services/folder.service.js";
 import { ServiceService } from "../services/service.service.js";
 import { SongService } from "../services/song.service.js";
+
+const apiOrigin = env.mcpResourceUrl.replace(/\/mcp\/?$/, "");
+const jwksUrl = new URL("/api/auth/jwks", apiOrigin || `http://127.0.0.1:${env.port}`);
+const remoteJwks = createRemoteJWKSet(jwksUrl);
 
 export interface McpContext {
   user: AuthorizedUser;
@@ -31,7 +37,7 @@ export function requireMcpContext(authInfo?: AuthInfo | null): McpContext {
   const ctx = getMcpContext(authInfo);
   if (!ctx) {
     throw new Error(
-      "Authentication required. Sign in with Better Auth and pass Authorization: Bearer <token> with an active organization.",
+      "Authentication required. Use MCP OAuth (discovery on the MCP resource) or pass Authorization: Bearer <session-token> with an active organization.",
     );
   }
   return ctx;
@@ -79,8 +85,149 @@ function parseLocaleFromMeta(metadata: unknown): string | null {
   return null;
 }
 
+async function buildContextForUser(opts: {
+  userId: string;
+  workspaceId: string;
+  teamId?: string;
+  token: string;
+  scopes?: string[];
+  clientId?: string;
+}): Promise<{ authInfo: AuthInfo; ctx: McpContext } | null> {
+  const { userId, workspaceId, teamId, token } = opts;
+  const [member, org, entitled] = await Promise.all([
+    prisma.member.findFirst({
+      where: { organizationId: workspaceId, userId },
+      select: { role: true },
+    }),
+    prisma.organization.findUnique({
+      where: { id: workspaceId },
+      select: { metadata: true },
+    }),
+    hasActiveSubscription(workspaceId),
+  ]);
+  if (!member) return null;
+
+  const role = (member.role ?? "guest") as AppRole;
+  const locale = parseLocaleFromMeta(org?.metadata) ?? DEFAULT_LOCALE;
+  const ctx: McpContext = {
+    user: {
+      id: userId,
+      workspaceId,
+      role,
+      teamId,
+    },
+    orgId: workspaceId,
+    locale,
+    db: forOrganization(workspaceId),
+    token,
+    entitled,
+  };
+  const authInfo: AuthInfo = {
+    token,
+    clientId: opts.clientId ?? userId,
+    scopes: opts.scopes ?? [],
+    extra: { hosanna: ctx },
+  };
+  return { authInfo, ctx };
+}
+
+async function resolveFromOAuthAccessToken(
+  token: string,
+): Promise<{ authInfo: AuthInfo; ctx: McpContext } | null> {
+  // Opaque DB-backed access tokens (non-JWT)
+  const row = await prisma.oauthAccessToken.findUnique({
+    where: { token },
+    select: {
+      userId: true,
+      referenceId: true,
+      clientId: true,
+      scopes: true,
+      expiresAt: true,
+      revoked: true,
+      sessionId: true,
+    },
+  });
+  if (row && !row.revoked && row.expiresAt > new Date() && row.userId) {
+    let workspaceId = row.referenceId ?? undefined;
+    if (!workspaceId && row.sessionId) {
+      const session = await prisma.session.findUnique({
+        where: { id: row.sessionId },
+        select: { activeOrganizationId: true, activeTeamId: true },
+      });
+      workspaceId = session?.activeOrganizationId ?? undefined;
+      if (workspaceId) {
+        return buildContextForUser({
+          userId: row.userId,
+          workspaceId,
+          teamId: session?.activeTeamId ?? undefined,
+          token,
+          scopes: row.scopes,
+          clientId: row.clientId,
+        });
+      }
+    }
+    if (!workspaceId) {
+      const membership = await prisma.member.findFirst({
+        where: { userId: row.userId },
+        select: { organizationId: true },
+        orderBy: { createdAt: "asc" },
+      });
+      workspaceId = membership?.organizationId;
+    }
+    if (!workspaceId) return null;
+    return buildContextForUser({
+      userId: row.userId,
+      workspaceId,
+      token,
+      scopes: row.scopes,
+      clientId: row.clientId,
+    });
+  }
+
+  // JWT access tokens (signed via Better Auth jwt plugin)
+  if (token.split(".").length !== 3) return null;
+  try {
+    const { payload } = await jwtVerify(token, remoteJwks, {
+      audience: env.mcpResourceUrl,
+    });
+    const userId =
+      typeof payload.sub === "string" ? payload.sub : undefined;
+    if (!userId) return null;
+    const scopeClaim =
+      typeof payload.scope === "string"
+        ? payload.scope.split(/\s+/).filter(Boolean)
+        : [];
+    let workspaceId =
+      (typeof payload.organizationId === "string" && payload.organizationId) ||
+      (typeof payload.reference_id === "string" && payload.reference_id) ||
+      (typeof (payload as { referenceId?: string }).referenceId === "string" &&
+        (payload as { referenceId?: string }).referenceId) ||
+      undefined;
+    if (!workspaceId) {
+      const membership = await prisma.member.findFirst({
+        where: { userId },
+        select: { organizationId: true },
+        orderBy: { createdAt: "asc" },
+      });
+      workspaceId = membership?.organizationId ?? undefined;
+    }
+    if (!workspaceId) return null;
+    return buildContextForUser({
+      userId,
+      workspaceId,
+      token,
+      scopes: scopeClaim,
+      clientId:
+        typeof payload.client_id === "string" ? payload.client_id : userId,
+    });
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Resolve a Hosanna MCP context from Authorization / cookie headers.
+ * Supports Better Auth sessions and MCP OAuth access tokens.
  * Returns null when unauthenticated (ChordPro tools may still run).
  */
 export async function resolveMcpContextFromHeaders(
@@ -97,57 +244,35 @@ export async function resolveMcpContextFromHeaders(
   }
 
   const sessionData = await auth.api.getSession({ headers: headerBag });
-  if (!sessionData?.session || !sessionData?.user) return null;
+  if (sessionData?.session && sessionData?.user) {
+    const workspaceId = (sessionData.session as any).activeOrganizationId as
+      | string
+      | undefined;
+    if (workspaceId) {
+      const authHeader = headerBag.get("authorization") ?? "";
+      const token = authHeader.startsWith("Bearer ")
+        ? authHeader.slice(7).trim()
+        : "cookie-session";
+      const built = await buildContextForUser({
+        userId: sessionData.user.id,
+        workspaceId,
+        teamId: (sessionData.session as any).activeTeamId || undefined,
+        token,
+      });
+      if (built) return built;
+    }
+  }
 
-  const workspaceId = (sessionData.session as any).activeOrganizationId as
-    | string
-    | undefined;
-  if (!workspaceId) return null;
-
-  const userId = sessionData.user.id;
-  const teamId = (sessionData.session as any).activeTeamId || undefined;
-
-  const [member, org, entitled] = await Promise.all([
-    prisma.member.findFirst({
-      where: { organizationId: workspaceId, userId },
-      select: { role: true },
-    }),
-    prisma.organization.findUnique({
-      where: { id: workspaceId },
-      select: { metadata: true },
-    }),
-    hasActiveSubscription(workspaceId),
-  ]);
-
-  const role = (member?.role ?? "guest") as AppRole;
-  const locale = parseLocaleFromMeta(org?.metadata) ?? DEFAULT_LOCALE;
   const authHeader = headerBag.get("authorization") ?? "";
-  const token = authHeader.startsWith("Bearer ")
-    ? authHeader.slice(7).trim()
-    : "cookie-session";
+  if (authHeader.startsWith("Bearer ")) {
+    const token = authHeader.slice(7).trim();
+    if (token) {
+      const fromOauth = await resolveFromOAuthAccessToken(token);
+      if (fromOauth) return fromOauth;
+    }
+  }
 
-  const ctx: McpContext = {
-    user: {
-      id: userId,
-      workspaceId,
-      role,
-      teamId,
-    },
-    orgId: workspaceId,
-    locale,
-    db: forOrganization(workspaceId),
-    token,
-    entitled,
-  };
-
-  const authInfo: AuthInfo = {
-    token,
-    clientId: userId,
-    scopes: [],
-    extra: { hosanna: ctx },
-  };
-
-  return { authInfo, ctx };
+  return null;
 }
 
 /** Express middleware: attach `req.auth` for MCP `toNodeHandler`. */

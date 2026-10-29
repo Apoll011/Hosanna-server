@@ -36,10 +36,14 @@ import {
   validateChordProContent,
 } from "../mcp/lib/chordproGate.js";
 import { summarizeDiff } from "../mcp/lib/diff.js";
+import { propagateVerseComments } from "../mcp/lib/propagateComments.js";
 import { validateServicePlan } from "../mcp/lib/serviceElements.js";
 import { transposeChordProSource } from "../mcp/lib/transposeSource.js";
 import type { AiProvider } from "./orgAiConfig.service.js";
-import { OrgAiConfigService } from "./orgAiConfig.service.js";
+import {
+  AI_PROVIDER_DEFAULT_BASE_URL,
+  OrgAiConfigService,
+} from "./orgAiConfig.service.js";
 
 export type ChatPageContext = {
   kind?:
@@ -55,15 +59,38 @@ export type ChatPageContext = {
   contentExcerpt?: string;
 };
 
-function buildModel(provider: AiProvider, modelId: string, apiKey: string) {
+/**
+ * OpenAI-compatible hosts (DeepSeek, Groq, Together, custom gateways) speak
+ * Chat Completions — use `.chat()`. Official OpenAI also works via `.chat()`.
+ * Anthropic / Google keep their native AI SDK providers.
+ */
+function buildModel(
+  provider: AiProvider,
+  modelId: string,
+  apiKey: string,
+  baseUrl?: string | null,
+) {
   switch (provider) {
     case "anthropic":
       return createAnthropic({ apiKey })(modelId);
     case "google":
       return createGoogleGenerativeAI({ apiKey })(modelId);
+    case "deepseek":
+    case "openai_compatible":
     case "openai":
-    default:
-      return createOpenAI({ apiKey })(modelId);
+    default: {
+      const url =
+        baseUrl ||
+        AI_PROVIDER_DEFAULT_BASE_URL[provider] ||
+        undefined;
+      const client = createOpenAI({
+        apiKey,
+        ...(url ? { baseURL: url } : {}),
+        name: provider,
+      });
+      // Chat Completions path — works with DeepSeek and most OpenAI forks.
+      return client.chat(modelId);
+    }
   }
 }
 
@@ -102,6 +129,19 @@ function buildHosannaTools(authInfo: AuthInfo) {
       inputSchema: z.object({ content: z.string() }),
       execute: async ({ content }) =>
         textResult(validateChordProContent(content)),
+    }),
+    chordpro_propagate_notes: tool({
+      description:
+        "Copy {c:}/{ci:}/{cb:} performance notes from the first annotated verse onto other verses at the same relative lyric/chord positions. Does not invent new notes.",
+      inputSchema: z.object({ content: z.string() }),
+      execute: async ({ content }) => {
+        const result = propagateVerseComments(content);
+        return textResult({
+          ...result,
+          diff: summarizeDiff(content, result.content),
+          proposal: { content: result.content },
+        });
+      },
     }),
     chordpro_parse_summary: tool({
       description: "Parse ChordPro for metadata, analysis, score, variants.",
@@ -519,7 +559,12 @@ export class AiChatService {
     pageContext?: ChatPageContext;
   }) {
     const runtime = await this.config.getRuntimeConfig(opts.orgId);
-    const model = buildModel(runtime.provider, runtime.model, runtime.apiKey);
+    const model = buildModel(
+      runtime.provider,
+      runtime.model,
+      runtime.apiKey,
+      runtime.baseUrl,
+    );
     const tools = buildHosannaTools(opts.authInfo);
     const system = HOSANNA_MCP_INSTRUCTIONS + contextBlock(opts.pageContext);
     const modelMessages = await convertToModelMessages(opts.messages);

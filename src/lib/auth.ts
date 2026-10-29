@@ -3,11 +3,13 @@ import { dash, sentinel } from "@better-auth/infra";
 import { stripe } from "@better-auth/stripe";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { betterAuth } from "better-auth/minimal";
+import { mcp } from "@better-auth/mcp";
 import {
   admin,
   bearer,
   captcha,
   haveIBeenPwned,
+  jwt,
   organization,
   twoFactor,
 } from "better-auth/plugins";
@@ -328,6 +330,16 @@ export const auth = betterAuth({
     admin(),
     inbox(),
     bearer(),
+    jwt(),
+    mcp({
+      loginPage: "/login",
+      consentPage: "/oauth/consent",
+      resource: env.mcpResourceUrl,
+      // Cursor / Claude Code register custom-scheme or localhost callbacks.
+      allowDynamicClientRegistration: true,
+      allowUnauthenticatedClientRegistration: true,
+      clientRegistrationDefaultApplicationType: "infer",
+    }),
     haveIBeenPwned(),
     sentinel({
       apiKey: env.betterAuthApiKey,

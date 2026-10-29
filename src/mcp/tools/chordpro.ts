@@ -12,6 +12,8 @@ import {
   getChordProCapabilities,
 } from "../lib/capabilities.js";
 import { validateChordProContent } from "../lib/chordproGate.js";
+import { summarizeDiff } from "../lib/diff.js";
+import { propagateVerseComments } from "../lib/propagateComments.js";
 import { transposeChordProSource } from "../lib/transposeSource.js";
 import { errorResult, jsonResult } from "../context.js";
 
@@ -29,6 +31,30 @@ export function registerChordProTools(server: McpServer): void {
     async ({ content }) => {
       try {
         return jsonResult(validateChordProContent(content));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "chordpro.propagate_notes",
+    {
+      title: "Propagate verse notes",
+      description:
+        "Copy {c:}/{ci:}/{cb:} performance notes from the first annotated verse onto other verses at the same relative lyric/chord positions. Does not invent new notes — only mirrors existing ones.",
+      inputSchema: z.object({
+        content: z.string().describe("Full ChordPro document"),
+      }),
+    },
+    async ({ content }) => {
+      try {
+        const result = propagateVerseComments(content);
+        return jsonResult({
+          ...result,
+          diff: summarizeDiff(content, result.content),
+          proposal: { content: result.content },
+        });
       } catch (error) {
         return errorResult(error);
       }
