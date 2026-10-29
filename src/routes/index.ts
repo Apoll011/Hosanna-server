@@ -1,6 +1,7 @@
 import { Router } from "express";
 
 import { backupRouter } from "./backup.routes.js";
+import { billingRouter } from "./billing.routes.js";
 import { cronRouter } from "./cron.routes.js";
 import { folderRouter } from "./folder.routes.js";
 import { healthRouter } from "./health.routes.js";
@@ -27,6 +28,7 @@ apiRouter.use("/health", healthLimiter, healthRouter);
 apiRouter.use("/cron", cronRouter);
 
 apiRouter.use(authenticate);
+apiRouter.use("/billing", apiLimiter, billingRouter);
 apiRouter.use("/replication", syncLimiter, replicationRouter);
 
 apiRouter.use("/songs", requireSubscription, apiLimiter, songRouter);
