@@ -37,6 +37,7 @@ export const MCP_TOOL_GROUPS = {
   ],
   songs: [
     "songs_search",
+    "songs_list_in_folder",
     "songs_search_lyrics",
     "songs_get",
     "songs_get_many",

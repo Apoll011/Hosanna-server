@@ -21,6 +21,7 @@ import {
   SEARCH_CONTENT_MAX,
 } from "../lib/contentClip.js";
 import { summarizeDiff } from "../lib/diff.js";
+import { FOLDER_SONGS_MAX_LIMIT, listSongsInFolder } from "../lib/folderSongs.js";
 import { withClientRequestId } from "../lib/idempotency.js";
 import { propagateVerseChords } from "../lib/propagateChords.js";
 import { transposeChordProSource } from "../lib/transposeSource.js";
@@ -116,6 +117,45 @@ export function registerSongTools(
             };
           }),
         });
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "songs_list_in_folder",
+    {
+      title: "List songs in a folder",
+      description:
+        "List the songs inside one folder (metadata only: id, title, artist, key, song_number, tags, path — no lyrics; use songs_get / songs_get_many for content). folderId from folders_list; omit/null/\"root\" = songs in no folder. recursive=true also includes nested subfolders (each song then carries folderName); with no folderId it means the whole library. Also returns the folder's direct subfolders. Default sort title asc, page=1, limit=50 (max 100).",
+      inputSchema: z.object({
+        folderId: z
+          .string()
+          .nullable()
+          .optional()
+          .describe('Folder id; null/"root"/omitted = library root'),
+        recursive: z.boolean().optional().default(false),
+        sortBy: z
+          .enum(["title", "artist", "updatedAt", "song_number"])
+          .optional()
+          .default("title"),
+        sortOrder: z.enum(["asc", "desc"]).optional().default("asc"),
+        page: z.number().int().positive().optional().default(1),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(FOLDER_SONGS_MAX_LIMIT)
+          .optional()
+          .default(50),
+      }),
+    },
+    async (args) => {
+      try {
+        return jsonResult(
+          await listSongsInFolder(requireMcpContext(authInfo), args),
+        );
       } catch (error) {
         return errorResult(error);
       }

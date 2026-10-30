@@ -69,6 +69,10 @@ import {
   updateCollection,
   updateFolder,
 } from "../mcp/lib/libraryCrud.js";
+import {
+  FOLDER_SONGS_MAX_LIMIT,
+  listSongsInFolder,
+} from "../mcp/lib/folderSongs.js";
 import { searchMusicBrainzRecordings } from "../mcp/lib/musicbrainz.js";
 import { propagateVerseChords } from "../mcp/lib/propagateChords.js";
 import {
@@ -1382,6 +1386,22 @@ function buildHosannaTools(
           }),
         });
       },
+    }),
+    songs_list_in_folder: tool({
+      description:
+        "List the songs inside one folder (metadata only: id, title, artist, key, song_number, tags — no lyrics; use songs_get / songs_get_many for content). folderId from folders_list; omit/null/\"root\" = songs in no folder. recursive=true includes nested subfolders (whole library if no folderId). Also returns the folder's direct subfolders. Default title asc, page=1, limit=50 (max 100).",
+      inputSchema: z.object({
+        folderId: z.string().nullable().optional(),
+        recursive: z.boolean().optional(),
+        sortBy: z
+          .enum(["title", "artist", "updatedAt", "song_number"])
+          .optional(),
+        sortOrder: z.enum(["asc", "desc"]).optional(),
+        page: z.number().int().positive().optional(),
+        limit: z.number().int().positive().max(FOLDER_SONGS_MAX_LIMIT).optional(),
+      }),
+      execute: async (args) =>
+        textResult(await listSongsInFolder(requireMcpContext(authInfo), args)),
     }),
     songs_search_lyrics: tool({
       description:

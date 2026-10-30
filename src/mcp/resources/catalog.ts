@@ -222,6 +222,7 @@ export function registerResources(
             ],
             songTools: [
               "songs_search",
+              "songs_list_in_folder",
               "songs_search_lyrics",
               "songs_get",
               "songs_create_draft",
