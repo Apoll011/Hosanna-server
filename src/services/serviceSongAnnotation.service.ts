@@ -24,7 +24,10 @@ export class ServiceSongAnnotationService {
    * Prefer Firestore inline bytes when present. Large annotations are
    * metadata-only in Firestore — bytes come from Postgres.
    */
-  async get(serviceId: string, songId: string): Promise<AnnotationRecord | null> {
+  async get(
+    serviceId: string,
+    songId: string,
+  ): Promise<AnnotationRecord | null> {
     const firebaseDoc = await getAnnotationDoc(serviceId, songId);
     if (firebaseDoc) {
       const bytes = await resolveAnnotationBytes(firebaseDoc);
@@ -45,11 +48,8 @@ export class ServiceSongAnnotationService {
     // If Firestore had a newer metadata ping, prefer its timestamps while
     // serving bytes from Postgres.
     const updatedAt =
-      firebaseDoc != null
-        ? new Date(firebaseDoc.updatedAt)
-        : row.updatedAt;
-    const updatedById =
-      firebaseDoc?.updatedById || row.updatedById;
+      firebaseDoc != null ? new Date(firebaseDoc.updatedAt) : row.updatedAt;
+    const updatedById = firebaseDoc?.updatedById || row.updatedById;
 
     return {
       canvasData: Buffer.from(row.canvasData),

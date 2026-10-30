@@ -19,10 +19,7 @@ export type WebSearchHit = {
 };
 
 export type WebSearchProvider =
-  | "deepseek"
-  | "duckduckgo"
-  | "duckduckgo_ia"
-  | "wikipedia";
+  "deepseek" | "duckduckgo" | "duckduckgo_ia" | "wikipedia";
 
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -224,12 +221,7 @@ async function searchWikipedia(
     );
   }
 
-  const data = (await res.json()) as [
-    string,
-    string[],
-    string[],
-    string[],
-  ];
+  const data = (await res.json()) as [string, string[], string[], string[]];
   const titles = data[1] ?? [];
   const descriptions = data[2] ?? [];
   const links = data[3] ?? [];
@@ -270,9 +262,7 @@ async function tryFallbackChain(
     }
     errors.push("duckduckgo: empty");
   } catch (e) {
-    errors.push(
-      `duckduckgo: ${e instanceof Error ? e.message : String(e)}`,
-    );
+    errors.push(`duckduckgo: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   try {
@@ -292,9 +282,7 @@ async function tryFallbackChain(
     }
     errors.push("duckduckgo_ia: empty");
   } catch (e) {
-    errors.push(
-      `duckduckgo_ia: ${e instanceof Error ? e.message : String(e)}`,
-    );
+    errors.push(`duckduckgo_ia: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   try {
@@ -314,9 +302,7 @@ async function tryFallbackChain(
     }
     errors.push("wikipedia: empty");
   } catch (e) {
-    errors.push(
-      `wikipedia: ${e instanceof Error ? e.message : String(e)}`,
-    );
+    errors.push(`wikipedia: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   throw new ProviderError(

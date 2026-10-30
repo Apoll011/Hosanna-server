@@ -52,11 +52,7 @@ export function encryptSecret(plaintext: string): EncryptedSecret {
 
 export function decryptSecret(parts: EncryptedSecret): string {
   const key = encryptionKey();
-  const decipher = createDecipheriv(
-    ALGO,
-    key,
-    Buffer.from(parts.iv, "base64"),
-  );
+  const decipher = createDecipheriv(ALGO, key, Buffer.from(parts.iv, "base64"));
   decipher.setAuthTag(Buffer.from(parts.tag, "base64"));
   const decrypted = Buffer.concat([
     decipher.update(Buffer.from(parts.ciphertext, "base64")),

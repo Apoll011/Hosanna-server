@@ -48,8 +48,9 @@ export function toolTimingSummary(): {
   for (const [tool, values] of byName) {
     const sorted = [...values].sort((a, b) => a - b);
     const p = (q: number) =>
-      sorted[Math.min(sorted.length - 1, Math.floor(q * (sorted.length - 1)))] ??
-      0;
+      sorted[
+        Math.min(sorted.length - 1, Math.floor(q * (sorted.length - 1)))
+      ] ?? 0;
     byTool[tool] = {
       count: sorted.length,
       p50Ms: p(0.5),

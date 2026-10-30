@@ -2,10 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { assertUser } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
-import {
-  nativeWebFetch,
-  resolveNativeWebAuth,
-} from "../mcp/lib/nativeWeb.js";
+import { nativeWebFetch, resolveNativeWebAuth } from "../mcp/lib/nativeWeb.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 export const cifraRouter = Router();

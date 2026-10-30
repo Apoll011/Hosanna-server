@@ -15,7 +15,10 @@ describe("parseChordLine / applyChordAnchors", () => {
       anchors.map((a) => a.chord),
       ["G", "C"],
     );
-    assert.equal(applyChordAnchors("Amazing grace", anchors), "[G]Amazing [C]grace");
+    assert.equal(
+      applyChordAnchors("Amazing grace", anchors),
+      "[G]Amazing [C]grace",
+    );
   });
 
   it("places source chords onto different lyrics at the same offsets", () => {

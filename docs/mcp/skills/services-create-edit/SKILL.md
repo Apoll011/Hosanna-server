@@ -21,14 +21,14 @@ Build or modify worship service plans that validate against Hosanna’s element 
 
 ## Element types
 
-| Type | Required / typical fields |
-|------|---------------------------|
-| `song` | `id`, `type`, `title`, **`songId`** (UUID in library), optional `duration` (**seconds**), `notes` |
-| `welcome` | `title`, optional `content`, `notes`, `duration` (seconds) |
-| `scripture` | `title`, preferably `passage` and/or `content`, `notes`, `duration` |
-| `message` | `title`, `content`, `notes`, `duration` |
-| `announcement` | same pattern as message |
-| `custom` | `title`, `content`, … |
+| Type           | Required / typical fields                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------------- |
+| `song`         | `id`, `type`, `title`, **`songId`** (UUID in library), optional `duration` (**seconds**), `notes` |
+| `welcome`      | `title`, optional `content`, `notes`, `duration` (seconds)                                        |
+| `scripture`    | `title`, preferably `passage` and/or `content`, `notes`, `duration`                               |
+| `message`      | `title`, `content`, `notes`, `duration`                                                           |
+| `announcement` | same pattern as message                                                                           |
+| `custom`       | `title`, `content`, …                                                                             |
 
 Every element needs a stable unique `id` string (UUID recommended) and contiguous `position` values (0-based). `duration` is always **seconds** (e.g. song ≈ 180–300, message ≈ 1500–2700).
 
@@ -40,13 +40,13 @@ Every element needs a stable unique `id` string (UUID recommended) and contiguou
 
 ## Tools
 
-| Step | Tool |
-|------|------|
-| List/get | `services_search` (metadata only), `services_get` (elements + validation) |
-| Draft (no save) | `services_create_draft` |
-| Edit proposal | `services_propose_edit` |
-| Validate | `services_validate` |
-| Persist | `services_save` (`create` or `update` + `updatedAt`) |
+| Step            | Tool                                                                      |
+| --------------- | ------------------------------------------------------------------------- |
+| List/get        | `services_search` (metadata only), `services_get` (elements + validation) |
+| Draft (no save) | `services_create_draft`                                                   |
+| Edit proposal   | `services_propose_edit`                                                   |
+| Validate        | `services_validate`                                                       |
+| Persist         | `services_save` (`create` or `update` + `updatedAt`)                      |
 
 ## Create workflow
 

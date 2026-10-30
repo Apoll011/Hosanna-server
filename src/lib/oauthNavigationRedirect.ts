@@ -9,9 +9,7 @@
  * responses back to 302.
  */
 
-type AuthFetchHandler = (
-  request: Request,
-) => Response | Promise<Response>;
+type AuthFetchHandler = (request: Request) => Response | Promise<Response>;
 
 /** True when the caller looks like a top-level document navigation. */
 export function wantsBrowserNavigation(request: Request): boolean {
@@ -44,8 +42,7 @@ export function isOauthAuthorizeGet(request: Request): boolean {
   try {
     const path = new URL(request.url).pathname;
     return (
-      path.endsWith("/oauth2/authorize") ||
-      path.includes("/oauth2/authorize/")
+      path.endsWith("/oauth2/authorize") || path.includes("/oauth2/authorize/")
     );
   } catch {
     return false;

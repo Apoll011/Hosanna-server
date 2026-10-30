@@ -107,7 +107,11 @@ async function getAccessToken(): Promise<string> {
   return tokenRefresh;
 }
 
-function annotationDocPath(projectId: string, serviceId: string, songId: string) {
+function annotationDocPath(
+  projectId: string,
+  serviceId: string,
+  songId: string,
+) {
   return (
     `projects/${projectId}/databases/(default)/documents/` +
     `services/${encodeURIComponent(serviceId)}/annotations/${encodeURIComponent(songId)}`
@@ -338,9 +342,7 @@ export async function publishAnnotation(
     const accessToken = await getAccessToken();
     const inlineOk =
       payload.canvasData.byteLength <= ANNOTATION_INLINE_MAX_BYTES;
-    const inline = inlineOk
-      ? payload.canvasData.toString("base64")
-      : undefined;
+    const inline = inlineOk ? payload.canvasData.toString("base64") : undefined;
     const payloadLocation: AnnotationPayloadLocation = inline
       ? "firestore"
       : "api";

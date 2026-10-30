@@ -26,14 +26,14 @@ Produce a complete, valid ChordPro song for Hosanna that the team can open in St
 
 Ask for anything missing that you cannot safely infer:
 
-| Field | Directive | Required? |
-|-------|-----------|-----------|
-| Title | `{title:}` / `{t:}` | Yes |
-| Artist | `{artist:}` / `{a:}` | Strongly preferred |
-| Key | `{key:}` / `{k:}` | Preferred (needed for transpose) |
-| Duration | `{duration:}` | Optional; helps service planning |
-| YouTube | `{youtube:}` | Optional |
-| Song number | `{song_number:}` | Optional; Hosanna-specific |
+| Field       | Directive            | Required?                        |
+| ----------- | -------------------- | -------------------------------- |
+| Title       | `{title:}` / `{t:}`  | Yes                              |
+| Artist      | `{artist:}` / `{a:}` | Strongly preferred               |
+| Key         | `{key:}` / `{k:}`    | Preferred (needed for transpose) |
+| Duration    | `{duration:}`        | Optional; helps service planning |
+| YouTube     | `{youtube:}`         | Optional                         |
+| Song number | `{song_number:}`     | Optional; Hosanna-specific       |
 
 Do **not** invent CCLI numbers, YouTube links, or hymnal numbers the user did not give.
 
@@ -74,11 +74,13 @@ Use aliases if helpful (`{sov}`…`{eov}`, `{soc}`…`{eoc}`, `{sob}`…`{eob}`)
 ## What you may infer vs must ask
 
 **Safe to infer (structural):**
+
 - Missing `{end_of_verse}` when the next section starts
 - Placing `{title:}` / `{artist:}` at the top from stated metadata
 - Using verse/chorus/bridge when the user names those sections
 
 **Must ask / never invent:**
+
 - Lyrics or chords the user did not supply
 - Extra verses “to make it complete”
 - Keys, tempos, durations unless stated or clearly present in source text

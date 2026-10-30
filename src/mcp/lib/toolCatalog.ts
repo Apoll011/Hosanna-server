@@ -92,9 +92,9 @@ export const MCP_TOOL_GROUPS = {
   ],
 } as const;
 
-export const ALL_MCP_TOOL_NAMES: string[] = Object.values(MCP_TOOL_GROUPS).flatMap(
-  (g) => [...g],
-);
+export const ALL_MCP_TOOL_NAMES: string[] = Object.values(
+  MCP_TOOL_GROUPS,
+).flatMap((g) => [...g]);
 
 export const TOOL_SURFACE = {
   core: "Registered on the Hosanna MCP server — available to external AI clients (ChatGPT, Claude, …).",

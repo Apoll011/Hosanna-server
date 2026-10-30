@@ -3,9 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AuthInfo, McpServer } from "@modelcontextprotocol/server";
 import { createSongSchema } from "../../validators/song.validators.js";
-import {
-  createServiceSchema,
-} from "../../validators/service.validators.js";
+import { createServiceSchema } from "../../validators/service.validators.js";
 import {
   serviceElementSchema,
   serviceElementTypeSchema,
@@ -38,11 +36,7 @@ function readDoc(relativePath: string): string {
   return readFileSync(join(docsRoot, relativePath), "utf8");
 }
 
-function textResource(
-  uri: string,
-  text: string,
-  mimeType = "text/markdown",
-) {
+function textResource(uri: string, text: string, mimeType = "text/markdown") {
   return {
     contents: [{ uri, mimeType, text }],
   };
@@ -293,10 +287,7 @@ export function registerResources(
       },
       async (uri) => {
         try {
-          const text = readFileSync(
-            join(skillsRoot, name, "SKILL.md"),
-            "utf8",
-          );
+          const text = readFileSync(join(skillsRoot, name, "SKILL.md"), "utf8");
           return textResource(uri.href, text);
         } catch {
           return textResource(

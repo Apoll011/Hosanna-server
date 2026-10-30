@@ -64,7 +64,11 @@ function skillsForJob(job: string): string[] {
   const safe = "hosanna://skills/hosanna-safe-data";
   switch (job) {
     case "create_song":
-      return [safe, "hosanna://skills/chordpro-create", "hosanna://chordpro/guide"];
+      return [
+        safe,
+        "hosanna://skills/chordpro-create",
+        "hosanna://chordpro/guide",
+      ];
     case "edit_song":
     case "fix_song":
       return [safe, "hosanna://skills/songs-edit-fix"];

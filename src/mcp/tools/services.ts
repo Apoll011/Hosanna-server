@@ -126,7 +126,11 @@ export function registerServiceTools(
                 updatedAt: song.updatedAt.toISOString(),
                 tags: song.tags,
                 ...(includeSongContent
-                  ? { content: song.content.slice(0, 8_000), truncated: song.content.length > 8_000, contentLength: song.content.length }
+                  ? {
+                      content: song.content.slice(0, 8_000),
+                      truncated: song.content.length > 8_000,
+                      contentLength: song.content.length,
+                    }
                   : { contentPreview: song.content.slice(0, 200) }),
               });
             } catch {
@@ -241,8 +245,7 @@ export function registerServiceTools(
     "services_create_draft",
     {
       title: "Create service draft",
-      description:
-        "Build and validate a service plan proposal without saving.",
+      description: "Build and validate a service plan proposal without saving.",
       inputSchema: z.object({
         name: z.string().min(1),
         date: dateOnlySchema,
@@ -403,70 +406,72 @@ export function registerServiceTools(
           ctx.orgId,
           clientRequestId,
           async () => {
-        const elements = args.elements ?? [];
-        const validation = await validateServicePlan(
-          elements,
-          songService(ctx),
-        );
-        if (!validation.ok && !args.allowInvalid) {
-          return jsonResult(
-            {
-              error: "Service validation failed",
+            const elements = args.elements ?? [];
+            const validation = await validateServicePlan(
+              elements,
+              songService(ctx),
+            );
+            if (!validation.ok && !args.allowInvalid) {
+              return jsonResult(
+                {
+                  error: "Service validation failed",
+                  validation,
+                  hint: "Fix song references/structure or set allowInvalid=true.",
+                },
+                true,
+              );
+            }
+
+            if (args.mode === "create") {
+              requirePermission(ctx, "service.create");
+              const created = await serviceService(ctx).create({
+                name: args.name,
+                date: new Date(`${args.date}T12:00:00.000Z`),
+                notes: args.notes,
+                elements,
+              });
+              const service = await serviceService(ctx).getByIdForMcp(
+                created.id,
+              );
+              return jsonResult({
+                status: "saved",
+                saved: true,
+                service,
+                validation,
+                dateFormat: "YYYY-MM-DD",
+                dateStorageNote:
+                  "Calendar date YYYY-MM-DD; stored at noon UTC to avoid timezone day-shifts.",
+              });
+            }
+
+            requirePermission(ctx, "service.update");
+            if (!args.serviceId || !args.updatedAt) {
+              return jsonResult(
+                { error: "serviceId and updatedAt are required for update" },
+                true,
+              );
+            }
+            const updated = await serviceService(ctx).update(
+              args.serviceId,
+              new Date(args.updatedAt),
+              {
+                name: args.name,
+                date: new Date(`${args.date}T12:00:00.000Z`),
+                notes: args.notes,
+                elements,
+                archived: args.archived,
+              },
+            );
+            const service = await serviceService(ctx).getByIdForMcp(updated.id);
+            return jsonResult({
+              status: "saved",
+              saved: true,
+              service,
               validation,
-              hint: "Fix song references/structure or set allowInvalid=true.",
-            },
-            true,
-          );
-        }
-
-        if (args.mode === "create") {
-          requirePermission(ctx, "service.create");
-          const created = await serviceService(ctx).create({
-            name: args.name,
-            date: new Date(`${args.date}T12:00:00.000Z`),
-            notes: args.notes,
-            elements,
-          });
-          const service = await serviceService(ctx).getByIdForMcp(created.id);
-          return jsonResult({
-            status: "saved",
-            saved: true,
-            service,
-            validation,
-            dateFormat: "YYYY-MM-DD",
-            dateStorageNote:
-              "Calendar date YYYY-MM-DD; stored at noon UTC to avoid timezone day-shifts.",
-          });
-        }
-
-        requirePermission(ctx, "service.update");
-        if (!args.serviceId || !args.updatedAt) {
-          return jsonResult(
-            { error: "serviceId and updatedAt are required for update" },
-            true,
-          );
-        }
-        const updated = await serviceService(ctx).update(
-          args.serviceId,
-          new Date(args.updatedAt),
-          {
-            name: args.name,
-            date: new Date(`${args.date}T12:00:00.000Z`),
-            notes: args.notes,
-            elements,
-            archived: args.archived,
-          },
-        );
-        const service = await serviceService(ctx).getByIdForMcp(updated.id);
-        return jsonResult({
-          status: "saved",
-          saved: true,
-          service,
-          validation,
-          dateFormat: "YYYY-MM-DD",
-          dateStorageNote:
-            "Calendar date YYYY-MM-DD; stored at noon UTC to avoid timezone day-shifts.",
-        });
+              dateFormat: "YYYY-MM-DD",
+              dateStorageNote:
+                "Calendar date YYYY-MM-DD; stored at noon UTC to avoid timezone day-shifts.",
+            });
           },
           payload,
         );
@@ -502,9 +507,7 @@ export function registerServiceTools(
         agenda: z
           .object({
             title: z.string().min(1).optional(),
-            time: z
-              .string()
-              .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "HH:mm"),
+            time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "HH:mm"),
             type: z.string().min(1).optional(),
             durationMinutes: z.number().int().positive().max(900).optional(),
             location: z.string().optional(),
@@ -526,7 +529,9 @@ export function registerServiceTools(
               .optional(),
           })
           .optional()
-          .describe("When set, create/link an agenda event after the service saves"),
+          .describe(
+            "When set, create/link an agenda event after the service saves",
+          ),
       }),
     },
     async (args) => {
@@ -541,118 +546,117 @@ export function registerServiceTools(
         }
 
         {
-            const report: Record<string, unknown> = {
-              clientRequestId,
-              steps: [] as string[],
-            };
-            const steps = report.steps as string[];
-            let progress: PublishProgressInput | undefined =
-              getPublishProgress(ctx.orgId, clientRequestId);
+          const report: Record<string, unknown> = {
+            clientRequestId,
+            steps: [] as string[],
+          };
+          const steps = report.steps as string[];
+          let progress: PublishProgressInput | undefined = getPublishProgress(
+            ctx.orgId,
+            clientRequestId,
+          );
 
-            const elements = (args.elements ?? []).map((el, i) => ({
-              ...el,
-              id: el.id || randomUUID(),
-              position: el.position ?? i,
-            }));
-            const validation = await validateServicePlan(
-              elements,
-              songService(ctx),
+          const elements = (args.elements ?? []).map((el, i) => ({
+            ...el,
+            id: el.id || randomUUID(),
+            position: el.position ?? i,
+          }));
+          const validation = await validateServicePlan(
+            elements,
+            songService(ctx),
+          );
+          if (!validation.ok && !args.allowInvalid) {
+            return jsonResult(
+              {
+                status: "draft",
+                error: true,
+                code: "validation_error",
+                message: "Service validation failed — nothing persisted",
+                validation,
+              },
+              true,
             );
-            if (!validation.ok && !args.allowInvalid) {
-              return jsonResult(
-                {
-                  status: "draft",
-                  error: true,
-                  code: "validation_error",
-                  message: "Service validation failed — nothing persisted",
-                  validation,
-                },
-                true,
+          }
+          steps.push("validated");
+
+          // Phase 1: service
+          if (!progress?.serviceId) {
+            const created = await serviceService(ctx).create({
+              name: args.name,
+              date: new Date(`${args.date}T12:00:00.000Z`),
+              notes: args.notes,
+              elements,
+            });
+            const service = await serviceService(ctx).getByIdForMcp(created.id);
+            progress = {
+              phase: "service_saved",
+              serviceId: service.id,
+              serviceUpdatedAt: new Date(service.updatedAt).toISOString(),
+            };
+            setPublishProgress(ctx.orgId, clientRequestId, progress);
+            steps.push("service_saved");
+            report.service = service;
+          } else {
+            const service = await serviceService(ctx).getByIdForMcp(
+              progress.serviceId,
+            );
+            report.service = service;
+            steps.push("service_resumed");
+          }
+
+          // Phase 2: agenda (optional)
+          if (args.agenda) {
+            if (!progress!.eventId) {
+              const assignees = (args.agenda.responsibilities ?? []).flatMap(
+                (r) =>
+                  r.assignees.map((a) => ({
+                    name: a.name,
+                    category: r.categoryId,
+                    memberId: a.memberId,
+                  })),
               );
-            }
-            steps.push("validated");
+              const toResolve = assignees.filter((a) => !a.memberId);
+              const resolution =
+                toResolve.length > 0
+                  ? await resolveMembers(
+                      ctx,
+                      toResolve.map((a) => ({
+                        name: a.name,
+                        category: a.category,
+                      })),
+                    )
+                  : {
+                      resolved: [],
+                      unresolved: [],
+                      allResolved: true,
+                    };
+              report.memberResolution = resolution;
 
-            // Phase 1: service
-            if (!progress?.serviceId) {
-              const created = await serviceService(ctx).create({
-                name: args.name,
-                date: new Date(`${args.date}T12:00:00.000Z`),
-                notes: args.notes,
-                elements,
-              });
-              const service = await serviceService(ctx).getByIdForMcp(
-                created.id,
+              if (
+                !args.allowUnlinkedAssignees &&
+                resolution.unresolved.length > 0
+              ) {
+                return jsonResult({
+                  status: "partial",
+                  phase: "agenda_blocked_unresolved_members",
+                  message:
+                    "Service saved; agenda not created — resolve members or set allowUnlinkedAssignees=true",
+                  steps,
+                  service: report.service,
+                  memberResolution: resolution,
+                  resume: true,
+                  hint: "Retry services_publish with the same clientRequestId after fixing assignees.",
+                });
+              }
+
+              const resolvedByName = new Map(
+                resolution.resolved.map((r) => [
+                  r.name.trim().toLowerCase(),
+                  r.memberId,
+                ]),
               );
-              progress = {
-                phase: "service_saved",
-                serviceId: service.id,
-                serviceUpdatedAt: new Date(service.updatedAt).toISOString(),
-              };
-              setPublishProgress(ctx.orgId, clientRequestId, progress);
-              steps.push("service_saved");
-              report.service = service;
-            } else {
-              const service = await serviceService(ctx).getByIdForMcp(
-                progress.serviceId,
-              );
-              report.service = service;
-              steps.push("service_resumed");
-            }
-
-            // Phase 2: agenda (optional)
-            if (args.agenda) {
-              if (!progress!.eventId) {
-                const assignees = (args.agenda.responsibilities ?? []).flatMap(
-                  (r) =>
-                    r.assignees.map((a) => ({
-                      name: a.name,
-                      category: r.categoryId,
-                      memberId: a.memberId,
-                    })),
-                );
-                const toResolve = assignees.filter((a) => !a.memberId);
-                const resolution =
-                  toResolve.length > 0
-                    ? await resolveMembers(
-                        ctx,
-                        toResolve.map((a) => ({
-                          name: a.name,
-                          category: a.category,
-                        })),
-                      )
-                    : {
-                        resolved: [],
-                        unresolved: [],
-                        allResolved: true,
-                      };
-                report.memberResolution = resolution;
-
-                if (
-                  !args.allowUnlinkedAssignees &&
-                  resolution.unresolved.length > 0
-                ) {
-                  return jsonResult({
-                    status: "partial",
-                    phase: "agenda_blocked_unresolved_members",
-                    message:
-                      "Service saved; agenda not created — resolve members or set allowUnlinkedAssignees=true",
-                    steps,
-                    service: report.service,
-                    memberResolution: resolution,
-                    resume: true,
-                    hint: "Retry services_publish with the same clientRequestId after fixing assignees.",
-                  });
-                }
-
-                const resolvedByName = new Map(
-                  resolution.resolved.map((r) => [
-                    r.name.trim().toLowerCase(),
-                    r.memberId,
-                  ]),
-                );
-                const responsibilities = (
-                  args.agenda.responsibilities ?? []
-                ).map((r) => ({
+              const responsibilities = (args.agenda.responsibilities ?? []).map(
+                (r) => ({
                   categoryId: r.categoryId,
                   assignees: r.assignees.map((a) => ({
                     name: a.name,
@@ -660,76 +664,77 @@ export function registerServiceTools(
                       a.memberId ??
                       resolvedByName.get(a.name.trim().toLowerCase()),
                   })),
-                }));
+                }),
+              );
 
-                try {
-                  const agendaResult = await createAgendaEvent(ctx, {
-                    title: args.agenda.title ?? args.name,
-                    date: args.date,
-                    time: args.agenda.time,
-                    type: args.agenda.type ?? args.name,
-                    durationMinutes: args.agenda.durationMinutes,
-                    location: args.agenda.location,
-                    notes: args.agenda.notes,
-                    linkedServiceId: progress!.serviceId,
-                    responsibilities,
-                  });
-                  progress = {
-                    ...progress!,
-                    phase: "agenda_saved",
-                    eventId: agendaResult.event.id,
-                    eventUpdatedAt: agendaResult.event.updatedAt,
-                  };
-                  setPublishProgress(ctx.orgId, clientRequestId, progress);
-                  steps.push("agenda_saved");
-                  report.agenda = agendaResult;
-                } catch (agendaErr) {
-                  const message =
-                    agendaErr instanceof Error
-                      ? agendaErr.message
-                      : String(agendaErr);
-                  return jsonResult({
-                    status: "partial",
-                    phase: "agenda_failed",
-                    message: `Service saved; agenda create failed: ${message}`,
-                    steps,
-                    service: report.service,
-                    memberResolution: resolution,
-                    resume: true,
-                    hint: "Retry services_publish with the same clientRequestId — will resume agenda only.",
-                  });
-                }
-              } else {
-                steps.push("agenda_resumed");
+              try {
+                const agendaResult = await createAgendaEvent(ctx, {
+                  title: args.agenda.title ?? args.name,
+                  date: args.date,
+                  time: args.agenda.time,
+                  type: args.agenda.type ?? args.name,
+                  durationMinutes: args.agenda.durationMinutes,
+                  location: args.agenda.location,
+                  notes: args.agenda.notes,
+                  linkedServiceId: progress!.serviceId,
+                  responsibilities,
+                });
+                progress = {
+                  ...progress!,
+                  phase: "agenda_saved",
+                  eventId: agendaResult.event.id,
+                  eventUpdatedAt: agendaResult.event.updatedAt,
+                };
+                setPublishProgress(ctx.orgId, clientRequestId, progress);
+                steps.push("agenda_saved");
+                report.agenda = agendaResult;
+              } catch (agendaErr) {
+                const message =
+                  agendaErr instanceof Error
+                    ? agendaErr.message
+                    : String(agendaErr);
+                return jsonResult({
+                  status: "partial",
+                  phase: "agenda_failed",
+                  message: `Service saved; agenda create failed: ${message}`,
+                  steps,
+                  service: report.service,
+                  memberResolution: resolution,
+                  resume: true,
+                  hint: "Retry services_publish with the same clientRequestId — will resume agenda only.",
+                });
               }
+            } else {
+              steps.push("agenda_resumed");
             }
+          }
 
-            // Phase 3: verify
-            const verifiedService = await serviceService(ctx).getByIdForMcp(
-              progress!.serviceId,
-            );
-            const verifiedValidation = await validateServicePlan(
-              verifiedService.elements,
-              songService(ctx),
-            );
-            syncCache.invalidate(ctx.orgId);
-            steps.push("verified");
+          // Phase 3: verify
+          const verifiedService = await serviceService(ctx).getByIdForMcp(
+            progress!.serviceId,
+          );
+          const verifiedValidation = await validateServicePlan(
+            verifiedService.elements,
+            songService(ctx),
+          );
+          syncCache.invalidate(ctx.orgId);
+          steps.push("verified");
 
-            const finalResult = {
-              status: "verified" as const,
-              steps,
-              service: verifiedService,
-              agenda: report.agenda ?? null,
-              memberResolution: report.memberResolution ?? null,
-              validation: verifiedValidation,
-              dateFormat: "YYYY-MM-DD",
-              dateStorageNote:
-                "Calendar date YYYY-MM-DD; stored at noon UTC to avoid timezone day-shifts.",
-              studioNote:
-                "studio_sync is Studio-only — open Studio to refresh UI, or wait for replication poll.",
-            };
-            setCompletedPublish(ctx.orgId, clientRequestId, finalResult);
-            return jsonResult(finalResult);
+          const finalResult = {
+            status: "verified" as const,
+            steps,
+            service: verifiedService,
+            agenda: report.agenda ?? null,
+            memberResolution: report.memberResolution ?? null,
+            validation: verifiedValidation,
+            dateFormat: "YYYY-MM-DD",
+            dateStorageNote:
+              "Calendar date YYYY-MM-DD; stored at noon UTC to avoid timezone day-shifts.",
+            studioNote:
+              "studio_sync is Studio-only — open Studio to refresh UI, or wait for replication poll.",
+          };
+          setCompletedPublish(ctx.orgId, clientRequestId, finalResult);
+          return jsonResult(finalResult);
         }
       } catch (error) {
         return errorResult(error);
@@ -832,9 +837,7 @@ export function registerServiceTools(
             id: randomUUID(),
             type: "welcome",
             title: "Welcome",
-            content: args.theme
-              ? `Welcome — theme: ${args.theme}`
-              : "Welcome",
+            content: args.theme ? `Welcome — theme: ${args.theme}` : "Welcome",
             position: position++,
             duration: 60,
           });

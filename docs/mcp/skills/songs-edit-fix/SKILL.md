@@ -22,13 +22,13 @@ Apply the user’s requested changes — or repair ChordPro problems — while p
 
 ## Tools
 
-| Step | Tool |
-|------|------|
-| Load | `songs_get` |
-| Inspect | `chordpro_validate`, `chordpro_parse_summary` |
-| Edit proposal | `songs_propose_edit` |
-| Fix proposal | `songs_propose_fix` (format + lint-oriented) |
-| Persist | `songs_save` with `mode=update`, `songId`, and `updatedAt` |
+| Step          | Tool                                                       |
+| ------------- | ---------------------------------------------------------- |
+| Load          | `songs_get`                                                |
+| Inspect       | `chordpro_validate`, `chordpro_parse_summary`              |
+| Edit proposal | `songs_propose_edit`                                       |
+| Fix proposal  | `songs_propose_fix` (format + lint-oriented)               |
+| Persist       | `songs_save` with `mode=update`, `songId`, and `updatedAt` |
 
 ## Edit workflow
 

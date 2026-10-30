@@ -3,7 +3,10 @@
  * Avoids the model guessing "today" / "next Sunday".
  */
 
-export function buildClockContext(now = new Date(), timeZone = "Europe/Lisbon") {
+export function buildClockContext(
+  now = new Date(),
+  timeZone = "Europe/Lisbon",
+) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",

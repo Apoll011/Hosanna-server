@@ -8,10 +8,7 @@
  * active organization. ChordPro-only tools work without a token.
  */
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
-import {
-  resolveMcpContextFromHeaders,
-  type McpContext,
-} from "./context.js";
+import { resolveMcpContextFromHeaders, type McpContext } from "./context.js";
 import { createHosannaMcpServer } from "./server.js";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 

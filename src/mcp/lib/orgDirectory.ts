@@ -34,8 +34,7 @@ type OrgMeta = {
 
 function parseOrgMeta(metadata: unknown): OrgMeta {
   try {
-    const meta =
-      typeof metadata === "string" ? JSON.parse(metadata) : metadata;
+    const meta = typeof metadata === "string" ? JSON.parse(metadata) : metadata;
     return (meta && typeof meta === "object" ? meta : {}) as OrgMeta;
   } catch {
     return {};
@@ -222,7 +221,9 @@ export async function resolveMembers(
     const raw = entry.name?.trim();
     if (!raw) continue;
     const needle = raw.toLowerCase();
-    const exact = all.filter((m) => m.user.name.trim().toLowerCase() === needle);
+    const exact = all.filter(
+      (m) => m.user.name.trim().toLowerCase() === needle,
+    );
     const partial = all.filter((m) =>
       m.user.name.toLowerCase().includes(needle),
     );
@@ -398,9 +399,7 @@ export async function getOrganization(ctx: McpContext) {
 }
 
 /** Normalize responsibilities for agenda create/update. */
-export function normalizeResponsibilities(
-  input: unknown,
-): OrgResponsibility[] {
+export function normalizeResponsibilities(input: unknown): OrgResponsibility[] {
   if (!Array.isArray(input)) return [];
   const out: OrgResponsibility[] = [];
   for (const raw of input) {
@@ -429,8 +428,7 @@ export function normalizeResponsibilities(
       assignees.push({ id, name, memberId, avatarUrl });
     }
     out.push({
-      id:
-        typeof r.id === "string" && r.id.trim() ? r.id.trim() : randomUUID(),
+      id: typeof r.id === "string" && r.id.trim() ? r.id.trim() : randomUUID(),
       categoryId,
       assignees,
     });
