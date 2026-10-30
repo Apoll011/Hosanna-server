@@ -53,7 +53,6 @@ function serializeCollection(c: {
     color: c.color,
     icon: c.icon,
     songCount: c._count?.songs ?? c.songs?.length ?? 0,
-    songIds: c.songs?.map((s) => s.id),
     updatedAt: c.updatedAt.toISOString(),
   };
 }
@@ -202,18 +201,59 @@ export async function listCollections(ctx: McpContext) {
   };
 }
 
-export async function getCollection(ctx: McpContext, collectionId: string) {
+export async function getCollection(
+  ctx: McpContext,
+  collectionId: string,
+  opts?: { include?: "none" | "ids" | "songs"; page?: number; limit?: number },
+) {
   requirePermission(ctx, "collection.access");
+  const include = opts?.include ?? "none";
+  const page = Math.max(1, opts?.page ?? 1);
+  const limit = Math.min(Math.max(opts?.limit ?? 50, 1), 100);
+
   const collection = await ctx.db.collection.findFirst({
     where: { id: collectionId, deleted: false },
-    include: { songs: { select: { id: true, title: true, artist: true } } },
+    include: {
+      _count: { select: { songs: true } },
+      ...(include === "none"
+        ? {}
+        : {
+            songs: {
+              select:
+                include === "ids"
+                  ? { id: true }
+                  : { id: true, title: true, artist: true },
+              skip: (page - 1) * limit,
+              take: limit,
+              orderBy: { title: "asc" },
+            },
+          }),
+    },
   });
   if (!collection) throw new Error("Collection not found");
+
+  const songCount = collection._count?.songs ?? 0;
+  const base = serializeCollection(collection);
+  if (include === "none") {
+    return {
+      collection: base,
+      tip: "Pass include=ids|songs (+ page/limit) when you need song membership.",
+    };
+  }
+
+  const songs = collection.songs ?? [];
   return {
     collection: {
-      ...serializeCollection(collection),
-      songs: collection.songs,
+      ...base,
+      ...(include === "ids"
+        ? { songIds: songs.map((s) => s.id) }
+        : { songs }),
     },
+    page,
+    limit,
+    total: songCount,
+    totalPages: Math.ceil(songCount / limit) || 1,
+    nextPage: page * limit < songCount ? page + 1 : null,
   };
 }
 
@@ -401,7 +441,11 @@ export async function createAgendaEvent(
     } as never,
   });
   syncCache.invalidate(ctx.orgId, "agendaEvents");
-  return { created: true, event: serializeAgenda(created) };
+  return {
+    created: true,
+    event: serializeAgenda(created),
+    warnings: responsibilityWarnings(responsibilities),
+  };
 }
 
 export async function updateAgendaEvent(
@@ -452,7 +496,31 @@ export async function updateAgendaEvent(
     } as never,
   });
   syncCache.invalidate(ctx.orgId, "agendaEvents");
-  return { updated: true, event: serializeAgenda(updated) };
+  const responsibilities =
+    args.responsibilities !== undefined
+      ? normalizeResponsibilities(args.responsibilities)
+      : normalizeResponsibilities(updated.responsibilities);
+  return {
+    updated: true,
+    event: serializeAgenda(updated),
+    warnings: responsibilityWarnings(responsibilities),
+  };
+}
+
+function responsibilityWarnings(
+  responsibilities: OrgResponsibility[],
+): string[] {
+  const warnings: string[] = [];
+  for (const r of responsibilities) {
+    for (const a of r.assignees) {
+      if (!a.memberId) {
+        warnings.push(
+          `Assignee "${a.name}" on category "${r.categoryId}" has no memberId — not linked to an org member`,
+        );
+      }
+    }
+  }
+  return warnings;
 }
 
 export async function deleteAgendaEvent(ctx: McpContext, eventId: string) {

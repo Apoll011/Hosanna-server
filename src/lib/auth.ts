@@ -3,6 +3,8 @@ import { dash, sentinel } from "@better-auth/infra";
 import { stripe } from "@better-auth/stripe";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { betterAuth } from "better-auth/minimal";
+import { cimd } from "@better-auth/cimd";
+import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import { mcp } from "@better-auth/mcp";
 import {
   admin,
@@ -355,10 +357,17 @@ export const auth = betterAuth({
           allowedScopes: ["openid", "profile", "email", "offline_access"],
         },
       ],
-      // Cursor / Claude / ChatGPT register custom-scheme or https callbacks.
+      // Keep DCR for ChatGPT / older clients; Claude prefers CIMD (below).
       allowDynamicClientRegistration: true,
       allowUnauthenticatedClientRegistration: true,
       clientRegistrationDefaultApplicationType: "infer",
+    }),
+    // Claude "published client identity" — client_id is an HTTPS metadata URL
+    // (e.g. https://claude.ai/oauth/mcp-oauth-client-metadata). Advertises
+    // client_id_metadata_document_supported; AS already includes auth method "none".
+    cimd({
+      fetchClientMetadataResource,
+      metadataProfile: "mcp-2026-07-28",
     }),
     haveIBeenPwned(),
     sentinel({

@@ -79,7 +79,8 @@ export async function getMe(ctx: McpContext) {
       id: member.user.id,
       name: member.user.name,
       email: member.user.email,
-      image: member.user.image,
+      imageUrl: compactImageRef(member.user.image),
+      hasImage: Boolean(member.user.image),
     },
     member: {
       id: member.id,
@@ -90,12 +91,24 @@ export async function getMe(ctx: McpContext) {
       id: org.id,
       name: org.name,
       slug: org.slug,
-      logo: org.logo,
+      logoUrl: compactImageRef(org.logo),
+      hasLogo: Boolean(org.logo),
       locale: meta.settings?.general?.locale ?? meta.locale ?? ctx.locale,
       timezone: meta.settings?.general?.timezone ?? "Europe/Lisbon",
     },
     entitled: ctx.entitled,
   };
+}
+
+/** Never return data: URIs / base64 blobs to the model — only http(s) URLs. */
+function compactImageRef(value: string | null | undefined): string | null {
+  if (!value || typeof value !== "string") return null;
+  const v = value.trim();
+  if (!v) return null;
+  if (v.startsWith("data:")) return null;
+  if (v.length > 2_048) return null;
+  if (/^https?:\/\//i.test(v)) return v;
+  return null;
 }
 
 export async function listMembers(
@@ -137,10 +150,35 @@ export async function listMembers(
       role: m.role,
       name: m.user.name,
       email: m.user.email,
-      image: m.user.image,
+      imageUrl: compactImageRef(m.user.image),
+      hasImage: Boolean(m.user.image),
       createdAt: m.createdAt.toISOString(),
     })),
     count: members.length,
+  };
+}
+
+function serializeMemberRow(m: {
+  id: string;
+  role: string;
+  userId: string;
+  createdAt: Date;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    image: string | null;
+  };
+}) {
+  return {
+    memberId: m.id,
+    userId: m.userId,
+    role: m.role,
+    name: m.user.name,
+    email: m.user.email,
+    imageUrl: compactImageRef(m.user.image),
+    hasImage: Boolean(m.user.image),
+    createdAt: m.createdAt.toISOString(),
   };
 }
 
@@ -153,38 +191,74 @@ export async function getMember(
   }
 
   const name = args.name?.trim();
-  const member = await prisma.member.findFirst({
+  const select = {
+    id: true,
+    role: true,
+    userId: true,
+    createdAt: true,
+    user: { select: { id: true, name: true, email: true, image: true } },
+  } as const;
+
+  // Exact id lookups
+  if (args.memberId || args.userId) {
+    const member = await prisma.member.findFirst({
+      where: {
+        organizationId: ctx.orgId,
+        ...(args.memberId ? { id: args.memberId } : {}),
+        ...(args.userId ? { userId: args.userId } : {}),
+      },
+      select,
+    });
+    if (!member) {
+      return {
+        notFound: true as const,
+        member: null,
+        suggestions: [] as ReturnType<typeof serializeMemberRow>[],
+        message: "Member not found in this organization",
+      };
+    }
+    return { notFound: false as const, member: serializeMemberRow(member) };
+  }
+
+  // Name search — surface ambiguity
+  const matches = await prisma.member.findMany({
     where: {
       organizationId: ctx.orgId,
-      ...(args.memberId ? { id: args.memberId } : {}),
-      ...(args.userId ? { userId: args.userId } : {}),
-      ...(name
-        ? {
-            user: { name: { contains: name, mode: "insensitive" } },
-          }
-        : {}),
+      user: { name: { contains: name!, mode: "insensitive" } },
     },
-    select: {
-      id: true,
-      role: true,
-      userId: true,
-      createdAt: true,
-      user: { select: { id: true, name: true, email: true, image: true } },
-    },
+    select,
+    take: 10,
+    orderBy: { createdAt: "asc" },
   });
 
-  if (!member) throw new Error("Member not found in this organization");
+  if (matches.length === 0) {
+    const loose = await prisma.member.findMany({
+      where: { organizationId: ctx.orgId },
+      select,
+      take: 8,
+      orderBy: { createdAt: "asc" },
+    });
+    return {
+      notFound: true as const,
+      member: null,
+      suggestions: loose.map(serializeMemberRow),
+      message: `No member matches name "${name}". suggestions are recent org members.`,
+    };
+  }
+
+  if (matches.length > 1) {
+    return {
+      notFound: false as const,
+      ambiguous: true as const,
+      member: null,
+      candidates: matches.map(serializeMemberRow),
+      message: `Multiple members match "${name}" — pick by memberId`,
+    };
+  }
 
   return {
-    member: {
-      memberId: member.id,
-      userId: member.userId,
-      role: member.role,
-      name: member.user.name,
-      email: member.user.email,
-      image: member.user.image,
-      createdAt: member.createdAt.toISOString(),
-    },
+    notFound: false as const,
+    member: serializeMemberRow(matches[0]!),
   };
 }
 
@@ -223,7 +297,8 @@ export async function getOrganization(ctx: McpContext) {
       id: org.id,
       name: org.name,
       slug: org.slug,
-      logo: org.logo,
+      logoUrl: compactImageRef(org.logo),
+      hasLogo: Boolean(org.logo),
       shortName: meta.shortName ?? null,
       locale,
       timezone: meta.settings?.general?.timezone ?? "Europe/Lisbon",

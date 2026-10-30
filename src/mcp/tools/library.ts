@@ -30,6 +30,7 @@ import {
   updateCollection,
   updateFolder,
 } from "../lib/libraryCrud.js";
+import { withClientRequestId } from "../lib/idempotency.js";
 import { searchMusicBrainzRecordings } from "../lib/musicbrainz.js";
 import {
   nativeWebFetch,
@@ -159,13 +160,23 @@ export function registerLibraryTools(
     "collections_get",
     {
       title: "Get collection",
-      description: "Get a collection with its song ids/titles.",
-      inputSchema: z.object({ collectionId: z.string().uuid() }),
+      description:
+        "Get a collection. Default is metadata + songCount only. Pass include=ids|songs (+ page/limit) for membership.",
+      inputSchema: z.object({
+        collectionId: z.string().uuid(),
+        include: z.enum(["none", "ids", "songs"]).optional().default("none"),
+        page: z.number().int().positive().optional().default(1),
+        limit: z.number().int().positive().max(100).optional().default(50),
+      }),
     },
-    async ({ collectionId }) => {
+    async ({ collectionId, include, page, limit }) => {
       try {
         return jsonResult(
-          await getCollection(requireMcpContext(authInfo), collectionId),
+          await getCollection(requireMcpContext(authInfo), collectionId, {
+            include,
+            page,
+            limit,
+          }),
         );
       } catch (error) {
         return errorResult(error);
@@ -354,27 +365,34 @@ export function registerLibraryTools(
         title: z.string().min(1),
         date: z
           .string()
-          .min(1)
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD")
           .describe("Calendar date YYYY-MM-DD (org-local, no TZ)"),
         time: z
           .string()
-          .min(1)
+          .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "HH:mm")
           .describe("Local time HH:mm (24h), e.g. 09:30"),
         type: z
           .string()
           .min(1)
           .describe('Free string, e.g. "Culto Dominical", "Ensaio", "Rehearsal"'),
-        durationMinutes: z.number().int().positive().optional(),
+        durationMinutes: z.number().int().positive().max(900).optional(),
         location: z.string().optional(),
         notes: z.string().optional(),
         linkedServiceId: z.string().uuid().nullable().optional(),
         responsibilities: z.array(agendaResponsibilitySchema).optional(),
+        clientRequestId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Idempotency key — retries return the same result"),
       }),
     },
     async (args) => {
       try {
-        return jsonResult(
-          await createAgendaEvent(requireMcpContext(authInfo), args),
+        const ctx = requireMcpContext(authInfo);
+        const { clientRequestId, ...createArgs } = args;
+        return await withClientRequestId(ctx.orgId, clientRequestId, async () =>
+          jsonResult(await createAgendaEvent(ctx, createArgs)),
         );
       } catch (error) {
         return errorResult(error);
@@ -392,10 +410,16 @@ export function registerLibraryTools(
         eventId: z.string().uuid(),
         updatedAt: z.string(),
         title: z.string().min(1).optional(),
-        date: z.string().optional(),
-        time: z.string().optional(),
+        date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD")
+          .optional(),
+        time: z
+          .string()
+          .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "HH:mm")
+          .optional(),
         type: z.string().optional(),
-        durationMinutes: z.number().int().positive().optional(),
+        durationMinutes: z.number().int().positive().max(900).optional(),
         location: z.string().nullable().optional(),
         notes: z.string().nullable().optional(),
         linkedServiceId: z.string().uuid().nullable().optional(),
@@ -435,34 +459,64 @@ export function registerLibraryTools(
     "trash_list",
     {
       title: "List trash",
-      description: "List soft-deleted songs, folders, and services.",
-      inputSchema: z.object({}),
+      description:
+        "List soft-deleted songs, folders, and services. Paginated per type (default limit 20).",
+      inputSchema: z.object({
+        page: z.number().int().positive().optional().default(1),
+        limit: z.number().int().positive().max(50).optional().default(20),
+        type: z
+          .enum(["all", "songs", "folders", "services"])
+          .optional()
+          .default("all"),
+      }),
     },
-    async () => {
+    async ({ page, limit, type }) => {
       try {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "song.access");
         const [songs, folders, services] = await Promise.all([
-          songService(ctx).listTrashed(),
-          folderService(ctx).listTrashed(),
-          serviceService(ctx).listTrashed(),
+          type === "folders" || type === "services"
+            ? Promise.resolve([])
+            : songService(ctx).listTrashed(),
+          type === "songs" || type === "services"
+            ? Promise.resolve([])
+            : folderService(ctx).listTrashed(),
+          type === "songs" || type === "folders"
+            ? Promise.resolve([])
+            : serviceService(ctx).listTrashed(),
         ]);
-        return jsonResult({
-          songs: songs.map((s) => ({
+        const slice = <T,>(rows: T[]) => {
+          const total = rows.length;
+          const start = (page - 1) * limit;
+          return {
+            items: rows.slice(start, start + limit),
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit) || 1,
+            nextPage: page * limit < total ? page + 1 : null,
+          };
+        };
+        const songPage = slice(
+          songs.map((s) => ({
             id: s.id,
             title: s.title,
             artist: s.artist,
             updatedAt: s.updatedAt.toISOString(),
             purgeAt: s.purgeAt?.toISOString() ?? null,
           })),
-          folders: folders.map((f) => ({
+        );
+        const folderPage = slice(
+          folders.map((f) => ({
             id: f.id,
             name: f.name,
             parentId: f.parentId,
             updatedAt: f.updatedAt.toISOString(),
             purgeAt: f.purgeAt?.toISOString() ?? null,
           })),
-          services: services.map((s) => ({
+        );
+        const servicePage = slice(
+          services.map((s) => ({
             id: s.id,
             name: s.name,
             updatedAt: s.updatedAt.toISOString(),
@@ -471,6 +525,11 @@ export function registerLibraryTools(
                 ? s.purgeAt.toISOString()
                 : null,
           })),
+        );
+        return jsonResult({
+          songs: songPage,
+          folders: folderPage,
+          services: servicePage,
         });
       } catch (error) {
         return errorResult(error);

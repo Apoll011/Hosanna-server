@@ -1,7 +1,7 @@
 /**
  * Shared access to MCP docs/skills for both resources and Studio AI tools.
  */
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -219,21 +219,12 @@ export function readResourceByUri(uri: string): {
   );
 }
 
-/** Debug helper: where docs resolved from + whether skill files exist. */
+/** Compact access summary — no filesystem paths, no skill body duplication. */
 export function docsAccessReport() {
-  const root = getDocsRoot();
-  const skills = getSkillsRoot();
-  let skillDirs: string[] = [];
-  try {
-    skillDirs = readdirSync(skills);
-  } catch {
-    skillDirs = [];
-  }
+  const skills = listSkills();
   return {
-    docsRoot: root,
-    skillsRoot: skills,
-    guideExists: existsSync(join(root, "chordpro-guide.md")),
-    skillDirs,
-    skills: listSkills(),
+    guideExists: existsSync(join(getDocsRoot(), "chordpro-guide.md")),
+    skillCount: skills.length,
+    missingSkills: skills.filter((s) => !s.exists).map((s) => s.name),
   };
 }

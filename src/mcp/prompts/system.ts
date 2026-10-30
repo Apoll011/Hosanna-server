@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import {
-  HOSANNA_MCP_INSTRUCTIONS,
+  buildHosannaMcpInstructions,
   SYSTEM_PROMPT_NAME,
 } from "../instructions.js";
 
@@ -40,7 +40,7 @@ export function registerSystemPrompts(server: McpServer): void {
             role: "user" as const,
             content: {
               type: "text" as const,
-              text: `${HOSANNA_MCP_INSTRUCTIONS}
+              text: `${buildHosannaMcpInstructions()}
 
 ## This session
 

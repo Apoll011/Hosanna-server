@@ -19,6 +19,13 @@ function assertUnchanged(
   }
 }
 
+function toDateOnly(value: Date | string): string {
+  if (typeof value === "string") {
+    return value.slice(0, 10);
+  }
+  return value.toISOString().slice(0, 10);
+}
+
 function serialize(service: NonNullable<ServiceWithSongs>) {
   return {
     id: service.id,
@@ -29,6 +36,38 @@ function serialize(service: NonNullable<ServiceWithSongs>) {
     archived: Boolean(service.archived),
     createdAt: service.createdAt,
     updatedAt: service.updatedAt,
+  };
+}
+
+/** MCP/get: same as serialize but date as YYYY-MM-DD. */
+function serializeForMcp(service: NonNullable<ServiceWithSongs>) {
+  return {
+    ...serialize(service),
+    date: toDateOnly(service.date),
+    elementCount: Array.isArray(service.elements) ? service.elements.length : 0,
+  };
+}
+
+/** List/search rows — metadata only (no element bodies). */
+function serializeListRow(service: NonNullable<ServiceWithSongs>) {
+  const elements = Array.isArray(service.elements) ? service.elements : [];
+  const hasSongs = elements.some(
+    (el) =>
+      el &&
+      typeof el === "object" &&
+      (el as { type?: string }).type === "song" &&
+      Boolean((el as { songId?: string }).songId),
+  );
+  return {
+    id: service.id,
+    name: service.name,
+    date: toDateOnly(service.date),
+    notes: service.notes ?? "",
+    archived: Boolean(service.archived),
+    elementCount: elements.length,
+    hasSongs,
+    updatedAt: service.updatedAt,
+    createdAt: service.createdAt,
   };
 }
 
@@ -52,12 +91,14 @@ export class ServiceService {
   async list(body: {
     archived?: boolean;
     includeArchived?: boolean;
+    /** When true, omit element bodies (MCP search). Studio API keeps full rows. */
+    metadataOnly?: boolean;
   }) {
     const mode: boolean | "all" = body.includeArchived
       ? "all"
       : (body.archived ?? false);
     const services = await this.serviceRepo.findAll(mode);
-    return services.map(serialize);
+    return services.map(body.metadataOnly ? serializeListRow : serialize);
   }
 
   async getById(id: string) {
@@ -72,6 +113,11 @@ export class ServiceService {
 
   async getByIdSerialized(id: string) {
     return serialize(await this.getById(id));
+  }
+
+  /** MCP-facing get — date normalized to YYYY-MM-DD. */
+  async getByIdForMcp(id: string) {
+    return serializeForMcp(await this.getById(id));
   }
 
   async create(input: {

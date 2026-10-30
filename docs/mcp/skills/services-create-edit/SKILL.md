@@ -18,20 +18,19 @@ Build or modify worship service plans that validate against Hosanna’s element 
 
 1. `hosanna://skills/hosanna-safe-data`
 2. `hosanna://domain/services`
-3. `hosanna://schemas/service-element-types`
 
 ## Element types
 
 | Type | Required / typical fields |
 |------|---------------------------|
-| `song` | `id`, `type`, `title`, **`songId`** (UUID in library), optional `duration`, `notes` |
-| `welcome` | `title`, optional `content`, `notes`, `duration` |
+| `song` | `id`, `type`, `title`, **`songId`** (UUID in library), optional `duration` (**seconds**), `notes` |
+| `welcome` | `title`, optional `content`, `notes`, `duration` (seconds) |
 | `scripture` | `title`, preferably `passage` and/or `content`, `notes`, `duration` |
 | `message` | `title`, `content`, `notes`, `duration` |
 | `announcement` | same pattern as message |
 | `custom` | `title`, `content`, … |
 
-Every element needs a unique `id` (UUID) and should use contiguous `position` values (0-based).
+Every element needs a stable unique `id` string (UUID recommended) and contiguous `position` values (0-based). `duration` is always **seconds** (e.g. song ≈ 180–300, message ≈ 1500–2700).
 
 ## Critical rule: song references
 
@@ -43,18 +42,18 @@ Every element needs a unique `id` (UUID) and should use contiguous `position` va
 
 | Step | Tool |
 |------|------|
-| List/get | `services_search`, `services_get` |
-| Draft | `services_create_draft` |
+| List/get | `services_search` (metadata only), `services_get` (elements + validation) |
+| Draft (no save) | `services_create_draft` |
 | Edit proposal | `services_propose_edit` |
 | Validate | `services_validate` |
 | Persist | `services_save` (`create` or `update` + `updatedAt`) |
 
 ## Create workflow
 
-1. Gather name, date (ISO), notes, desired flow (welcome → songs → message, etc.).
+1. Gather name, date (`YYYY-MM-DD`), notes, desired flow (welcome → songs → message, etc.).
 2. Search the library for each requested song; record ids.
-3. Build elements with ids/positions.
-4. `services_create_draft` → `services_validate`.
+3. Build elements with ids/positions; set song `duration` in **seconds**.
+4. `services_create_draft` → `services_validate` (or trust draft validation).
 5. Present the draft; after approval `services_save` `mode=create`.
 
 ## Edit workflow

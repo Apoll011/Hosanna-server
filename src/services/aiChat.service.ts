@@ -100,6 +100,7 @@ import {
 } from "../mcp/lib/studioUi.js";
 import { searchWeb } from "../mcp/lib/webSearch.js";
 import { searchYouTube } from "../mcp/lib/youtubeSearch.js";
+import { clockContextPromptBlock } from "../lib/clockContext.js";
 
 const folderIconSchema = z.enum(FOLDER_ICON_IDS);
 const folderColorSchema = z.enum(FOLDER_COLOR_IDS);
@@ -642,7 +643,7 @@ function buildHosannaTools(
               id: s.id,
               title: s.name,
               subtitle: s.date
-                ? new Date(s.date).toISOString().slice(0, 10)
+                ? String(s.date).slice(0, 10)
                 : undefined,
               archived: s.archived,
             });
@@ -745,34 +746,66 @@ function buildHosannaTools(
       },
     }),
     trash_list: tool({
-      description: "List soft-deleted songs, folders, and services.",
-      inputSchema: z.object({}),
-      execute: async () => {
+      description:
+        "List soft-deleted songs, folders, and services. Paginated per type.",
+      inputSchema: z.object({
+        page: z.number().int().positive().optional(),
+        limit: z.number().int().positive().max(50).optional(),
+        type: z.enum(["all", "songs", "folders", "services"]).optional(),
+      }),
+      execute: async (args) => {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "song.access");
+        const page = args.page ?? 1;
+        const limit = Math.min(args.limit ?? 20, 50);
+        const type = args.type ?? "all";
         const [songs, folders, services] = await Promise.all([
-          songService(ctx).listTrashed(),
-          folderService(ctx).listTrashed(),
-          serviceService(ctx).listTrashed(),
+          type === "folders" || type === "services"
+            ? Promise.resolve([])
+            : songService(ctx).listTrashed(),
+          type === "songs" || type === "services"
+            ? Promise.resolve([])
+            : folderService(ctx).listTrashed(),
+          type === "songs" || type === "folders"
+            ? Promise.resolve([])
+            : serviceService(ctx).listTrashed(),
         ]);
+        const slice = <T,>(rows: T[]) => {
+          const total = rows.length;
+          const start = (page - 1) * limit;
+          return {
+            items: rows.slice(start, start + limit),
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit) || 1,
+            nextPage: page * limit < total ? page + 1 : null,
+          };
+        };
         return textResult({
-          songs: songs.map((s) => ({
-            id: s.id,
-            title: s.title,
-            artist: s.artist,
-            updatedAt: s.updatedAt.toISOString(),
-          })),
-          folders: folders.map((f) => ({
-            id: f.id,
-            name: f.name,
-            parentId: f.parentId,
-            updatedAt: f.updatedAt.toISOString(),
-          })),
-          services: services.map((s) => ({
-            id: s.id,
-            name: s.name,
-            updatedAt: s.updatedAt.toISOString(),
-          })),
+          songs: slice(
+            songs.map((s) => ({
+              id: s.id,
+              title: s.title,
+              artist: s.artist,
+              updatedAt: s.updatedAt.toISOString(),
+            })),
+          ),
+          folders: slice(
+            folders.map((f) => ({
+              id: f.id,
+              name: f.name,
+              parentId: f.parentId,
+              updatedAt: f.updatedAt.toISOString(),
+            })),
+          ),
+          services: slice(
+            services.map((s) => ({
+              id: s.id,
+              name: s.name,
+              updatedAt: s.updatedAt.toISOString(),
+            })),
+          ),
         });
       },
     }),
@@ -783,11 +816,21 @@ function buildHosannaTools(
         textResult(await listCollections(requireMcpContext(authInfo))),
     }),
     collections_get: tool({
-      description: "Get a collection with its songs.",
-      inputSchema: z.object({ collectionId: z.string() }),
-      execute: async ({ collectionId }) =>
+      description:
+        "Get a collection. Default metadata + songCount only; include=ids|songs for membership (paginated).",
+      inputSchema: z.object({
+        collectionId: z.string(),
+        include: z.enum(["none", "ids", "songs"]).optional(),
+        page: z.number().int().positive().optional(),
+        limit: z.number().int().positive().max(100).optional(),
+      }),
+      execute: async ({ collectionId, include, page, limit }) =>
         textResult(
-          await getCollection(requireMcpContext(authInfo), collectionId),
+          await getCollection(requireMcpContext(authInfo), collectionId, {
+            include: include ?? "none",
+            page,
+            limit,
+          }),
         ),
     }),
     collections_create: tool({
@@ -824,7 +867,9 @@ function buildHosannaTools(
       execute: async ({ collectionId }) => {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "collection.delete");
-        const { collection } = await getCollection(ctx, collectionId);
+        const { collection } = await getCollection(ctx, collectionId, {
+          include: "none",
+        });
         return textResult(
           deleteConfirmation({
             action: "delete_collection",
@@ -1643,7 +1688,7 @@ function buildHosannaTools(
     }),
     services_search: tool({
       description:
-        "List/search services. archived=true → archived only; includeArchived=true → active+archived; default active only. Rows include archived.",
+        "List/search services (metadata only). Use services_get for elements. archived / includeArchived; rows include archived + elementCount.",
       inputSchema: z.object({
         archived: z.boolean().optional(),
         includeArchived: z.boolean().optional(),
@@ -1655,6 +1700,7 @@ function buildHosannaTools(
         let list = await serviceService(ctx).list({
           archived: args.archived ?? false,
           includeArchived: args.includeArchived ?? false,
+          metadataOnly: true,
         });
         if (args.search?.trim()) {
           const q = args.search.toLowerCase();
@@ -1664,7 +1710,11 @@ function buildHosannaTools(
               (s.notes ?? "").toLowerCase().includes(q),
           );
         }
-        return textResult({ services: list, total: list.length });
+        return textResult({
+          services: list,
+          total: list.length,
+          tip: "Metadata only — call services_get for elements.",
+        });
       },
     }),
     services_get: tool({
@@ -1678,7 +1728,7 @@ function buildHosannaTools(
       execute: async ({ serviceId, expandSongs, includeSongContent }) => {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "service.access");
-        const service = await serviceService(ctx).getByIdSerialized(serviceId);
+        const service = await serviceService(ctx).getByIdForMcp(serviceId);
         const validation = await validateServicePlan(
           service.elements,
           songService(ctx),
@@ -1721,7 +1771,29 @@ function buildHosannaTools(
             }
           }
         }
-        return textResult({ service, validation, expandedSongs });
+        const missingFromExpand = (expandedSongs ?? [])
+          .filter(
+            (s): s is { id: string; missing: true } =>
+              Boolean(s) &&
+              typeof s === "object" &&
+              (s as { missing?: boolean }).missing === true,
+          )
+          .map((s) => s.id);
+        const missingSongIds = [
+          ...new Set([...validation.missingSongIds, ...missingFromExpand]),
+        ];
+        return textResult({
+          service,
+          validation: {
+            ok: validation.ok,
+            errors: validation.errors,
+            warnings: validation.warnings,
+            missingSongIds,
+            durationUnit: validation.durationUnit,
+          },
+          expandedSongs,
+          missingSongIds,
+        });
       },
     }),
     services_validate: tool({
@@ -1979,6 +2051,7 @@ const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church son
 - Never invent lyrics, chords, or library songs. Ask when content is missing.
 - Never silently delete or rewrite unrelated content.
 - Respect permissions and \`updatedAt\` concurrency on updates/saves.
+- Service element \`duration\` is **seconds** (not minutes). Prefer real \`memberId\`s on agenda assignees.
 `;
 
 function contextBlock(page?: ChatPageContext): string {
@@ -2031,7 +2104,10 @@ export class AiChatService {
     );
     const nativeWebAuth = nativeWebAuthFromRuntime(runtime);
     const tools = buildHosannaTools(opts.authInfo, { nativeWebAuth });
-    const system = STUDIO_CHAT_SYSTEM + contextBlock(opts.pageContext);
+    const system =
+      STUDIO_CHAT_SYSTEM +
+      clockContextPromptBlock() +
+      contextBlock(opts.pageContext);
     const modelMessages = await convertToModelMessages(opts.messages);
 
     return streamText({

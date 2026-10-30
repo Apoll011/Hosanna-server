@@ -1,9 +1,16 @@
+import { clockContextPromptBlock } from "../lib/clockContext.js";
+
 /**
  * MCP server instructions — sent to the client on initialize.
  * Compatible hosts surface this as system guidance for the model.
+ * Clock block is computed at call time so "today" stays accurate.
  */
-export const HOSANNA_MCP_INSTRUCTIONS = `You are connected to the Hosanna MCP server for church song libraries and service planning.
-
+export function buildHosannaMcpInstructions(
+  now = new Date(),
+  timeZone = "Europe/Lisbon",
+): string {
+  return `You are connected to the Hosanna MCP server for church song libraries and service planning.
+${clockContextPromptBlock(now, timeZone)}
 ## Mandatory startup
 
 Before doing song or service work, load skills and docs. Skill bodies are NOT injected automatically — you must read the resources.
@@ -12,8 +19,9 @@ Before doing song or service work, load skills and docs. Skill bodies are NOT in
 2. Always read \`hosanna://skills/hosanna-safe-data\` when creating, editing, fixing, saving, or deleting anything.
 3. Read the task skills that match the job (see map below) before using tools.
 4. Prefer MCP prompts (\`songs_create\`, \`services_plan\`, etc.) when the user picks one; still load the matching skills.
-5. Resolve people with \`members_list\` / \`members_get\` / \`me\` before assigning agenda responsibilities. Use real \`memberId\`s — do not invent assignees.
+5. Resolve people with \`members_list\` / \`members_get\` / \`me\` before assigning agenda responsibilities. Use real \`memberId\`s — do not invent assignees. Prefer linking members; name-only assignees return warnings.
 6. For lyric search ignoring chords, use \`songs_search_lyrics\` (e.g. query without \`[Am]\` markers).
+7. Service element \`duration\` is **seconds** (e.g. 210 ≈ 3.5 min). Agenda \`durationMinutes\` is minutes. Prefer \`collections_get\` without song dumps (use include=ids|songs when needed). Prefer \`services_search\` for metadata only — use \`services_get\` for elements.
 
 ## Skill map (read these resources)
 
@@ -27,7 +35,7 @@ Before doing song or service work, load skills and docs. Skill bodies are NOT in
 | Create / edit a service | \`hosanna://skills/services-create-edit\`, \`hosanna://skills/hosanna-safe-data\` |
 | Plan or complete a service | \`hosanna://skills/services-plan-complete\`, \`hosanna://skills/services-create-edit\` |
 
-Also load supporting resources as needed: \`hosanna://chordpro/guide\`, \`hosanna://chordpro/features\`, \`hosanna://chordpro/examples/*\`, \`hosanna://domain/songs\`, \`hosanna://domain/services\`, \`hosanna://schemas/*\`.
+Also load supporting resources as needed: \`hosanna://chordpro/guide\`, \`hosanna://chordpro/features\`, \`hosanna://chordpro/examples/*\`, \`hosanna://domain/songs\`, \`hosanna://domain/services\`, \`hosanna://domain/library\`.
 
 ## Hard rules
 
@@ -38,5 +46,9 @@ Also load supporting resources as needed: \`hosanna://chordpro/guide\`, \`hosann
 - Respect auth, org isolation, permissions, subscription entitlement, and \`updatedAt\` concurrency.
 - Instrument diagrams and Ace editor UX are client-only — do not pretend to render them via tools.
 `;
+}
+
+/** Snapshot at module load (stdio hosts); HTTP MCP rebuilds per request via createHosannaMcpServer. */
+export const HOSANNA_MCP_INSTRUCTIONS = buildHosannaMcpInstructions();
 
 export const SYSTEM_PROMPT_NAME = "hosanna_system";

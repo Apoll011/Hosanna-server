@@ -64,6 +64,11 @@ export class SongService {
   }
 
   async list(query: ListQuery) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
+    const sortBy = query.sortBy ?? "title";
+    const sortOrder = query.sortOrder ?? "asc";
+
     const where: Prisma.SongWhereInput = { deleted: false };
 
     if (query.folder) {
@@ -120,24 +125,25 @@ export class SongService {
     }
 
     result.sort((a, b) => {
-      const valA = (a as any)[query.sortBy];
-      const valB = (b as any)[query.sortBy];
+      const valA = (a as any)[sortBy];
+      const valB = (b as any)[sortBy];
       const normA = typeof valA === "string" ? valA.toLowerCase() : valA;
       const normB = typeof valB === "string" ? valB.toLowerCase() : valB;
-      if (normA < normB) return query.sortOrder === "asc" ? -1 : 1;
-      if (normA > normB) return query.sortOrder === "asc" ? 1 : -1;
+      if (normA < normB) return sortOrder === "asc" ? -1 : 1;
+      if (normA > normB) return sortOrder === "asc" ? 1 : -1;
       return 0;
     });
 
     const total = result.length;
-    const start = (query.page - 1) * query.limit;
-    const paginated = result.slice(start, start + query.limit);
+    const start = (page - 1) * limit;
+    const paginated = result.slice(start, start + limit);
 
     return {
       songs: paginated,
       total,
-      page: query.page,
-      totalPages: Math.ceil(total / query.limit) || 1,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
     };
   }
 

@@ -10,11 +10,17 @@ import {
   services as serviceService,
   songs as songService,
 } from "../context.js";
+import { withClientRequestId } from "../lib/idempotency.js";
 import { validateServicePlan } from "../lib/serviceElements.js";
 import {
   serviceElementSchema,
   serviceElementsSchema,
 } from "../lib/serviceElements.js";
+
+const dateOnlySchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD")
+  .describe("Calendar date YYYY-MM-DD");
 
 export function registerServiceTools(
   server: McpServer,
@@ -25,7 +31,7 @@ export function registerServiceTools(
     {
       title: "Search services",
       description:
-        "List/search services. archived=true → archived only; includeArchived=true → active+archived; default active only. Each row includes archived flag.",
+        "List/search services (metadata only: id, name, date YYYY-MM-DD, notes, elementCount, hasSongs, archived, updatedAt). Use services_get for elements. archived=true → archived only; includeArchived=true → active+archived; default active only.",
       inputSchema: z.object({
         archived: z.boolean().optional().default(false),
         includeArchived: z.boolean().optional().default(false),
@@ -39,6 +45,7 @@ export function registerServiceTools(
         let list = await serviceService(ctx).list({
           archived,
           includeArchived,
+          metadataOnly: true,
         });
         if (search?.trim()) {
           const q = search.toLowerCase();
@@ -48,7 +55,11 @@ export function registerServiceTools(
               (s.notes ?? "").toLowerCase().includes(q),
           );
         }
-        return jsonResult({ services: list, total: list.length });
+        return jsonResult({
+          services: list,
+          total: list.length,
+          tip: "Metadata only — call services_get for elements.",
+        });
       } catch (error) {
         return errorResult(error);
       }
@@ -71,7 +82,7 @@ export function registerServiceTools(
       try {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "service.access");
-        const service = await serviceService(ctx).getByIdSerialized(serviceId);
+        const service = await serviceService(ctx).getByIdForMcp(serviceId);
         const validation = await validateServicePlan(
           service.elements,
           songService(ctx),
@@ -111,7 +122,29 @@ export function registerServiceTools(
             }
           }
         }
-        return jsonResult({ service, validation, expandedSongs });
+        const missingFromExpand = (expandedSongs ?? [])
+          .filter(
+            (s): s is { id: string; missing: true } =>
+              Boolean(s) &&
+              typeof s === "object" &&
+              (s as { missing?: boolean }).missing === true,
+          )
+          .map((s) => s.id);
+        const missingSongIds = [
+          ...new Set([...validation.missingSongIds, ...missingFromExpand]),
+        ];
+        return jsonResult({
+          service,
+          validation: {
+            ok: validation.ok,
+            errors: validation.errors,
+            warnings: validation.warnings,
+            missingSongIds,
+            durationUnit: validation.durationUnit,
+          },
+          expandedSongs,
+          missingSongIds,
+        });
       } catch (error) {
         return errorResult(error);
       }
@@ -126,7 +159,7 @@ export function registerServiceTools(
         "Build and validate a service plan proposal without saving.",
       inputSchema: z.object({
         name: z.string().min(1),
-        date: z.string().min(1).describe("ISO date or datetime"),
+        date: dateOnlySchema,
         notes: z.string().optional(),
         elements: serviceElementsSchema.optional().default([]),
       }),
@@ -260,17 +293,26 @@ export function registerServiceTools(
         serviceId: z.string().uuid().optional(),
         updatedAt: z.string().optional(),
         name: z.string().min(1),
-        date: z.string().min(1),
+        date: dateOnlySchema,
         notes: z.string().optional(),
         elements: serviceElementsSchema.optional(),
         archived: z.boolean().optional(),
         allowInvalid: z.boolean().optional().default(false),
+        clientRequestId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Idempotency key — retries return the same result"),
       }),
     },
     async (args) => {
       try {
         const ctx = requireMcpContext(authInfo);
         requireWriteEntitlement(ctx);
+        return await withClientRequestId(
+          ctx.orgId,
+          args.clientRequestId,
+          async () => {
         const elements = args.elements ?? [];
         const validation = await validateServicePlan(
           elements,
@@ -291,7 +333,7 @@ export function registerServiceTools(
           requirePermission(ctx, "service.create");
           const created = await serviceService(ctx).create({
             name: args.name,
-            date: new Date(args.date),
+            date: new Date(`${args.date}T12:00:00.000Z`),
             notes: args.notes,
             elements,
           });
@@ -310,13 +352,15 @@ export function registerServiceTools(
           new Date(args.updatedAt),
           {
             name: args.name,
-            date: new Date(args.date),
+            date: new Date(`${args.date}T12:00:00.000Z`),
             notes: args.notes,
             elements,
             archived: args.archived,
           },
         );
         return jsonResult({ saved: true, service: updated, validation });
+          },
+        );
       } catch (error) {
         return errorResult(error);
       }
