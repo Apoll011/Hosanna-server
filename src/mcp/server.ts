@@ -11,7 +11,6 @@ import { registerLibraryTools } from "./tools/library.js";
 import { registerOrgTools } from "./tools/org.js";
 import { registerServiceTools } from "./tools/services.js";
 import { registerSongTools } from "./tools/songs.js";
-import { registerStudioTools } from "./tools/studio.js";
 import { HOSANNA_MCP_VERSION } from "./version.js";
 
 export const MCP_SERVER_INFO = {
@@ -19,7 +18,11 @@ export const MCP_SERVER_INFO = {
   version: HOSANNA_MCP_VERSION,
 } as const;
 
-/** Build a fresh MCP server instance for one request / stdio connection. */
+/**
+ * External MCP server (ChatGPT / Claude / …).
+ * Studio-only tools (studio_sync, navigate, PDF, search) are NOT registered here —
+ * they exist only on the Hosanna Studio embedded assistant.
+ */
 export function createHosannaMcpServer(authInfo?: AuthInfo): McpServer {
   const server = new McpServer(MCP_SERVER_INFO, {
     instructions: buildHosannaMcpInstructions(),
@@ -31,7 +34,6 @@ export function createHosannaMcpServer(authInfo?: AuthInfo): McpServer {
   registerSongTools(server, authInfo);
   registerServiceTools(server, authInfo);
   registerLibraryTools(server, authInfo);
-  registerStudioTools(server, authInfo);
   registerResources(server, authInfo);
   registerSystemPrompts(server);
   registerSongPrompts(server);

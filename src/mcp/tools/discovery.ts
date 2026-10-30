@@ -15,7 +15,12 @@ import {
 import { STUDIO_UI_CATALOG } from "../lib/studioUi.js";
 import { errorResult, getMcpContext, jsonResult } from "../context.js";
 import { HOSANNA_MCP_VERSION } from "../version.js";
-import { MCP_TOOL_GROUPS, ALL_MCP_TOOL_NAMES } from "../lib/toolCatalog.js";
+import {
+  MCP_TOOL_GROUPS,
+  ALL_MCP_TOOL_NAMES,
+  STUDIO_ONLY_TOOLS,
+  TOOL_SURFACE,
+} from "../lib/toolCatalog.js";
 import {
   recentToolTimings,
   toolTimingSummary,
@@ -68,6 +73,12 @@ export function registerDiscoveryTools(
             name: "hosanna",
             version: HOSANNA_MCP_VERSION,
             toolCount: ALL_MCP_TOOL_NAMES.length,
+          },
+          architecture: {
+            core: TOOL_SURFACE.core,
+            studioOnly: TOOL_SURFACE.studioOnly,
+            studioOnlyTools: [...STUDIO_ONLY_TOOLS],
+            note: "This MCP server exposes CORE tools only. Studio-only tools are unavailable here.",
           },
           tools: {
             ...MCP_TOOL_GROUPS,

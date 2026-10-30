@@ -5,3 +5,4 @@ dist/
 .env.local
 .agents/
 skills-lock.json
+mcp.json

@@ -344,13 +344,14 @@ export function registerSongTools(
           content,
         });
         return jsonResult({
+          status: "draft",
           proposal,
           validation: {
             ...validation,
             ok: validation.ok && metadataWarnings.length === 0,
             metadataWarnings,
           },
-          next: "Call songs_save with mode=create after user approval. Align DB title/artist with ChordPro directives (or sync content) before saving.",
+          next: "Not persisted. Call songs_save mode=create after user approval. Never describe a draft as a saved song.",
         });
       } catch (error) {
         return errorResult(error);
@@ -637,6 +638,7 @@ export function registerSongTools(
               song_number: args.song_number,
             });
             return jsonResult({
+              status: "saved",
               saved: true,
               song: serializeSong(created),
               validation: { ...validation, metadataWarnings },
@@ -648,7 +650,7 @@ export function registerSongTools(
             return jsonResult(
               {
                 error: true,
-                code: "validation",
+                code: "validation_error",
                 message: "songId and updatedAt are required for update",
                 retryable: false,
               },
@@ -669,6 +671,7 @@ export function registerSongTools(
               },
             );
             return jsonResult({
+              status: "saved",
               saved: true,
               song: serializeSong(updated),
               validation: { ...validation, metadataWarnings },

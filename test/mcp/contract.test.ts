@@ -9,6 +9,7 @@ import {
 import {
   ALL_MCP_TOOL_NAMES,
   MCP_TOOL_GROUPS,
+  STUDIO_ONLY_TOOLS,
 } from "../../src/mcp/lib/toolCatalog.js";
 import { HOSANNA_MCP_VERSION } from "../../src/mcp/version.js";
 import { createHosannaMcpServer, MCP_SERVER_INFO } from "../../src/mcp/server.js";
@@ -47,26 +48,32 @@ describe("MCP contract", () => {
     }
   });
 
-  it("tool catalog has unique names and required batch/studio tools", () => {
+  it("tool catalog has unique names; studio-only tools stay off core MCP", () => {
     assert.equal(
       new Set(ALL_MCP_TOOL_NAMES).size,
       ALL_MCP_TOOL_NAMES.length,
       "duplicate tool names in catalog",
     );
     for (const required of [
-      "studio_sync",
+      "members_resolve",
+      "services_publish",
       "songs_validate_many",
       "services_get_many",
       "library_overview",
-      "clientRequestId_placeholder_skip",
     ]) {
-      if (required.endsWith("_skip")) continue;
       assert.ok(
         ALL_MCP_TOOL_NAMES.includes(required),
         `catalog missing ${required}`,
       );
     }
-    assert.ok(MCP_TOOL_GROUPS.studio.includes("studio_sync"));
+    for (const studio of STUDIO_ONLY_TOOLS) {
+      assert.equal(
+        ALL_MCP_TOOL_NAMES.includes(studio),
+        false,
+        `${studio} must not be a core MCP tool`,
+      );
+    }
+    assert.ok(MCP_TOOL_GROUPS.services.includes("services_publish"));
   });
 
   it("createHosannaMcpServer registers without throw", () => {

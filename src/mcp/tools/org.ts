@@ -11,6 +11,7 @@ import {
   getMember,
   getOrganization,
   listMembers,
+  resolveMembers,
 } from "../lib/orgDirectory.js";
 
 export function registerOrgTools(
@@ -76,6 +77,38 @@ export function registerOrgTools(
     async (args) => {
       try {
         return jsonResult(await getMember(requireMcpContext(authInfo), args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "members_resolve",
+    {
+      title: "Resolve member names",
+      description:
+        "Preflight before agenda_create: map people names to memberIds. Returns resolved[] and unresolved[] (not_found / ambiguous with candidates). Prefer this over guessing.",
+      inputSchema: z.object({
+        names: z
+          .array(
+            z.object({
+              name: z.string().min(1),
+              category: z
+                .string()
+                .optional()
+                .describe("Optional responsibility categoryId for context"),
+            }),
+          )
+          .min(1)
+          .max(40),
+      }),
+    },
+    async ({ names }) => {
+      try {
+        return jsonResult(
+          await resolveMembers(requireMcpContext(authInfo), names),
+        );
       } catch (error) {
         return errorResult(error);
       }

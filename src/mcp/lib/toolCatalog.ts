@@ -1,7 +1,16 @@
 /**
- * Authoritative MCP tool name catalog.
- * Keep in sync with register*Tools — contract tests assert coverage.
+ * Authoritative tool catalogs.
+ * Core tools are registered on the MCP server (ChatGPT / Claude / etc.).
+ * Studio-only tools exist only in the Hosanna Studio embedded assistant.
  */
+
+/** UI / session tools — never registered on the external MCP server. */
+export const STUDIO_ONLY_TOOLS = [
+  "studio_sync",
+  "studio_navigate",
+  "studio_generate_pdf",
+  "studio_search",
+] as const;
 
 export const MCP_TOOL_GROUPS = {
   discovery: [
@@ -14,6 +23,7 @@ export const MCP_TOOL_GROUPS = {
     "me",
     "members_list",
     "members_get",
+    "members_resolve",
     "org_get",
   ],
   chordpro: [
@@ -49,6 +59,7 @@ export const MCP_TOOL_GROUPS = {
     "services_propose_edit",
     "services_validate",
     "services_save",
+    "services_publish",
     "services_delete",
     "services_restore",
     "services_plan_suggest",
@@ -78,9 +89,14 @@ export const MCP_TOOL_GROUPS = {
     "metadata_web_search",
     "metadata_web_fetch",
   ],
-  studio: ["studio_sync"],
 } as const;
 
 export const ALL_MCP_TOOL_NAMES: string[] = Object.values(MCP_TOOL_GROUPS).flatMap(
   (g) => [...g],
 );
+
+export const TOOL_SURFACE = {
+  core: "Registered on the Hosanna MCP server — available to external AI clients (ChatGPT, Claude, …).",
+  studioOnly:
+    "Available only inside Hosanna Studio chat — UI navigation, PDF, search, and live sync. Not exposed via MCP.",
+} as const;

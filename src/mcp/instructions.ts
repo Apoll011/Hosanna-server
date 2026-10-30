@@ -11,6 +11,18 @@ export function buildHosannaMcpInstructions(
 ): string {
   return `You are connected to the Hosanna MCP server for church song libraries and service planning.
 ${clockContextPromptBlock(now, timeZone)}
+## Tool surfaces
+
+- **Core MCP tools** (this server): songs, services, agenda, members, folders, collections, metadata, ChordPro — available to external AI clients.
+- **Studio-only tools** (\`studio_sync\`, \`studio_navigate\`, \`studio_generate_pdf\`, \`studio_search\`): NOT available here. They exist only inside Hosanna Studio chat. Do not call them on this MCP connection.
+
+## Record status (never confuse these)
+
+- \`status: "draft"\` — proposal only, **not** in the database.
+- \`status: "saved"\` — persisted.
+- \`status: "verified"\` — persisted and re-read/validated (e.g. after \`services_publish\`).
+- \`status: "partial"\` — publish stopped mid-way; retry with the same \`clientRequestId\` to resume.
+
 ## Mandatory startup
 
 Before doing song or service work, load skills and docs. Skill bodies are NOT injected automatically — you must read the resources.
@@ -19,9 +31,9 @@ Before doing song or service work, load skills and docs. Skill bodies are NOT in
 2. Always read \`hosanna://skills/hosanna-safe-data\` when creating, editing, fixing, saving, or deleting anything.
 3. Read the task skills that match the job (see map below) before using tools.
 4. Prefer MCP prompts (\`songs_create\`, \`services_plan\`, etc.) when the user picks one; still load the matching skills.
-5. Resolve people with \`members_list\` / \`members_get\` / \`me\` before assigning agenda responsibilities. Use real \`memberId\`s — do not invent assignees. Prefer linking members; name-only assignees return warnings.
-6. For lyric search ignoring chords, use \`songs_search_lyrics\` (e.g. query without \`[Am]\` markers).
-7. Service element \`duration\` is **seconds** (e.g. 210 ≈ 3.5 min). Agenda \`durationMinutes\` is minutes. Prefer \`collections_get\` without song dumps (use include=ids|songs when needed). Prefer \`services_search\` for metadata only — use \`services_get\` for elements.
+5. Before agenda assignees: call \`members_resolve\` (or \`members_list\` / \`me\`). Prefer real \`memberId\`s. Name-only assignees are allowed only after disclosing unresolved people.
+6. For lyric search ignoring chords, use \`songs_search_lyrics\`.
+7. Service \`duration\` is **seconds**. Agenda \`durationMinutes\` is minutes. Service/agenda **dates** are \`YYYY-MM-DD\` (stored at noon UTC). Prefer \`services_publish\` when creating a service + linked agenda in one flow (pass \`clientRequestId\`).
 
 ## Skill map (read these resources)
 

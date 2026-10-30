@@ -433,6 +433,8 @@ export async function createAgendaEvent(
   const responsibilities = normalizeResponsibilities(
     args.responsibilities ?? [],
   );
+  const durationProvided = args.durationMinutes != null;
+  const durationMinutes = args.durationMinutes ?? 60;
   const created = await ctx.db.agendaEvent.create({
     data: {
       id: randomUUID(),
@@ -441,7 +443,7 @@ export async function createAgendaEvent(
       date: args.date,
       time: args.time,
       type: args.type.trim(),
-      durationMinutes: args.durationMinutes ?? 60,
+      durationMinutes,
       location: args.location?.trim() || null,
       notes: args.notes ?? null,
       linkedServiceId: args.linkedServiceId ?? null,
@@ -451,8 +453,17 @@ export async function createAgendaEvent(
   });
   syncCache.invalidate(ctx.orgId, "agendaEvents");
   return {
+    status: "saved" as const,
     created: true,
     event: serializeAgenda(created),
+    /** Calendar dates are YYYY-MM-DD (org-local), not datetimes. */
+    dateFormat: "YYYY-MM-DD",
+    defaults: {
+      durationMinutes: {
+        value: durationMinutes,
+        source: durationProvided ? ("user" as const) : ("default" as const),
+      },
+    },
     warnings: responsibilityWarnings(responsibilities),
   };
 }

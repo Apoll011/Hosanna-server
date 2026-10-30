@@ -70,7 +70,7 @@ export const STUDIO_UI_CATALOG = {
       "Use id strings from folderIcons (e.g. music, book-open, church). Use default to reset to the plain folder glyph.",
     folderColor:
       "Use id strings from folderColors (e.g. default, blue, rose). Collections use the same color/icon ids.",
-    sync: "After folder/collection/library mutations, call studio_sync so Studio pulls replication immediately.",
+    sync: "Studio chat only: after folder/collection/library mutations, call studio_sync so Studio pulls replication immediately. External MCP clients do not have studio_sync — Studio polls replication on its own.",
   },
 } as const;
 

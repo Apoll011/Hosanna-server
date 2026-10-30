@@ -88,6 +88,7 @@ import {
   getMember,
   getOrganization,
   listMembers,
+  resolveMembers,
 } from "../mcp/lib/orgDirectory.js";
 import {
   STUDIO_NAVIGATE_KINDS,
@@ -267,7 +268,13 @@ function buildHosannaTools(
               "delete",
               "restore",
             ],
-            org: ["me", "members_list", "members_get", "org_get"],
+            org: ["me", "members_list", "members_get", "members_resolve", "org_get"],
+            studioOnly: [
+              "studio_sync",
+              "studio_navigate",
+              "studio_generate_pdf",
+              "studio_search",
+            ],
             library: [
               "folders CRUD+restore",
               "collections CRUD+songs",
@@ -358,6 +365,23 @@ function buildHosannaTools(
       }),
       execute: async (args) =>
         textResult(await getMember(requireMcpContext(authInfo), args)),
+    }),
+    members_resolve: tool({
+      description:
+        "Preflight before agenda: map names → memberIds. Returns resolved[] / unresolved[].",
+      inputSchema: z.object({
+        names: z
+          .array(
+            z.object({
+              name: z.string().min(1),
+              category: z.string().optional(),
+            }),
+          )
+          .min(1)
+          .max(40),
+      }),
+      execute: async ({ names }) =>
+        textResult(await resolveMembers(requireMcpContext(authInfo), names)),
     }),
     org_get: tool({
       description:
@@ -2077,7 +2101,8 @@ const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church son
 ## Capabilities (use them)
 - Songs: search, search_lyrics (plain lyrics ignoring chords), get/get_many, draft, propose_edit/fix/transpose, save, move, delete, restore; trash_list
 - Services: search/get (expandSongs), propose_edit, plan_suggest, validate, save, delete, restore
-- People/org: me, members_list, members_get, org_get (responsibilityCategories). No org switch.
+- People/org: me, members_list, members_get, members_resolve, org_get. Resolve people before agenda assignees.
+- Record status: draft = not persisted; saved/verified = in DB. Never call a draft "saved".
 - Folders: list/create/update/delete/restore (icon/color ids from studioUi)
 - Collections: list/get/create/update/delete, add_songs/remove_songs (same icon/color ids)
 - Agenda: list/get/create/update/delete — set responsibilities with real memberIds (not only notes on service elements)

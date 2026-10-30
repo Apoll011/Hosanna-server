@@ -182,6 +182,94 @@ function serializeMemberRow(m: {
   };
 }
 
+/**
+ * Preflight: resolve people names to memberIds before agenda_create.
+ * Exact name match preferred; a single partial match counts as resolved;
+ * zero or multiple matches → unresolved (+ candidates).
+ */
+export async function resolveMembers(
+  ctx: McpContext,
+  names: Array<{ name: string; category?: string }>,
+) {
+  const all = await prisma.member.findMany({
+    where: { organizationId: ctx.orgId },
+    select: {
+      id: true,
+      role: true,
+      userId: true,
+      createdAt: true,
+      user: { select: { id: true, name: true, email: true, image: true } },
+    },
+    take: 500,
+  });
+
+  const resolved: Array<{
+    name: string;
+    category?: string;
+    memberId: string;
+    email: string;
+    role: string;
+    match: "exact" | "partial";
+  }> = [];
+  const unresolved: Array<{
+    name: string;
+    category?: string;
+    reason: "not_found" | "ambiguous";
+    candidates: ReturnType<typeof serializeMemberRow>[];
+  }> = [];
+
+  for (const entry of names) {
+    const raw = entry.name?.trim();
+    if (!raw) continue;
+    const needle = raw.toLowerCase();
+    const exact = all.filter((m) => m.user.name.trim().toLowerCase() === needle);
+    const partial = all.filter((m) =>
+      m.user.name.toLowerCase().includes(needle),
+    );
+    const pool = exact.length ? exact : partial;
+    const matchKind = exact.length ? ("exact" as const) : ("partial" as const);
+
+    if (pool.length === 1) {
+      const m = pool[0]!;
+      resolved.push({
+        name: raw,
+        category: entry.category,
+        memberId: m.id,
+        email: m.user.email,
+        role: m.role,
+        match: matchKind,
+      });
+    } else if (pool.length === 0) {
+      unresolved.push({
+        name: raw,
+        category: entry.category,
+        reason: "not_found",
+        candidates: [],
+      });
+    } else {
+      unresolved.push({
+        name: raw,
+        category: entry.category,
+        reason: "ambiguous",
+        candidates: pool.slice(0, 8).map(serializeMemberRow),
+      });
+    }
+  }
+
+  return {
+    resolved,
+    unresolved,
+    allResolved: unresolved.length === 0,
+    tip: allResolvedTip(unresolved.length === 0),
+  };
+}
+
+function allResolvedTip(ok: boolean): string {
+  return ok
+    ? "All names resolved — safe to pass memberId on agenda assignees."
+    : "Resolve unresolved names (pick a candidate memberId or confirm name-only assignees). Prefer members_resolve before agenda_create.";
+}
+
 export async function getMember(
   ctx: McpContext,
   args: { memberId?: string; userId?: string; name?: string },
