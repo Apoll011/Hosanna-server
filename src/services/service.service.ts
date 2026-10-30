@@ -91,14 +91,29 @@ export class ServiceService {
   async list(body: {
     archived?: boolean;
     includeArchived?: boolean;
+    metadataOnly: true;
+  }): Promise<ReturnType<typeof serializeListRow>[]>;
+  async list(body?: {
+    archived?: boolean;
+    includeArchived?: boolean;
+    metadataOnly?: false;
+  }): Promise<ReturnType<typeof serialize>[]>;
+  async list(body: {
+    archived?: boolean;
+    includeArchived?: boolean;
     /** When true, omit element bodies (MCP search). Studio API keeps full rows. */
     metadataOnly?: boolean;
-  }) {
+  } = {}): Promise<
+    ReturnType<typeof serialize>[] | ReturnType<typeof serializeListRow>[]
+  > {
     const mode: boolean | "all" = body.includeArchived
       ? "all"
       : (body.archived ?? false);
     const services = await this.serviceRepo.findAll(mode);
-    return services.map(body.metadataOnly ? serializeListRow : serialize);
+    if (body.metadataOnly) {
+      return services.map(serializeListRow);
+    }
+    return services.map(serialize);
   }
 
   async getById(id: string) {
