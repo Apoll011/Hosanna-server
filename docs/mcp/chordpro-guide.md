@@ -25,23 +25,23 @@ Essential metadata: `title`, `artist`, `key`, `duration`, `youtube`, `song_numbe
 
 ## Metadata directives (parsed)
 
-| Directive    | Alias | Notes                               |
-| ------------ | ----- | ----------------------------------- |
-| title        | t     | Required for good library health    |
-| subtitle     | st    |                                     |
-| artist       | a     |                                     |
-| key          | k     | Used by transpose / analysis        |
-| original_key |       |                                     |
-| capo         |       | Linted as numeric                   |
-| tempo        |       | Linted as numeric                   |
-| time         |       | Time signature                      |
-| duration     |       | Hosanna — service planning defaults |
-| song_number  |       | Hosanna — synced to song record     |
-| youtube      |       | Hosanna — reference video           |
-| ccli         |       | Stored as metadata                  |
+| Directive    | Alias | Notes                                                                                                                                    |
+| ------------ | ----- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| title        | t     | Required for good library health                                                                                                         |
+| subtitle     | st    |                                                                                                                                          |
+| artist       | a     |                                                                                                                                          |
+| key          | k     | Used by transpose / analysis                                                                                                             |
+| original_key |       |                                                                                                                                          |
+| capo         |       | Linted as numeric                                                                                                                        |
+| tempo        |       | Linted as numeric                                                                                                                        |
+| time         |       | Time signature                                                                                                                           |
+| duration     |       | Hosanna — service planning defaults                                                                                                      |
+| song_number  |       | Hosanna — synced to song record                                                                                                          |
+| youtube      |       | Hosanna — reference video                                                                                                                |
+| ccli         |       | Stored as metadata                                                                                                                       |
 | key_note     |       | Hosanna — note about key changes, shown by the renderer under the header (`{key_note: Verso 4 e final modulam para D (meio tom acima)}`) |
-| tag          |       | Hosanna — editor-only label, repeatable, NOT rendered (`{tag: adoração}`) |
-| arranger     |       | Arranger credit (footer)            |
+| tag          |       | Hosanna — editor-only label, repeatable, NOT rendered (`{tag: adoração}`)                                                                |
+| arranger     |       | Arranger credit (footer)                                                                                                                 |
 
 Unknown `{name: value}` directives are stored as camelCased metadata.
 
