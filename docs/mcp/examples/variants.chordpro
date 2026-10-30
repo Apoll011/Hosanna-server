@@ -1,0 +1,21 @@
+{title: Amazing Grace}
+{artist: John Newton}
+{key: G}
+
+{start_of_verse}
+[G]Amazing [C]grace, how [G]sweet the sound
+{end_of_verse}
+
+{start_of_version: Acoustic}
+{key: C}
+{start_of_verse}
+[C]Amazing [F]grace, how [C]sweet the sound
+{end_of_verse}
+{end_of_version}
+
+{start_of_version: Capo 2}
+{capo: 2}
+{start_of_verse}
+[G]Amazing [C]grace, how [G]sweet the sound
+{end_of_verse}
+{end_of_version}

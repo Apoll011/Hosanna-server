@@ -7,6 +7,10 @@ import { SongRepository } from "../repositories/song.repository.js";
 import { DEFAULT_LOCALE, t } from "../lib/i18n.js";
 import { AppError } from "../utils/errors.js";
 import {
+  lyricsMatchQuery,
+  normalizeLyricQuery,
+} from "../lib/lyricSearch.js";
+import {
   createSongSchema,
   listSongsQuerySchema,
 } from "../validators/song.validators.js";
@@ -60,6 +64,11 @@ export class SongService {
   }
 
   async list(query: ListQuery) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
+    const sortBy = query.sortBy ?? "title";
+    const sortOrder = query.sortOrder ?? "asc";
+
     const where: Prisma.SongWhereInput = { deleted: false };
 
     if (query.folder) {
@@ -116,24 +125,25 @@ export class SongService {
     }
 
     result.sort((a, b) => {
-      const valA = (a as any)[query.sortBy];
-      const valB = (b as any)[query.sortBy];
+      const valA = (a as any)[sortBy];
+      const valB = (b as any)[sortBy];
       const normA = typeof valA === "string" ? valA.toLowerCase() : valA;
       const normB = typeof valB === "string" ? valB.toLowerCase() : valB;
-      if (normA < normB) return query.sortOrder === "asc" ? -1 : 1;
-      if (normA > normB) return query.sortOrder === "asc" ? 1 : -1;
+      if (normA < normB) return sortOrder === "asc" ? -1 : 1;
+      if (normA > normB) return sortOrder === "asc" ? 1 : -1;
       return 0;
     });
 
     const total = result.length;
-    const start = (query.page - 1) * query.limit;
-    const paginated = result.slice(start, start + query.limit);
+    const start = (page - 1) * limit;
+    const paginated = result.slice(start, start + limit);
 
     return {
       songs: paginated,
       total,
-      page: query.page,
-      totalPages: Math.ceil(total / query.limit) || 1,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
     };
   }
 
@@ -145,6 +155,60 @@ export class SongService {
         t(this.locale, "song.not_found"),
       );
     return song;
+  }
+
+  /**
+   * Search lyrics ignoring ChordPro chord markers / directives.
+   * "Pois só Tu és o Deus eterno" matches "Pois [D9]só Tu és o [C#m]Deus eterno".
+   */
+  async searchLyrics(opts: {
+    query: string;
+    folder?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const q = normalizeLyricQuery(opts.query);
+    if (!q) {
+      return { songs: [] as Song[], total: 0, page: 1, totalPages: 0 };
+    }
+
+    const where: Prisma.SongWhereInput = { deleted: false };
+    if (opts.folder) {
+      where.folderId = opts.folder === "root" ? null : opts.folder;
+    }
+
+    // Candidate pool: title match OR content contains any significant token
+    // (chords make full-phrase ILIKE fail, so we broaden then filter in memory).
+    const tokens = q
+      .split(" ")
+      .map((t) => t.trim())
+      .filter((t) => t.length >= 3)
+      .slice(0, 6);
+
+    const or: Prisma.SongWhereInput[] = [
+      { title: { contains: opts.query.trim(), mode: "insensitive" } },
+    ];
+    for (const token of tokens.length ? tokens : [q]) {
+      or.push({ content: { contains: token, mode: "insensitive" } });
+    }
+    where.OR = or;
+
+    const candidates = await this.songRepo.findMany(where, {});
+    const matched = candidates.filter((s) => lyricsMatchQuery(s.content, q));
+    matched.sort((a, b) =>
+      a.title.localeCompare(b.title, undefined, { sensitivity: "base" }),
+    );
+
+    const page = opts.page && opts.page > 0 ? opts.page : 1;
+    const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
+    const total = matched.length;
+    const start = (page - 1) * limit;
+    return {
+      songs: matched.slice(start, start + limit),
+      total,
+      page,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
   }
 
   async create(input: CreateInput) {
@@ -286,9 +350,11 @@ export class SongService {
     if (folderId) {
       this.folderRepo.touch(folderId);
     }
+    const path =
+      newPath ?? (await this.computePath(current.title, folderId));
     return this.songRepo.update(id, {
       folder: folderId ? { connect: { id: folderId } } : { disconnect: true },
-      path: newPath ?? current.path,
+      path,
     });
   }
 }

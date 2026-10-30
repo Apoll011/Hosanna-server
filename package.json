@@ -1,14 +1,17 @@
 {
   "name": "@hosanna/backend",
-  "version": "2.17.11",
+  "version": "2.22.0",
   "license": "Apache-2.0",
   "description": "Production REST API backend for Hosanna Studio (songs, folders, services, musician access)",
   "main": "dist/index.mjs",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && npm run build:mcp-docs",
+    "build:mcp-docs": "mkdir -p dist/mcp/docs && cp -R docs/mcp/. dist/mcp/docs/",
     "start": "node dist/index.mjs",
     "dev": "tsx watch src/index.mts",
+    "mcp": "tsx src/mcp/stdio.ts",
+    "test": "tsx --test \"test/**/*.test.ts\"",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
@@ -18,14 +21,23 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@better-auth/i18n": "^1.7.6",
+    "@ai-sdk/anthropic": "^4.0.92",
+    "@ai-sdk/google": "^4.0.108",
+    "@ai-sdk/openai": "^4.0.105",
+    "@better-auth/cimd": "^1.7.14",
+    "@better-auth/i18n": "^1.7.14",
     "@better-auth/infra": "^0.4.5",
-    "@better-auth/stripe": "^1.7.6",
+    "@better-auth/mcp": "^1.7.14",
+    "@better-auth/stripe": "^1.7.14",
+    "@hosanna/chordpro": "^1.6.2",
+    "@modelcontextprotocol/node": "^2.1.2",
+    "@modelcontextprotocol/server": "^2.4.0",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.*",
     "@supabase/supabase-js": "^2.49.0",
     "@vercel/functions": "^3.9.9",
-    "better-auth": "^1.7.6",
+    "ai": "^7.0.157",
+    "better-auth": "^1.7.14",
     "better-inbox": "^0.1.2",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
@@ -34,12 +46,13 @@
     "express-rate-limit": "^8.6.2",
     "handlebars": "^4.7.9",
     "helmet": "^7.1.0",
+    "jose": "^6.2.14",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.23.0",
     "resend": "^6.22.0",
     "stripe": "^22.6.1",
     "uuid": "^11.1.1",
-    "zod": "^4.5.4"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/compression": "^1.8.1",
@@ -53,5 +66,8 @@
     "prisma": "^7.*",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
+  },
+  "overrides": {
+    "better-call": "1.4.4"
   }
 }

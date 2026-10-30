@@ -3,11 +3,15 @@ import { dash, sentinel } from "@better-auth/infra";
 import { stripe } from "@better-auth/stripe";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { betterAuth } from "better-auth/minimal";
+import { cimd } from "@better-auth/cimd";
+import { fetchClientMetadataResource } from "@better-auth/cimd/node";
+import { mcp } from "@better-auth/mcp";
 import {
   admin,
   bearer,
   captcha,
   haveIBeenPwned,
+  jwt,
   organization,
   twoFactor,
 } from "better-auth/plugins";
@@ -169,9 +173,19 @@ export const auth = betterAuth({
   trustedOrigins: [
     "http://localhost:5173",
     "http://localhost",
+    "http://127.0.0.1:5173",
     "https://*.hosanna.live",
     "https://hosanna.live",
     "hosanna://localhost",
+    // External MCP hosts (Claude / ChatGPT / Cursor) — browser DCR + redirects
+    "https://claude.ai",
+    "https://www.claude.ai",
+    "https://chatgpt.com",
+    "https://chat.openai.com",
+    "https://*.openai.com",
+    "https://cursor.com",
+    "https://*.cursor.com",
+    "https://*.cursor.sh",
   ],
   emailAndPassword: {
     enabled: true,
@@ -328,6 +342,33 @@ export const auth = betterAuth({
     admin(),
     inbox(),
     bearer(),
+    jwt(),
+    mcp({
+      // Absolute Studio URLs — relative paths would redirect to the API host.
+      loginPage: `${env.studioUrl.replace(/\/+$/, "")}/login`,
+      consentPage: `${env.studioUrl.replace(/\/+$/, "")}/oauth/consent`,
+      resource: env.mcpResourceUrl,
+      // Prisma String[] cannot store null allowedScopes — declare explicitly.
+      scopes: ["openid", "profile", "email", "offline_access"],
+      resources: [
+        {
+          identifier: env.mcpResourceUrl,
+          name: "Hosanna MCP",
+          allowedScopes: ["openid", "profile", "email", "offline_access"],
+        },
+      ],
+      // Keep DCR for ChatGPT / older clients; Claude prefers CIMD (below).
+      allowDynamicClientRegistration: true,
+      allowUnauthenticatedClientRegistration: true,
+      clientRegistrationDefaultApplicationType: "infer",
+    }),
+    // Claude "published client identity" — client_id is an HTTPS metadata URL
+    // (e.g. https://claude.ai/oauth/mcp-oauth-client-metadata). Advertises
+    // client_id_metadata_document_supported; AS already includes auth method "none".
+    cimd({
+      fetchClientMetadataResource,
+      metadataProfile: "mcp-2026-07-28",
+    }),
     haveIBeenPwned(),
     sentinel({
       apiKey: env.betterAuthApiKey,

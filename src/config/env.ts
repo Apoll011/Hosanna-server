@@ -73,4 +73,51 @@ export const env = {
   fcmClientEmail: optional("FCM_CLIENT_EMAIL"),
   /** Service-account private key with literal \n escapes (as in the JSON file). */
   fcmPrivateKey: optional("FCM_PRIVATE_KEY"),
+
+  // ── AI (Studio BYOK) ─────────────────────────────────────────────────────
+  /**
+   * AES-256-GCM key for encrypting per-org LLM API keys at rest.
+   * Prefer 64 hex characters (32 bytes). Required to save/use org AI keys.
+   */
+  aiSettingsEncryptionKey: optional("AI_SETTINGS_ENCRYPTION_KEY"),
+
+  /**
+   * Public URL of this API's MCP endpoint (RFC 9728 resource identifier).
+   * Loopback HTTP is OK for local; production should be https://.../mcp.
+   */
+  mcpResourceUrl:
+    optional("MCP_RESOURCE_URL") ??
+    `http://127.0.0.1:${parseInt(process.env.PORT ?? "3000", 10)}/mcp`,
+
+  // ── Metadata search (Studio AI / MCP) ─────────────────────────────────────
+  /** YouTube Data API v3 key — improves `{youtube:}` lookups. */
+  youtubeApiKey: optional("YOUTUBE_API_KEY"),
 };
+/** Reject loopback MCP resource URLs outside local/dev — breaks Claude/ChatGPT OAuth audience. */
+function assertMcpResourceUrlForRuntime(): void {
+  const url = env.mcpResourceUrl;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`MCP_RESOURCE_URL is not a valid URL: ${url}`);
+  }
+  const host = parsed.hostname.toLowerCase();
+  const isLoopback =
+    host === "localhost" || host === "127.0.0.1" || host === "::1";
+  const isProd =
+    env.nodeEnv === "production" || Boolean(process.env.VERCEL);
+  if (isProd && (isLoopback || parsed.protocol !== "https:")) {
+    throw new Error(
+      `MCP_RESOURCE_URL must be a public https://…/mcp URL in production (got ${url}). ` +
+        `Set it to the exact URL MCP clients use (e.g. https://dev-api.hosanna.live/mcp).`,
+    );
+  }
+  if (parsed.search || parsed.hash || parsed.username || parsed.password) {
+    throw new Error(
+      `MCP_RESOURCE_URL must not include credentials, query, or fragment (got ${url}).`,
+    );
+  }
+}
+
+assertMcpResourceUrlForRuntime();
