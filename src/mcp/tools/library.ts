@@ -126,7 +126,9 @@ export function registerLibraryTools(
     },
     async (args) => {
       try {
-        return jsonResult(await updateFolder(requireMcpContext(authInfo), args));
+        return jsonResult(
+          await updateFolder(requireMcpContext(authInfo), args),
+        );
       } catch (error) {
         return errorResult(error);
       }
@@ -146,7 +148,9 @@ export function registerLibraryTools(
     },
     async (args) => {
       try {
-        return jsonResult(await deleteFolder(requireMcpContext(authInfo), args));
+        return jsonResult(
+          await deleteFolder(requireMcpContext(authInfo), args),
+        );
       } catch (error) {
         return errorResult(error);
       }
@@ -301,7 +305,8 @@ export function registerLibraryTools(
     "collections_remove_songs",
     {
       title: "Remove songs from collection",
-      description: "Disconnect songs from a collection (does not delete songs).",
+      description:
+        "Disconnect songs from a collection (does not delete songs).",
       inputSchema: z.object({
         collectionId: z.string().uuid(),
         songIds: z.array(z.string().uuid()).min(1),
@@ -397,7 +402,9 @@ export function registerLibraryTools(
         type: z
           .string()
           .min(1)
-          .describe('Free string, e.g. "Culto Dominical", "Ensaio", "Rehearsal"'),
+          .describe(
+            'Free string, e.g. "Culto Dominical", "Ensaio", "Rehearsal"',
+          ),
         durationMinutes: z.number().int().positive().max(900).optional(),
         location: z.string().optional(),
         notes: z.string().optional(),
@@ -511,7 +518,7 @@ export function registerLibraryTools(
             ? Promise.resolve([])
             : serviceService(ctx).listTrashed(),
         ]);
-        const slice = <T,>(rows: T[]) => {
+        const slice = <T>(rows: T[]) => {
           const total = rows.length;
           const start = (page - 1) * limit;
           return {
@@ -595,20 +602,26 @@ export function registerLibraryTools(
       timedToolResult("library_overview", async () => {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "song.access");
-        const [folders, collections, songPage, trashedSongs, trashedFolders, trashedServices] =
-          await Promise.all([
-            listFolders(ctx),
-            listCollections(ctx),
-            songService(ctx).list({
-              page: 1,
-              limit: 1,
-              sortBy: "title",
-              sortOrder: "asc",
-            }),
-            songService(ctx).listTrashed(),
-            folderService(ctx).listTrashed(),
-            serviceService(ctx).listTrashed(),
-          ]);
+        const [
+          folders,
+          collections,
+          songPage,
+          trashedSongs,
+          trashedFolders,
+          trashedServices,
+        ] = await Promise.all([
+          listFolders(ctx),
+          listCollections(ctx),
+          songService(ctx).list({
+            page: 1,
+            limit: 1,
+            sortBy: "title",
+            sortOrder: "asc",
+          }),
+          songService(ctx).listTrashed(),
+          folderService(ctx).listTrashed(),
+          serviceService(ctx).listTrashed(),
+        ]);
         return {
           folders: { count: folders.count },
           collections: { count: collections.count },
@@ -712,10 +725,7 @@ export function registerLibraryTools(
     async ({ url }) => {
       try {
         const nativeAuth = await nativeAuthForTools(authInfo);
-        if (
-          !nativeAuth ||
-          !providerSupportsNativeFetch(nativeAuth.provider)
-        ) {
+        if (!nativeAuth || !providerSupportsNativeFetch(nativeAuth.provider)) {
           const { ProviderError } = await import("../lib/providerError.js");
           return errorResult(
             new ProviderError(

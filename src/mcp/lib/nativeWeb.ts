@@ -194,8 +194,7 @@ export async function resolveNativeWebAuth(
     const runtime = await new OrgAiConfigService().getRuntimeConfig(orgId);
     if (!providerSupportsNativeSearch(runtime.provider)) return null;
     const baseUrl =
-      runtime.baseUrl?.replace(/\/+$/, "") ||
-      "https://api.deepseek.com";
+      runtime.baseUrl?.replace(/\/+$/, "") || "https://api.deepseek.com";
     return {
       provider: runtime.provider,
       apiKey: runtime.apiKey,

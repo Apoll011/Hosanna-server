@@ -14,11 +14,16 @@ import {
   deleteCollection,
   deleteFolder,
 } from "../mcp/lib/libraryCrud.js";
-import { AiChatService } from "../services/aiChat.service.js";
+import {
+  AiChatService,
+  describeChatError,
+} from "../services/aiChat.service.js";
 import { OrgAiConfigService } from "../services/orgAiConfig.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { AppError } from "../utils/errors.js";
+import { AiMemoryService } from "../services/aiMemory.service.js";
 import {
+  addAiMemorySchema,
   aiChatBodySchema,
   aiConfirmActionSchema,
   updateAiSettingsSchema,
@@ -27,6 +32,7 @@ import {
 export const aiRouter = Router();
 const settings = new OrgAiConfigService();
 const chat = new AiChatService();
+const memory = new AiMemoryService();
 
 aiRouter.get(
   "/settings",
@@ -53,6 +59,47 @@ aiRouter.delete(
   asyncHandler(async (req, res) => {
     const data = await settings.clearKey(req.orgId!);
     res.json(data);
+  }),
+);
+
+aiRouter.get(
+  "/memory",
+  requirePermission("ai.use"),
+  asyncHandler(async (req, res) => {
+    res.json({ items: await memory.list(req.orgId!) });
+  }),
+);
+
+aiRouter.post(
+  "/memory",
+  requirePermission("ai.manage"),
+  validate({ body: addAiMemorySchema }),
+  asyncHandler(async (req, res) => {
+    const item = await memory.add(req.orgId!, req.body.content, {
+      source: "admin",
+      userId: req.user?.id,
+    });
+    res.status(item.duplicate ? 200 : 201).json(item);
+  }),
+);
+
+aiRouter.delete(
+  "/memory/:id",
+  requirePermission("ai.manage"),
+  asyncHandler(async (req, res) => {
+    const removed = await memory.remove(req.orgId!, String(req.params.id));
+    if (!removed)
+      throw new AppError(404, "VALIDATION_ERROR", "Memory entry not found");
+    res.status(204).end();
+  }),
+);
+
+aiRouter.delete(
+  "/memory",
+  requirePermission("ai.manage"),
+  asyncHandler(async (req, res) => {
+    const cleared = await memory.clear(req.orgId!);
+    res.json({ cleared });
   }),
 );
 
@@ -127,16 +174,56 @@ aiRouter.post(
 
     const { authInfo } = await authInfoFromRequest(req);
     const messages = req.body.messages as UIMessage[];
-    const result = await chat.streamChat({
+
+    // Stop the model + tools as soon as the client goes away (Stop button,
+    // closed tab) instead of burning tokens on an unread stream.
+    const abort = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) abort.abort();
+    });
+
+    const startedAt = Date.now();
+    const { model, result, budget } = await chat.streamChat({
       orgId: req.orgId,
       authInfo,
       messages,
       pageContext: req.body.context,
+      locale: req.body.locale,
+      abortSignal: abort.signal,
     });
 
     // UI message stream compatible with @ai-sdk/react useChat
     const response = result.toUIMessageStreamResponse({
       originalMessages: messages,
+      sendReasoning: true,
+      onError: (error) => {
+        if (!abort.signal.aborted)
+          console.error("AI chat stream error:", error);
+        return describeChatError(error);
+      },
+      messageMetadata: ({ part }) => {
+        if (part.type === "start") {
+          return { model: model.id, provider: model.provider };
+        }
+        if (part.type === "finish") {
+          return {
+            finishReason: part.finishReason,
+            // Tool budget used up (the model was told to wrap up) or the
+            // step safety net hit while it still wanted tools.
+            truncated:
+              budget.limitReached || part.finishReason === "tool-calls",
+            toolCalls: budget.used,
+            toolLimit: budget.max,
+            limitReached: budget.limitReached,
+            durationMs: Date.now() - startedAt,
+            usage: {
+              inputTokens: part.totalUsage.inputTokens,
+              outputTokens: part.totalUsage.outputTokens,
+            },
+          };
+        }
+        return undefined;
+      },
     });
 
     // Pipe Web Response → Express
@@ -152,6 +239,9 @@ aiRouter.post(
     }
 
     const reader = response.body.getReader();
+    res.on("close", () => {
+      reader.cancel().catch(() => undefined);
+    });
     try {
       while (true) {
         const { done, value } = await reader.read();
@@ -161,10 +251,11 @@ aiRouter.post(
       res.end();
     } catch (err) {
       try {
-        reader.cancel();
+        await reader.cancel();
       } catch {
         /* ignore */
       }
+      if (abort.signal.aborted) return;
       if (!res.headersSent) throw err;
       res.end();
     }

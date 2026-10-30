@@ -17,7 +17,10 @@ import { SongService } from "../services/song.service.js";
 import { mapToolError } from "./lib/toolErrors.js";
 
 const apiOrigin = env.mcpResourceUrl.replace(/\/mcp\/?$/, "");
-const jwksUrl = new URL("/api/auth/jwks", apiOrigin || `http://127.0.0.1:${env.port}`);
+const jwksUrl = new URL(
+  "/api/auth/jwks",
+  apiOrigin || `http://127.0.0.1:${env.port}`,
+);
 const remoteJwks = createRemoteJWKSet(jwksUrl);
 
 export interface McpContext {
@@ -75,8 +78,7 @@ export function folders(ctx: McpContext): FolderService {
 
 function parseLocaleFromMeta(metadata: unknown): string | null {
   try {
-    const meta =
-      typeof metadata === "string" ? JSON.parse(metadata) : metadata;
+    const meta = typeof metadata === "string" ? JSON.parse(metadata) : metadata;
     const locale =
       (meta as any)?.settings?.general?.locale ?? (meta as any)?.locale;
     if (typeof locale === "string" && locale.length > 0) return locale;
@@ -191,8 +193,7 @@ async function resolveFromOAuthAccessToken(
     const { payload } = await jwtVerify(token, remoteJwks, {
       audience: env.mcpResourceUrl,
     });
-    const userId =
-      typeof payload.sub === "string" ? payload.sub : undefined;
+    const userId = typeof payload.sub === "string" ? payload.sub : undefined;
     if (!userId) return null;
     const scopeClaim =
       typeof payload.scope === "string"
@@ -247,8 +248,7 @@ export async function resolveMcpContextFromHeaders(
   const sessionData = await auth.api.getSession({ headers: headerBag });
   if (sessionData?.session && sessionData?.user) {
     const workspaceId = (sessionData.session as any).activeOrganizationId as
-      | string
-      | undefined;
+      string | undefined;
     if (workspaceId) {
       const authHeader = headerBag.get("authorization") ?? "";
       const token = authHeader.startsWith("Bearer ")
@@ -300,8 +300,7 @@ export function jsonResult(data: unknown, isError = false) {
     content: [
       {
         type: "text" as const,
-        text:
-          typeof data === "string" ? data : JSON.stringify(data, null, 2),
+        text: typeof data === "string" ? data : JSON.stringify(data, null, 2),
       },
     ],
     structuredContent:
@@ -327,8 +326,7 @@ export async function timedToolResult(
   const started = performance.now();
   try {
     const data = await run();
-    const durationMs =
-      Math.round((performance.now() - started) * 100) / 100;
+    const durationMs = Math.round((performance.now() - started) * 100) / 100;
     const { recordToolTiming } = await import("./lib/toolMetrics.js");
     recordToolTiming(toolName, durationMs, true);
     if (data && typeof data === "object" && !Array.isArray(data)) {
@@ -342,8 +340,7 @@ export async function timedToolResult(
       _meta: { durationMs, tool: toolName },
     });
   } catch (error) {
-    const durationMs =
-      Math.round((performance.now() - started) * 100) / 100;
+    const durationMs = Math.round((performance.now() - started) * 100) / 100;
     const { recordToolTiming } = await import("./lib/toolMetrics.js");
     recordToolTiming(toolName, durationMs, false);
     const payload = mapToolError(error);

@@ -21,10 +21,7 @@ import {
   STUDIO_ONLY_TOOLS,
   TOOL_SURFACE,
 } from "../lib/toolCatalog.js";
-import {
-  recentToolTimings,
-  toolTimingSummary,
-} from "../lib/toolMetrics.js";
+import { recentToolTimings, toolTimingSummary } from "../lib/toolMetrics.js";
 import { createSongSchema } from "../../validators/song.validators.js";
 import { createServiceSchema } from "../../validators/service.validators.js";
 import {
@@ -210,9 +207,7 @@ export function registerDiscoveryTools(
       description:
         "Read the full SKILL.md body for a skill name (e.g. hosanna-safe-data or hosanna://skills/hosanna-safe-data).",
       inputSchema: z.object({
-        name: z
-          .string()
-          .describe(`One of: ${SKILL_NAMES.join(", ")}`),
+        name: z.string().describe(`One of: ${SKILL_NAMES.join(", ")}`),
       }),
     },
     async ({ name }) => {
@@ -337,7 +332,14 @@ export function registerDiscoveryTools(
                     "duration",
                     "notes",
                   ],
-                  other: ["id", "type", "title", "content", "duration", "notes"],
+                  other: [
+                    "id",
+                    "type",
+                    "title",
+                    "content",
+                    "duration",
+                    "notes",
+                  ],
                 },
                 durationUnit: "seconds",
               },

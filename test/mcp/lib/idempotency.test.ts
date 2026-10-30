@@ -8,10 +8,7 @@ import {
 
 describe("idempotency", () => {
   it("hashes payloads stably regardless of key order", () => {
-    assert.equal(
-      payloadHash({ b: 1, a: 2 }),
-      payloadHash({ a: 2, b: 1 }),
-    );
+    assert.equal(payloadHash({ b: 1, a: 2 }), payloadHash({ a: 2, b: 1 }));
   });
 
   it("returns cached result for same id + payload", async () => {
@@ -44,20 +41,12 @@ describe("idempotency", () => {
   it("conflicts when same id is reused with different payload", async () => {
     const org = `org-${Math.random()}`;
     const id = "req-2";
-    await withClientRequestId(
-      org,
-      id,
-      async () => ({ ok: true }),
-      { name: "A" },
-    );
+    await withClientRequestId(org, id, async () => ({ ok: true }), {
+      name: "A",
+    });
     await assert.rejects(
       () =>
-        withClientRequestId(
-          org,
-          id,
-          async () => ({ ok: true }),
-          { name: "B" },
-        ),
+        withClientRequestId(org, id, async () => ({ ok: true }), { name: "B" }),
       (err: unknown) => err instanceof IdempotencyConflictError,
     );
   });

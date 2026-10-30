@@ -89,10 +89,7 @@ function serializeAgenda(e: {
 
 // ── Folders ────────────────────────────────────────────────────────────────
 
-export async function listFolders(
-  ctx: McpContext,
-  parentId?: string | null,
-) {
+export async function listFolders(ctx: McpContext, parentId?: string | null) {
   requirePermission(ctx, "folder.access");
   const folders = await ctx.db.folder.findMany({
     where: {
@@ -245,9 +242,7 @@ export async function getCollection(
   return {
     collection: {
       ...base,
-      ...(include === "ids"
-        ? { songIds: songs.map((s) => s.id) }
-        : { songs }),
+      ...(include === "ids" ? { songIds: songs.map((s) => s.id) } : { songs }),
     },
     page,
     limit,
@@ -281,7 +276,10 @@ export async function createCollection(
         ? { songs: { connect: args.songIds.map((id) => ({ id })) } }
         : {}),
     } as never,
-    include: { songs: { select: { id: true } }, _count: { select: { songs: true } } },
+    include: {
+      songs: { select: { id: true } },
+      _count: { select: { songs: true } },
+    },
   });
   syncCache.invalidate(ctx.orgId, "collections");
   return { created: true, collection: serializeCollection(created) };
@@ -305,7 +303,9 @@ export async function updateCollection(
   });
   if (!current) throw new Error("Collection not found");
   if (current.updatedAt.getTime() !== new Date(args.updatedAt).getTime()) {
-    throw new Error("Collection was modified elsewhere; refresh and retry with current updatedAt");
+    throw new Error(
+      "Collection was modified elsewhere; refresh and retry with current updatedAt",
+    );
   }
   const updated = await ctx.db.collection.update({
     where: { id: args.collectionId },
@@ -317,7 +317,10 @@ export async function updateCollection(
       ...(args.color !== undefined ? { color: args.color } : {}),
       ...(args.icon !== undefined ? { icon: args.icon } : {}),
     },
-    include: { songs: { select: { id: true } }, _count: { select: { songs: true } } },
+    include: {
+      songs: { select: { id: true } },
+      _count: { select: { songs: true } },
+    },
   });
   syncCache.invalidate(ctx.orgId, "collections");
   return { updated: true, collection: serializeCollection(updated) };
@@ -491,7 +494,9 @@ export async function updateAgendaEvent(
   });
   if (!current) throw new Error("Agenda event not found");
   if (current.updatedAt.getTime() !== new Date(args.updatedAt).getTime()) {
-    throw new Error("Event was modified elsewhere; refresh and retry with current updatedAt");
+    throw new Error(
+      "Event was modified elsewhere; refresh and retry with current updatedAt",
+    );
   }
   const updated = await ctx.db.agendaEvent.update({
     where: { id: args.eventId },

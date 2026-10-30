@@ -1,7 +1,5 @@
 import type { SongService } from "../../services/song.service.js";
-import {
-  validateServiceElements,
-} from "../../validators/serviceElement.validators.js";
+import { validateServiceElements } from "../../validators/serviceElement.validators.js";
 
 export {
   serviceElementSchema,

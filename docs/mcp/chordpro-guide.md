@@ -25,27 +25,30 @@ Essential metadata: `title`, `artist`, `key`, `duration`, `youtube`, `song_numbe
 
 ## Metadata directives (parsed)
 
-| Directive    | Alias | Notes                               |
-| ------------ | ----- | ----------------------------------- |
-| title        | t     | Required for good library health    |
-| subtitle     | st    |                                     |
-| artist       | a     |                                     |
-| key          | k     | Used by transpose / analysis        |
-| original_key |       |                                     |
-| capo         |       | Linted as numeric                   |
-| tempo        |       | Linted as numeric                   |
-| time         |       | Time signature                      |
-| duration     |       | Hosanna — service planning defaults |
-| song_number  |       | Hosanna — synced to song record     |
-| youtube      |       | Hosanna — reference video           |
-| ccli         |       | Stored as metadata                  |
+| Directive    | Alias | Notes                                                                                                                                    |
+| ------------ | ----- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| title        | t     | Required for good library health                                                                                                         |
+| subtitle     | st    |                                                                                                                                          |
+| artist       | a     |                                                                                                                                          |
+| key          | k     | Used by transpose / analysis                                                                                                             |
+| original_key |       |                                                                                                                                          |
+| capo         |       | Linted as numeric                                                                                                                        |
+| tempo        |       | Linted as numeric                                                                                                                        |
+| time         |       | Time signature                                                                                                                           |
+| duration     |       | Hosanna — service planning defaults                                                                                                      |
+| song_number  |       | Hosanna — synced to song record                                                                                                          |
+| youtube      |       | Hosanna — reference video                                                                                                                |
+| ccli         |       | Stored as metadata                                                                                                                       |
+| key_note     |       | Hosanna — note about key changes, shown by the renderer under the header (`{key_note: Verso 4 e final modulam para D (meio tom acima)}`) |
+| tag          |       | Hosanna — editor-only label, repeatable, NOT rendered (`{tag: adoração}`)                                                                |
+| arranger     |       | Arranger credit (footer)                                                                                                                 |
 
 Unknown `{name: value}` directives are stored as camelCased metadata.
 
 ## Structure
 
 - Verse / chorus / bridge: `start_of_*` / `end_of_*` or shorthand `{verse}`, `{chorus}`, `{bridge}`
-- `{chorus}` recalls the previous chorus body
+- `{chorus}` (alias `{ch}`, optional label `{chorus: Refrão final}`) recalls the previous chorus body without copying it — prefer it over duplicating an unchanged chorus; it needs a `start_of_chorus` earlier in the song (the linter warns otherwise)
 - `{repeat}` marks a repeat
 - Tabs: `start_of_tab` / `end_of_tab`
 - Grids: `start_of_grid` / `end_of_grid` with `|`, `||`, `|:`, `:|`
@@ -88,6 +91,10 @@ Style suffixes use `|style` or `|style=name`. The TypeScript renderer honors sty
 ```
 
 `@Nx` timing annotations are preserved by source-preserving transpose.
+
+## Completing chords (propagate)
+
+`chordpro_propagate_chords` / `songs_draft_propagate_chords` copy chords from the first chorded verse onto later verses, anchored to words and syllables (not raw character offsets). Lines that already have chords are never overwritten and identical choruses are copied exactly. The result is a **draft**: inspect `review` (lines marked `check` are guesses) and `skipped`, correct the chord positions yourself, then submit one final `songs_propose_edit`.
 
 ## Transpose
 

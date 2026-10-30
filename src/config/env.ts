@@ -31,10 +31,7 @@ export const env = {
    * Defaults to 5 on Vercel (many warm isolates × large pools exhaust Postgres)
    * and 20 for long-running hosts (Docker / local).
    */
-  dbPoolMax: parseInt(
-    process.env.DB_POOL_MAX ?? (isVercel ? "5" : "20"),
-    10,
-  ),
+  dbPoolMax: parseInt(process.env.DB_POOL_MAX ?? (isVercel ? "5" : "20"), 10),
 
   // ── Better Auth ──────────────────────────────────────────────────────────
   betterAuthSecret: required("BETTER_AUTH_SECRET"),
@@ -105,8 +102,7 @@ function assertMcpResourceUrlForRuntime(): void {
   const host = parsed.hostname.toLowerCase();
   const isLoopback =
     host === "localhost" || host === "127.0.0.1" || host === "::1";
-  const isProd =
-    env.nodeEnv === "production" || Boolean(process.env.VERCEL);
+  const isProd = env.nodeEnv === "production" || Boolean(process.env.VERCEL);
   if (isProd && (isLoopback || parsed.protocol !== "https:")) {
     throw new Error(
       `MCP_RESOURCE_URL must be a public https://…/mcp URL in production (got ${url}). ` +

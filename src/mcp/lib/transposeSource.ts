@@ -6,11 +6,14 @@
  * unknown directives stay intact.
  */
 
-import { getNoteValue, transposeChord, transposeNote } from "@hosanna/chordpro/parser";
+import {
+  getNoteValue,
+  transposeChord,
+  transposeNote,
+} from "@hosanna/chordpro/parser";
 
 export type TransposeChordProSourceOptions =
-  | { semitones: number; toKey?: never }
-  | { toKey: string; semitones?: never };
+  { semitones: number; toKey?: never } | { toKey: string; semitones?: never };
 
 export interface TransposeChordProSourceResult {
   content: string;
@@ -19,10 +22,7 @@ export interface TransposeChordProSourceResult {
   toKey: string | null;
 }
 
-function extractKeyDirective(
-  source: string,
-  names: string[],
-): string | null {
+function extractKeyDirective(source: string, names: string[]): string | null {
   for (const name of names) {
     const re = new RegExp(`\\{${name}:\\s*([^}]+)\\}`, "i");
     const match = source.match(re);

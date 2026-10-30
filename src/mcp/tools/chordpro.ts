@@ -42,18 +42,19 @@ export function registerChordProTools(server: McpServer): void {
     {
       title: "Propagate verse chords",
       description:
-        "Copy [Am]/[G]/… chord markers from the first chorded verse onto later verses at the same lyric-character offsets. Does not invent chords — only mirrors the source verse’s chords.",
+        "Copy chord markers from the first chorded verse onto later verses, anchored to words/syllables (lines that already have chords are untouched; identical choruses are copied exactly). Does not invent chords. Returns a DRAFT: read `review` (`check` lines need fixing) and `skipped`, correct the content yourself, then submit it with songs_propose_edit.",
       inputSchema: z.object({
         content: z.string().describe("Full ChordPro document"),
       }),
     },
     async ({ content }) => {
       try {
-        const result = propagateVerseChords(content);
+        const { content: draftContent, ...report } =
+          propagateVerseChords(content);
         return jsonResult({
-          ...result,
-          diff: summarizeDiff(content, result.content),
-          proposal: { content: result.content },
+          draft: { content: draftContent },
+          ...report,
+          diff: summarizeDiff(content, draftContent),
         });
       } catch (error) {
         return errorResult(error);

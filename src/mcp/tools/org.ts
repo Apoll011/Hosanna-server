@@ -1,11 +1,7 @@
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import {
-  errorResult,
-  jsonResult,
-  requireMcpContext,
-} from "../context.js";
+import { errorResult, jsonResult, requireMcpContext } from "../context.js";
 import {
   getMe,
   getMember,
@@ -14,16 +10,13 @@ import {
   resolveMembers,
 } from "../lib/orgDirectory.js";
 
-export function registerOrgTools(
-  server: McpServer,
-  authInfo?: AuthInfo,
-): void {
+export function registerOrgTools(server: McpServer, authInfo?: AuthInfo): void {
   server.registerTool(
     "me",
     {
       title: "Who am I",
       description:
-        "Return the authenticated user (id, name, email), org membership (memberId, role), and active organization. Use before assigning agenda responsibilities to \"me\".",
+        'Return the authenticated user (id, name, email), org membership (memberId, role), and active organization. Use before assigning agenda responsibilities to "me".',
       inputSchema: z.object({}),
     },
     async () => {

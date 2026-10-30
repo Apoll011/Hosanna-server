@@ -98,12 +98,14 @@ export class ServiceService {
     includeArchived?: boolean;
     metadataOnly?: false;
   }): Promise<ReturnType<typeof serialize>[]>;
-  async list(body: {
-    archived?: boolean;
-    includeArchived?: boolean;
-    /** When true, omit element bodies (MCP search). Studio API keeps full rows. */
-    metadataOnly?: boolean;
-  } = {}): Promise<
+  async list(
+    body: {
+      archived?: boolean;
+      includeArchived?: boolean;
+      /** When true, omit element bodies (MCP search). Studio API keeps full rows. */
+      metadataOnly?: boolean;
+    } = {},
+  ): Promise<
     ReturnType<typeof serialize>[] | ReturnType<typeof serializeListRow>[]
   > {
     const mode: boolean | "all" = body.includeArchived

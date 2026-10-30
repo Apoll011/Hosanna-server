@@ -28,12 +28,12 @@ For people/roles on the agenda, call `me` / `members_list` / `org_get` and set `
 
 ## Draft before save (mandatory)
 
-| Intent | Do this first | Persist with |
-|--------|---------------|--------------|
-| New song | `songs_create_draft` | `songs_save` mode=`create` |
-| Edit/fix song | `songs_propose_edit` / `songs_propose_fix` | `songs_save` mode=`update` |
-| New service | `services_create_draft` or `services_plan_suggest` | `services_save` mode=`create` |
-| Edit service | `services_propose_edit` | `services_save` mode=`update` |
+| Intent        | Do this first                                      | Persist with                  |
+| ------------- | -------------------------------------------------- | ----------------------------- |
+| New song      | `songs_create_draft`                               | `songs_save` mode=`create`    |
+| Edit/fix song | `songs_propose_edit` / `songs_propose_fix`         | `songs_save` mode=`update`    |
+| New service   | `services_create_draft` or `services_plan_suggest` | `services_save` mode=`create` |
+| Edit service  | `services_propose_edit`                            | `services_save` mode=`update` |
 
 Present the proposal (content + validation + diff/reasoning) and wait for explicit user approval. Do not “helpfully” save in the same turn unless the user clearly ordered an immediate save.
 

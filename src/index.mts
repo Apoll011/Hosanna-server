@@ -19,11 +19,9 @@ import { apiRouter } from "./routes/index.js";
  */
 const helmet = helmetImport as unknown as (options?: {
   crossOriginResourcePolicy?:
-    | { policy?: "same-origin" | "same-site" | "cross-origin" }
-    | false;
+    { policy?: "same-origin" | "same-site" | "cross-origin" } | false;
   hsts?:
-    | { maxAge: number; includeSubDomains?: boolean; preload?: boolean }
-    | false;
+    { maxAge: number; includeSubDomains?: boolean; preload?: boolean } | false;
   noSniff?: boolean;
   frameguard?: { action?: "deny" | "sameorigin" } | false;
   xssFilter?: boolean;
@@ -141,12 +139,9 @@ app.all("/.well-known/oauth-protected-resource", authHandler);
 app.all("/.well-known/oauth-protected-resource/*", authHandler);
 // Issuer is /api/auth — RFC 8414 appendix path-aware URL works; bare root
 // 404s from Better Auth, so alias it for clients that omit the path suffix.
-app.all(
-  "/.well-known/oauth-authorization-server",
-  (_req, res) => {
-    res.redirect(302, "/.well-known/oauth-authorization-server/api/auth");
-  },
-);
+app.all("/.well-known/oauth-authorization-server", (_req, res) => {
+  res.redirect(302, "/.well-known/oauth-authorization-server/api/auth");
+});
 app.all("/.well-known/oauth-authorization-server/*", authHandler);
 app.all("/.well-known/openid-configuration", authHandler);
 app.all("/.well-known/openid-configuration/*", authHandler);

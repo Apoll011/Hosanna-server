@@ -37,6 +37,7 @@ export const MCP_TOOL_GROUPS = {
   ],
   songs: [
     "songs_search",
+    "songs_list_in_folder",
     "songs_search_lyrics",
     "songs_get",
     "songs_get_many",
@@ -45,7 +46,7 @@ export const MCP_TOOL_GROUPS = {
     "songs_propose_edit",
     "songs_propose_fix",
     "songs_propose_transpose",
-    "songs_propose_propagate_chords",
+    "songs_draft_propagate_chords",
     "songs_save",
     "songs_move",
     "songs_delete",
@@ -91,9 +92,9 @@ export const MCP_TOOL_GROUPS = {
   ],
 } as const;
 
-export const ALL_MCP_TOOL_NAMES: string[] = Object.values(MCP_TOOL_GROUPS).flatMap(
-  (g) => [...g],
-);
+export const ALL_MCP_TOOL_NAMES: string[] = Object.values(
+  MCP_TOOL_GROUPS,
+).flatMap((g) => [...g]);
 
 export const TOOL_SURFACE = {
   core: "Registered on the Hosanna MCP server — available to external AI clients (ChatGPT, Claude, …).",

@@ -38,9 +38,7 @@ describe("validateServiceElements", () => {
 
 describe("validateChordProContent", () => {
   it("accepts a simple valid document", () => {
-    const report = validateChordProContent(
-      "{title: Test}\n{key: G}\n[G]Hello",
-    );
+    const report = validateChordProContent("{title: Test}\n{key: G}\n[G]Hello");
     assert.equal(report.ok, true);
     assert.equal(report.metadata.title, "Test");
   });

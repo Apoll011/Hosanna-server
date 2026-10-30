@@ -57,9 +57,7 @@ export class ServiceNoteRepository {
     });
   }
 
-  create(
-    data: Omit<Prisma.ServiceNoteUncheckedCreateInput, "orgId">,
-  ) {
+  create(data: Omit<Prisma.ServiceNoteUncheckedCreateInput, "orgId">) {
     // orgId is injected by the org-scoped Prisma client.
     return this.db.serviceNote.create({
       data: data as Prisma.ServiceNoteUncheckedCreateInput,

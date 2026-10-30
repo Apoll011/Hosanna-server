@@ -14,10 +14,7 @@ describe("durationSecondsFromChordPro", () => {
   });
 
   it("parses M:SS", () => {
-    assert.equal(
-      durationSecondsFromChordPro("{duration: 3:00}\n[G]Hi"),
-      180,
-    );
+    assert.equal(durationSecondsFromChordPro("{duration: 3:00}\n[G]Hi"), 180);
   });
 });
 

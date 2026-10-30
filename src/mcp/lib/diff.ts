@@ -48,7 +48,9 @@ export function summarizeDiff(
     }
   }
   if (added + removed > max) {
-    previewLines.push(`… (${added + removed - previewLines.length} more line changes)`);
+    previewLines.push(
+      `… (${added + removed - previewLines.length} more line changes)`,
+    );
   }
 
   return {

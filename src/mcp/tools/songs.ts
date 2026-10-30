@@ -21,6 +21,10 @@ import {
   SEARCH_CONTENT_MAX,
 } from "../lib/contentClip.js";
 import { summarizeDiff } from "../lib/diff.js";
+import {
+  FOLDER_SONGS_MAX_LIMIT,
+  listSongsInFolder,
+} from "../lib/folderSongs.js";
 import { withClientRequestId } from "../lib/idempotency.js";
 import { propagateVerseChords } from "../lib/propagateChords.js";
 import { transposeChordProSource } from "../lib/transposeSource.js";
@@ -123,13 +127,55 @@ export function registerSongTools(
   );
 
   server.registerTool(
+    "songs_list_in_folder",
+    {
+      title: "List songs in a folder",
+      description:
+        'List the songs inside one folder (metadata only: id, title, artist, key, song_number, tags, path — no lyrics; use songs_get / songs_get_many for content). folderId from folders_list; omit/null/"root" = songs in no folder. recursive=true also includes nested subfolders (each song then carries folderName); with no folderId it means the whole library. Also returns the folder\'s direct subfolders. Default sort title asc, page=1, limit=50 (max 100).',
+      inputSchema: z.object({
+        folderId: z
+          .string()
+          .nullable()
+          .optional()
+          .describe('Folder id; null/"root"/omitted = library root'),
+        recursive: z.boolean().optional().default(false),
+        sortBy: z
+          .enum(["title", "artist", "updatedAt", "song_number"])
+          .optional()
+          .default("title"),
+        sortOrder: z.enum(["asc", "desc"]).optional().default("asc"),
+        page: z.number().int().positive().optional().default(1),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(FOLDER_SONGS_MAX_LIMIT)
+          .optional()
+          .default(50),
+      }),
+    },
+    async (args) => {
+      try {
+        return jsonResult(
+          await listSongsInFolder(requireMcpContext(authInfo), args),
+        );
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
     "songs_search_lyrics",
     {
       title: "Search song lyrics (ignore chords)",
       description:
-        "Search lyrics after stripping ChordPro chords and directives. Query \"Pois só Tu és o Deus eterno\" matches \"Pois [D9]só Tu és o [C#m]Deus eterno\". Prefer this over songs_search when the user quotes plain lyrics.",
+        'Search lyrics after stripping ChordPro chords and directives. Query "Pois só Tu és o Deus eterno" matches "Pois [D9]só Tu és o [C#m]Deus eterno". Prefer this over songs_search when the user quotes plain lyrics.',
       inputSchema: z.object({
-        query: z.string().min(1).describe("Plain lyrics / phrase without chord markers"),
+        query: z
+          .string()
+          .min(1)
+          .describe("Plain lyrics / phrase without chord markers"),
         folder: z.string().optional().describe("Folder id filter"),
         page: z.number().int().positive().optional().default(1),
         limit: z.number().int().positive().max(100).optional().default(20),
@@ -527,11 +573,11 @@ export function registerSongTools(
   );
 
   server.registerTool(
-    "songs_propose_propagate_chords",
+    "songs_draft_propagate_chords",
     {
-      title: "Propose propagate chords",
+      title: "Draft propagate chords",
       description:
-        "Copy [chord] markers from the first chorded verse onto later verses. Does not invent chords. Returns a proposal.",
+        "Copy chords from the first chorded verse onto later verses (anchored to words/syllables; lines that already have chords are untouched). Returns a DRAFT, not a proposal: read `review` (lines marked `check` need fixing) and `skipped`, correct the draft yourself, then submit the final content with songs_propose_edit.",
       inputSchema: z.object({ songId: z.string().uuid() }),
     },
     async ({ songId }) => {
@@ -539,18 +585,20 @@ export function registerSongTools(
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "song.update");
         const current = await songService(ctx).getById(songId);
-        const result = propagateVerseChords(current.content);
+        const { content: draftContent, ...report } = propagateVerseChords(
+          current.content,
+        );
         return jsonResult({
-          proposal: {
+          draft: {
             id: current.id,
             title: current.title,
             artist: current.artist,
-            content: result.content,
+            content: draftContent,
             updatedAt: current.updatedAt.toISOString(),
           },
-          ...result,
-          validation: validateChordProContent(result.content),
-          diff: summarizeDiff(current.content, result.content),
+          ...report,
+          validation: validateChordProContent(draftContent),
+          diff: summarizeDiff(current.content, draftContent),
         });
       } catch (error) {
         return errorResult(error);
@@ -597,95 +645,97 @@ export function registerSongTools(
           ctx.orgId,
           clientRequestId,
           async () => {
-          const validation = validateChordProContent(args.content);
-          const metadataWarnings = mirroredMetadataWarnings({
-            title: args.title,
-            artist: args.artist,
-            song_number: args.song_number,
-            content: args.content,
-          });
-          if (
-            (!validation.ok || metadataWarnings.length > 0) &&
-            !args.allowInvalid
-          ) {
-            return jsonResult(
-              {
-                error: true,
-                code: "validation_error",
-                message:
-                  metadataWarnings.length > 0
-                    ? "Database metadata does not match ChordPro directives"
-                    : "ChordPro validation failed",
-                retryable: false,
-                validation: { ...validation, metadataWarnings },
-                hint:
-                  metadataWarnings.length > 0
-                    ? "Align title/artist/song_number with ChordPro (or set allowInvalid=true after user confirmation)."
-                    : "Fix issues or set allowInvalid=true after user confirmation.",
-              },
-              true,
-            );
-          }
-
-          if (args.mode === "create") {
-            requirePermission(ctx, "song.create");
-            const created = await songService(ctx).create({
+            const validation = validateChordProContent(args.content);
+            const metadataWarnings = mirroredMetadataWarnings({
               title: args.title,
               artist: args.artist,
-              content: args.content,
-              folderId: args.folderId,
-              tags: args.tags,
               song_number: args.song_number,
+              content: args.content,
             });
-            return jsonResult({
-              status: "saved",
-              saved: true,
-              song: serializeSong(created),
-              validation: { ...validation, metadataWarnings },
-            });
-          }
+            if (
+              (!validation.ok || metadataWarnings.length > 0) &&
+              !args.allowInvalid
+            ) {
+              return jsonResult(
+                {
+                  error: true,
+                  code: "validation_error",
+                  message:
+                    metadataWarnings.length > 0
+                      ? "Database metadata does not match ChordPro directives"
+                      : "ChordPro validation failed",
+                  retryable: false,
+                  validation: { ...validation, metadataWarnings },
+                  hint:
+                    metadataWarnings.length > 0
+                      ? "Align title/artist/song_number with ChordPro (or set allowInvalid=true after user confirmation)."
+                      : "Fix issues or set allowInvalid=true after user confirmation.",
+                },
+                true,
+              );
+            }
 
-          requirePermission(ctx, "song.update");
-          if (!args.songId || !args.updatedAt) {
-            return jsonResult(
-              {
-                error: true,
-                code: "validation_error",
-                message: "songId and updatedAt are required for update",
-                retryable: false,
-              },
-              true,
-            );
-          }
-          try {
-            const updated = await songService(ctx).update(
-              args.songId,
-              new Date(args.updatedAt),
-              {
+            if (args.mode === "create") {
+              requirePermission(ctx, "song.create");
+              const created = await songService(ctx).create({
                 title: args.title,
                 artist: args.artist,
                 content: args.content,
                 folderId: args.folderId,
                 tags: args.tags,
                 song_number: args.song_number,
-              },
-            );
-            return jsonResult({
-              status: "saved",
-              saved: true,
-              song: serializeSong(updated),
-              validation: { ...validation, metadataWarnings },
-            });
-          } catch (error) {
-            let current: unknown;
-            try {
-              current = serializeSong(await songService(ctx).getById(args.songId));
-            } catch {
-              /* ignore */
+              });
+              return jsonResult({
+                status: "saved",
+                saved: true,
+                song: serializeSong(created),
+                validation: { ...validation, metadataWarnings },
+              });
             }
-            return errorResult(error, { current, field: "updatedAt" });
-          }
-        },
+
+            requirePermission(ctx, "song.update");
+            if (!args.songId || !args.updatedAt) {
+              return jsonResult(
+                {
+                  error: true,
+                  code: "validation_error",
+                  message: "songId and updatedAt are required for update",
+                  retryable: false,
+                },
+                true,
+              );
+            }
+            try {
+              const updated = await songService(ctx).update(
+                args.songId,
+                new Date(args.updatedAt),
+                {
+                  title: args.title,
+                  artist: args.artist,
+                  content: args.content,
+                  folderId: args.folderId,
+                  tags: args.tags,
+                  song_number: args.song_number,
+                },
+              );
+              return jsonResult({
+                status: "saved",
+                saved: true,
+                song: serializeSong(updated),
+                validation: { ...validation, metadataWarnings },
+              });
+            } catch (error) {
+              let current: unknown;
+              try {
+                current = serializeSong(
+                  await songService(ctx).getById(args.songId),
+                );
+              } catch {
+                /* ignore */
+              }
+              return errorResult(error, { current, field: "updatedAt" });
+            }
+          },
           payload,
         );
       } catch (error) {
@@ -698,7 +748,8 @@ export function registerSongTools(
     "songs_move",
     {
       title: "Move song",
-      description: "Move a song to another folder (or root). Requires updatedAt.",
+      description:
+        "Move a song to another folder (or root). Requires updatedAt.",
       inputSchema: z.object({
         songId: z.string().uuid(),
         updatedAt: z.string(),

@@ -5,12 +5,12 @@ no Supabase). Spark plan is enough — you do **not** need Blaze for Storage.
 
 ## Architecture
 
-| Layer | Role |
-|-------|------|
-| Flutter local `.fcv` cache | Fast open / offline (`settings.syncAnnotations`) |
-| Hosanna API `PUT/GET …/annotation` | Auth + org checks; always writes Postgres |
-| Firestore `services/{serviceId}/annotations/{songId}` | Live listener + inline `canvasDataBase64` when small |
-| Postgres `ServiceSongAnnotation` | Source of truth for bytes when the canvas is too large for Firestore (~700KB raw) |
+| Layer                                                 | Role                                                                              |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Flutter local `.fcv` cache                            | Fast open / offline (`settings.syncAnnotations`)                                  |
+| Hosanna API `PUT/GET …/annotation`                    | Auth + org checks; always writes Postgres                                         |
+| Firestore `services/{serviceId}/annotations/{songId}` | Live listener + inline `canvasDataBase64` when small                              |
+| Postgres `ServiceSongAnnotation`                      | Source of truth for bytes when the canvas is too large for Firestore (~700KB raw) |
 
 ### Small vs large canvases
 

@@ -6,10 +6,7 @@ import { FolderRepository } from "../repositories/folder.repository.js";
 import { SongRepository } from "../repositories/song.repository.js";
 import { DEFAULT_LOCALE, t } from "../lib/i18n.js";
 import { AppError } from "../utils/errors.js";
-import {
-  lyricsMatchQuery,
-  normalizeLyricQuery,
-} from "../lib/lyricSearch.js";
+import { lyricsMatchQuery, normalizeLyricQuery } from "../lib/lyricSearch.js";
 import {
   createSongSchema,
   listSongsQuerySchema,
@@ -350,8 +347,7 @@ export class SongService {
     if (folderId) {
       this.folderRepo.touch(folderId);
     }
-    const path =
-      newPath ?? (await this.computePath(current.title, folderId));
+    const path = newPath ?? (await this.computePath(current.title, folderId));
     return this.songRepo.update(id, {
       folder: folderId ? { connect: { id: folderId } } : { disconnect: true },
       path,

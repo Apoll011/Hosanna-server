@@ -9,15 +9,26 @@ import {
 } from "@hosanna/chordpro/parser";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import {
+  APICallError,
   convertToModelMessages,
   stepCountIs,
   streamText,
   tool,
   type ModelMessage,
+  type ToolSet,
   type UIMessage,
 } from "ai";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import {
+  AI_LIMITS,
+  customInstructionsPromptBlock,
+  MEMORY_USAGE_PROMPT,
+  memoryPromptBlock,
+  toolBudgetNotice,
+  type ToolBudgetState,
+} from "./aiBehavior.js";
+import { AiMemoryService } from "./aiMemory.service.js";
 import {
   folders as folderService,
   getMcpContext,
@@ -68,6 +79,10 @@ import {
   updateCollection,
   updateFolder,
 } from "../mcp/lib/libraryCrud.js";
+import {
+  FOLDER_SONGS_MAX_LIMIT,
+  listSongsInFolder,
+} from "../mcp/lib/folderSongs.js";
 import { searchMusicBrainzRecordings } from "../mcp/lib/musicbrainz.js";
 import { propagateVerseChords } from "../mcp/lib/propagateChords.js";
 import {
@@ -104,6 +119,7 @@ import {
 import { searchWeb } from "../mcp/lib/webSearch.js";
 import { searchYouTube } from "../mcp/lib/youtubeSearch.js";
 import { clockContextPromptBlock } from "../lib/clockContext.js";
+import { AppError } from "../utils/errors.js";
 
 const folderIconSchema = z.enum(FOLDER_ICON_IDS);
 const folderColorSchema = z.enum(FOLDER_COLOR_IDS);
@@ -165,9 +181,7 @@ function buildModel(
     case "openai":
     default: {
       const url =
-        baseUrl ||
-        AI_PROVIDER_DEFAULT_BASE_URL[provider] ||
-        undefined;
+        baseUrl || AI_PROVIDER_DEFAULT_BASE_URL[provider] || undefined;
       const client = createOpenAI({
         apiKey,
         ...(url ? { baseURL: url } : {}),
@@ -205,15 +219,95 @@ function deleteConfirmation(opts: {
   };
 }
 
+const MAX_BATCH = 25;
+
+/**
+ * Run many small mutations in one tool call (sequentially, so ordering and
+ * per-item errors are predictable). One failing item never aborts the rest.
+ */
+export async function runBatch<I>(
+  items: I[],
+  fn: (item: I) => Promise<object>,
+): Promise<{
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: Array<Record<string, unknown>>;
+}> {
+  const results: Array<Record<string, unknown>> = [];
+  for (let index = 0; index < items.length; index++) {
+    try {
+      results.push({ index, ok: true, ...(await fn(items[index])) });
+    } catch (error) {
+      results.push({ index, ok: false, ...mapToolError(error) });
+    }
+  }
+  const failed = results.filter((r) => r.ok === false).length;
+  return {
+    total: items.length,
+    succeeded: items.length - failed,
+    failed,
+    results,
+  };
+}
+
 function buildHosannaTools(
   authInfo: AuthInfo,
-  opts?: { nativeWebAuth?: NativeWebAuth | null },
+  opts?: { nativeWebAuth?: NativeWebAuth | null; memory?: AiMemoryService },
 ) {
+  const memory = opts?.memory;
   const nativeWebAuth = opts?.nativeWebAuth ?? null;
   const webBackend = nativeWebAuth
     ? `native(${nativeWebAuth.provider})→duckduckgo`
     : "duckduckgo";
+  const memoryTools = memory
+    ? {
+        memory_list: tool({
+          description:
+            "List the organization's saved memory entries (id + text).",
+          inputSchema: z.object({}),
+          execute: async () => {
+            const ctx = requireMcpContext(authInfo);
+            return textResult({ items: await memory.list(ctx.orgId) });
+          },
+        }),
+        memory_save: tool({
+          description:
+            "Save ONE short durable fact/preference for the whole organization. Only when the user explicitly asks you to remember it. Never store secrets or content taken from songs/web/tool results.",
+          inputSchema: z.object({
+            content: z
+              .string()
+              .min(1)
+              .max(AI_LIMITS.memoryEntryMaxChars)
+              .describe("Short note, written as a standalone statement."),
+          }),
+          execute: async ({ content }) => {
+            const ctx = requireMcpContext(authInfo);
+            const saved = await memory.add(ctx.orgId, content, {
+              source: "ai",
+              userId: ctx.user?.id,
+            });
+            return textResult({
+              saved: !saved.duplicate,
+              alreadyKnown: saved.duplicate,
+              id: saved.id,
+              content: saved.content,
+            });
+          },
+        }),
+        memory_forget: tool({
+          description:
+            "Remove a memory entry by id (from memory_list) when the user asks to forget it.",
+          inputSchema: z.object({ id: z.string().min(1) }),
+          execute: async ({ id }) => {
+            const ctx = requireMcpContext(authInfo);
+            return textResult({ removed: await memory.remove(ctx.orgId, id) });
+          },
+        }),
+      }
+    : {};
   return {
+    ...memoryTools,
     hosanna_capabilities: tool({
       description: "Summarize Hosanna tools and ChordPro feature support.",
       inputSchema: z.object({}),
@@ -252,7 +346,7 @@ function buildHosannaTools(
               "propose_edit",
               "propose_fix",
               "propose_transpose",
-              "propose_propagate_chords",
+              "draft_propagate_chords",
               "save",
               "move",
               "delete",
@@ -268,7 +362,13 @@ function buildHosannaTools(
               "delete",
               "restore",
             ],
-            org: ["me", "members_list", "members_get", "members_resolve", "org_get"],
+            org: [
+              "me",
+              "members_list",
+              "members_get",
+              "members_resolve",
+              "org_get",
+            ],
             studioOnly: [
               "studio_sync",
               "studio_navigate",
@@ -277,6 +377,7 @@ function buildHosannaTools(
             ],
             library: [
               "folders CRUD+restore",
+              "folders_create_many / folders_update_many / collections_update_many (batch)",
               "collections CRUD+songs",
               "agenda CRUD+responsibilities",
               "trash_list",
@@ -342,8 +443,7 @@ function buildHosannaTools(
       description:
         "Who am I — user id/name/email, memberId, role, active org. Use before assigning agenda responsibilities to yourself.",
       inputSchema: z.object({}),
-      execute: async () =>
-        textResult(await getMe(requireMcpContext(authInfo))),
+      execute: async () => textResult(await getMe(requireMcpContext(authInfo))),
     }),
     members_list: tool({
       description:
@@ -496,7 +596,7 @@ function buildHosannaTools(
     }),
     folders_create: tool({
       description:
-        "Create a folder. color/icon must be Studio ids (see hosanna_capabilities.studioUi or hosanna://domain/library). Then call studio_sync.",
+        "Create a folder. color/icon must be Studio ids (see hosanna_capabilities.studioUi or hosanna://domain/library). Studio refreshes automatically after this (do NOT call studio_sync).",
       inputSchema: z.object({
         name: z.string().min(1),
         parentId: z.string().nullable().optional(),
@@ -508,7 +608,7 @@ function buildHosannaTools(
     }),
     folders_update: tool({
       description:
-        "Rename/move/recolor a folder. Requires updatedAt. color/icon = Studio ids only (hosanna://domain/library). Use icon=default to reset. Then call studio_sync.",
+        "Rename/move/recolor a folder. Requires updatedAt. color/icon = Studio ids only (hosanna://domain/library). Use icon=default to reset. Studio refreshes automatically after this (do NOT call studio_sync).",
       inputSchema: z.object({
         folderId: z.string(),
         updatedAt: z.string(),
@@ -519,6 +619,84 @@ function buildHosannaTools(
       }),
       execute: async (args) =>
         textResult(await updateFolder(requireMcpContext(authInfo), args)),
+    }),
+    folders_create_many: tool({
+      description: `Create up to ${MAX_BATCH} folders in ONE call (prefer this over repeated folders_create). Same color/icon rules as folders_create. Per-item results; Studio refreshes automatically.`,
+      inputSchema: z.object({
+        folders: z
+          .array(
+            z.object({
+              name: z.string().min(1),
+              parentId: z.string().nullable().optional(),
+              color: folderColorSchema.optional(),
+              icon: folderIconSchema.optional(),
+            }),
+          )
+          .min(1)
+          .max(MAX_BATCH),
+      }),
+      execute: async ({ folders }) => {
+        const ctx = requireMcpContext(authInfo);
+        return textResult(await runBatch(folders, (f) => createFolder(ctx, f)));
+      },
+    }),
+    folders_update_many: tool({
+      description: `Rename/move/recolor up to ${MAX_BATCH} folders in ONE call (prefer this over repeated folders_update when changing several folders). Each item needs folderId + updatedAt (from folders_list). Per-item results; Studio refreshes automatically.`,
+      inputSchema: z.object({
+        updates: z
+          .array(
+            z.object({
+              folderId: z.string(),
+              updatedAt: z.string(),
+              name: z.string().min(1).optional(),
+              parentId: z.string().nullable().optional(),
+              color: folderColorSchema.optional(),
+              icon: folderIconSchema.optional(),
+            }),
+          )
+          .min(1)
+          .max(MAX_BATCH),
+      }),
+      execute: async ({ updates }) => {
+        const ctx = requireMcpContext(authInfo);
+        return textResult(await runBatch(updates, (u) => updateFolder(ctx, u)));
+      },
+    }),
+    collections_update_many: tool({
+      description: `Update metadata (name/description/color/icon) of up to ${MAX_BATCH} collections in ONE call. Each item needs collectionId + updatedAt. Per-item results; Studio refreshes automatically.`,
+      inputSchema: z.object({
+        updates: z
+          .array(
+            z.object({
+              collectionId: z.string(),
+              updatedAt: z.string(),
+              name: z.string().min(1).optional(),
+              description: z.string().nullable().optional(),
+              color: folderColorSchema.optional(),
+              icon: folderIconSchema.optional(),
+            }),
+          )
+          .min(1)
+          .max(MAX_BATCH),
+      }),
+      execute: async ({ updates }) => {
+        const ctx = requireMcpContext(authInfo);
+        return textResult(
+          await runBatch(updates, (u) => updateCollection(ctx, u)),
+        );
+      },
+    }),
+    suggest_followups: tool({
+      description:
+        "Studio chat UI only: show 2-3 short clickable follow-up prompts under your final answer (same language as the user). Call at most once, as the LAST tool call of a turn, only when natural next steps exist. Never use it for questions you need answered.",
+      inputSchema: z.object({
+        options: z
+          .array(z.string().min(2).max(80))
+          .min(1)
+          .max(4)
+          .describe("Short imperative prompts the user can click to send."),
+      }),
+      execute: async ({ options }) => textResult({ shown: options.length }),
     }),
     studio_sync: tool({
       description:
@@ -544,11 +722,15 @@ function buildHosannaTools(
         id: z
           .string()
           .optional()
-          .describe("Entity id when kind is song/service/folder/collection/agenda"),
+          .describe(
+            "Entity id when kind is song/service/folder/collection/agenda",
+          ),
         route: z
           .string()
           .optional()
-          .describe("Optional absolute path under the org slug when kind=route"),
+          .describe(
+            "Optional absolute path under the org slug when kind=route",
+          ),
         reason: z.string().optional(),
       }),
       execute: async (args) =>
@@ -599,19 +781,11 @@ function buildHosannaTools(
     }),
     studio_search: tool({
       description:
-        "Studio-oriented global search across songs, services (incl. archived when asked), folders, collections, and agenda. Prefer this when the user says \"find X in Studio\".",
+        'Studio-oriented global search across songs, services (incl. archived when asked), folders, collections, and agenda. Prefer this when the user says "find X in Studio".',
       inputSchema: z.object({
         query: z.string().min(1),
         types: z
-          .array(
-            z.enum([
-              "song",
-              "service",
-              "folder",
-              "collection",
-              "agenda",
-            ]),
-          )
+          .array(z.enum(["song", "service", "folder", "collection", "agenda"]))
           .optional()
           .describe("Defaults to all types"),
         includeArchivedServices: z.boolean().optional().default(true),
@@ -668,9 +842,7 @@ function buildHosannaTools(
               type: "service",
               id: s.id,
               title: s.name,
-              subtitle: s.date
-                ? String(s.date).slice(0, 10)
-                : undefined,
+              subtitle: s.date ? String(s.date).slice(0, 10) : undefined,
               archived: s.archived,
             });
           }
@@ -796,7 +968,7 @@ function buildHosannaTools(
             ? Promise.resolve([])
             : serviceService(ctx).listTrashed(),
         ]);
-        const slice = <T,>(rows: T[]) => {
+        const slice = <T>(rows: T[]) => {
           const total = rows.length;
           const start = (page - 1) * limit;
           return {
@@ -861,7 +1033,7 @@ function buildHosannaTools(
     }),
     collections_create: tool({
       description:
-        "Create a song collection. color/icon = Studio ids (hosanna://domain/library). Then call studio_sync.",
+        "Create a song collection. color/icon = Studio ids (hosanna://domain/library). Studio refreshes automatically after this (do NOT call studio_sync).",
       inputSchema: z.object({
         name: z.string().min(1),
         description: z.string().optional(),
@@ -874,7 +1046,7 @@ function buildHosannaTools(
     }),
     collections_update: tool({
       description:
-        "Update collection metadata. Requires updatedAt. color/icon = Studio ids. Then call studio_sync.",
+        "Update collection metadata. Requires updatedAt. color/icon = Studio ids. Studio refreshes automatically after this (do NOT call studio_sync).",
       inputSchema: z.object({
         collectionId: z.string(),
         updatedAt: z.string(),
@@ -913,9 +1085,7 @@ function buildHosannaTools(
         songIds: z.array(z.string()).min(1),
       }),
       execute: async (args) =>
-        textResult(
-          await collectionAddSongs(requireMcpContext(authInfo), args),
-        ),
+        textResult(await collectionAddSongs(requireMcpContext(authInfo), args)),
     }),
     collections_remove_songs: tool({
       description: "Remove songs from a collection (does not delete songs).",
@@ -1100,14 +1270,15 @@ function buildHosannaTools(
     }),
     chordpro_propagate_chords: tool({
       description:
-        "Copy [Am]/[G]/… chord markers from the first chorded verse onto later verses at the same lyric-character offsets. Does not invent chords.",
+        "Copy chord markers from the first chorded verse onto later verses, anchored to words/syllables (existing chords are untouched; identical choruses copied exactly). Does not invent chords. Returns a DRAFT (not staged): read `review`/`skipped`, fix lines marked `check` yourself, then submit with songs_propose_edit.",
       inputSchema: z.object({ content: z.string() }),
       execute: async ({ content }) => {
-        const result = propagateVerseChords(content);
+        const { content: draftContent, ...report } =
+          propagateVerseChords(content);
         return textResult({
-          ...result,
-          diff: summarizeDiff(content, result.content),
-          proposal: { content: result.content },
+          draft: { content: draftContent },
+          ...report,
+          diff: summarizeDiff(content, draftContent),
         });
       },
     }),
@@ -1134,7 +1305,8 @@ function buildHosannaTools(
       },
     }),
     chordpro_format: tool({
-      description: "Normalize ChordPro formatting. Returns a proposal for the Studio editor.",
+      description:
+        "Normalize ChordPro formatting. Returns a proposal for the Studio editor.",
       inputSchema: z.object({ content: z.string() }),
       execute: async ({ content }) => {
         const result = formatChordPro(content, {
@@ -1270,9 +1442,30 @@ function buildHosannaTools(
         });
       },
     }),
+    songs_list_in_folder: tool({
+      description:
+        'List the songs inside one folder (metadata only: id, title, artist, key, song_number, tags — no lyrics; use songs_get / songs_get_many for content). folderId from folders_list; omit/null/"root" = songs in no folder. recursive=true includes nested subfolders (whole library if no folderId). Also returns the folder\'s direct subfolders. Default title asc, page=1, limit=50 (max 100).',
+      inputSchema: z.object({
+        folderId: z.string().nullable().optional(),
+        recursive: z.boolean().optional(),
+        sortBy: z
+          .enum(["title", "artist", "updatedAt", "song_number"])
+          .optional(),
+        sortOrder: z.enum(["asc", "desc"]).optional(),
+        page: z.number().int().positive().optional(),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(FOLDER_SONGS_MAX_LIMIT)
+          .optional(),
+      }),
+      execute: async (args) =>
+        textResult(await listSongsInFolder(requireMcpContext(authInfo), args)),
+    }),
     songs_search_lyrics: tool({
       description:
-        "Search lyrics ignoring ChordPro chords/directives. Query \"Pois só Tu és o Deus eterno\" matches \"Pois [D9]só Tu és o [C#m]Deus eterno\". Prefer when the user quotes plain lyrics.",
+        'Search lyrics ignoring ChordPro chords/directives. Query "Pois só Tu és o Deus eterno" matches "Pois [D9]só Tu és o [C#m]Deus eterno". Prefer when the user quotes plain lyrics.',
       inputSchema: z.object({
         query: z.string().min(1),
         folder: z.string().optional(),
@@ -1525,26 +1718,28 @@ function buildHosannaTools(
         });
       },
     }),
-    songs_propose_propagate_chords: tool({
+    songs_draft_propagate_chords: tool({
       description:
-        "Propagate verse chords onto later verses for a library song. Does not invent chords.",
+        "Copy chords from the first chorded verse of a library song onto later verses (word/syllable anchored; existing chords untouched). Returns a DRAFT — NOT staged. Read `review` and `skipped`, fix every line marked `check` (and fill skipped lines when obvious), then call songs_propose_edit ONCE with the corrected full content. Never propose the raw draft unchecked.",
       inputSchema: z.object({ songId: z.string() }),
       execute: async ({ songId }) => {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "song.update");
         const current = await songService(ctx).getById(songId);
-        const result = propagateVerseChords(current.content);
+        const { content: draftContent, ...report } = propagateVerseChords(
+          current.content,
+        );
         return textResult({
-          proposal: {
+          draft: {
             id: current.id,
             title: current.title,
             artist: current.artist,
-            content: result.content,
+            content: draftContent,
             updatedAt: current.updatedAt.toISOString(),
           },
-          ...result,
-          validation: validateChordProContent(result.content),
-          diff: summarizeDiff(current.content, result.content),
+          ...report,
+          validation: validateChordProContent(draftContent),
+          diff: summarizeDiff(current.content, draftContent),
         });
       },
     }),
@@ -1572,96 +1767,95 @@ function buildHosannaTools(
             ctx.orgId,
             args.clientRequestId,
             async () => {
-            const validation = validateChordProContent(args.content);
-            const metadataWarnings = mirroredMetadataWarnings({
-              title: args.title,
-              artist: args.artist,
-              song_number: args.song_number,
-              content: args.content,
-            });
-            if (
-              (!validation.ok || metadataWarnings.length > 0) &&
-              !args.allowInvalid
-            ) {
-              return mapToolError(
-                new Error(
-                  metadataWarnings[0] ?? "Validation failed",
-                ),
-                {
-                  current: { validation: { ...validation, metadataWarnings } },
-                },
-              );
-            }
-            if (args.mode === "create") {
-              requirePermission(ctx, "song.create");
-              const created = await songService(ctx).create({
+              const validation = validateChordProContent(args.content);
+              const metadataWarnings = mirroredMetadataWarnings({
                 title: args.title,
                 artist: args.artist,
-                content: args.content,
-                folderId: args.folderId,
-                tags: args.tags,
                 song_number: args.song_number,
+                content: args.content,
               });
-              return {
-                saved: true,
-                song: {
-                  id: created.id,
-                  title: created.title,
-                  updatedAt: created.updatedAt.toISOString(),
-                },
-              };
-            }
-            requirePermission(ctx, "song.update");
-            if (!args.songId || !args.updatedAt) {
-              return mapToolError(
-                new Error("songId and updatedAt required"),
-              );
-            }
-            try {
-              const updated = await songService(ctx).update(
-                args.songId,
-                new Date(args.updatedAt),
-                {
+              if (
+                (!validation.ok || metadataWarnings.length > 0) &&
+                !args.allowInvalid
+              ) {
+                return mapToolError(
+                  new Error(metadataWarnings[0] ?? "Validation failed"),
+                  {
+                    current: {
+                      validation: { ...validation, metadataWarnings },
+                    },
+                  },
+                );
+              }
+              if (args.mode === "create") {
+                requirePermission(ctx, "song.create");
+                const created = await songService(ctx).create({
                   title: args.title,
                   artist: args.artist,
                   content: args.content,
                   folderId: args.folderId,
                   tags: args.tags,
                   song_number: args.song_number,
-                },
-              );
-              return {
-                saved: true,
-                song: {
-                  id: updated.id,
-                  title: updated.title,
-                  updatedAt: updated.updatedAt.toISOString(),
-                },
-              };
-            } catch (error) {
-              let current: unknown;
-              try {
-                const song = await songService(ctx).getById(args.songId);
-                current = {
-                  id: song.id,
-                  title: song.title,
-                  artist: song.artist,
-                  content: song.content,
-                  updatedAt: song.updatedAt.toISOString(),
+                });
+                return {
+                  saved: true,
+                  song: {
+                    id: created.id,
+                    title: created.title,
+                    updatedAt: created.updatedAt.toISOString(),
+                  },
                 };
-              } catch {
-                /* ignore */
               }
-              return mapToolError(error, { current, field: "updatedAt" });
-            }
-          },
+              requirePermission(ctx, "song.update");
+              if (!args.songId || !args.updatedAt) {
+                return mapToolError(new Error("songId and updatedAt required"));
+              }
+              try {
+                const updated = await songService(ctx).update(
+                  args.songId,
+                  new Date(args.updatedAt),
+                  {
+                    title: args.title,
+                    artist: args.artist,
+                    content: args.content,
+                    folderId: args.folderId,
+                    tags: args.tags,
+                    song_number: args.song_number,
+                  },
+                );
+                return {
+                  saved: true,
+                  song: {
+                    id: updated.id,
+                    title: updated.title,
+                    updatedAt: updated.updatedAt.toISOString(),
+                  },
+                };
+              } catch (error) {
+                let current: unknown;
+                try {
+                  const song = await songService(ctx).getById(args.songId);
+                  current = {
+                    id: song.id,
+                    title: song.title,
+                    artist: song.artist,
+                    content: song.content,
+                    updatedAt: song.updatedAt.toISOString(),
+                  };
+                } catch {
+                  /* ignore */
+                }
+                return mapToolError(error, { current, field: "updatedAt" });
+              }
+            },
             (({ clientRequestId: _c, ...rest }) => rest)(args),
           ),
         );
       },
     }),
     songs_move: tool({
-      description: "Move a song to another folder (or root). Requires updatedAt.",
+      description:
+        "Move a song to another folder (or root). Requires updatedAt.",
       inputSchema: z.object({
         songId: z.string(),
         updatedAt: z.string(),
@@ -1699,7 +1893,9 @@ function buildHosannaTools(
           } catch {
             /* ignore */
           }
-          return textResult(mapToolError(error, { current, field: "updatedAt" }));
+          return textResult(
+            mapToolError(error, { current, field: "updatedAt" }),
+          );
         }
       },
     }),
@@ -1987,61 +2183,61 @@ function buildHosannaTools(
             ctx.orgId,
             clientRequestId,
             async () => {
-            const elements = args.elements ?? [];
-            const validation = await validateServicePlan(
-              elements,
-              songService(ctx),
-            );
-            if (!validation.ok && !args.allowInvalid) {
-              return {
-                error: true,
-                code: "validation_error",
-                message: "Validation failed",
-                retryable: false,
-                validation,
-              };
-            }
-            if (args.mode === "create") {
-              requirePermission(ctx, "service.create");
-              const created = await serviceService(ctx).create({
-                name: args.name,
-                date: new Date(`${args.date.slice(0, 10)}T12:00:00.000Z`),
-                notes: args.notes,
+              const elements = args.elements ?? [];
+              const validation = await validateServicePlan(
                 elements,
-              });
-              return { saved: true, service: created, validation };
-            }
-            requirePermission(ctx, "service.update");
-            if (!args.serviceId || !args.updatedAt) {
-              return mapToolError(
-                new Error("serviceId and updatedAt required"),
+                songService(ctx),
               );
-            }
-            try {
-              const updated = await serviceService(ctx).update(
-                args.serviceId,
-                new Date(args.updatedAt),
-                {
+              if (!validation.ok && !args.allowInvalid) {
+                return {
+                  error: true,
+                  code: "validation_error",
+                  message: "Validation failed",
+                  retryable: false,
+                  validation,
+                };
+              }
+              if (args.mode === "create") {
+                requirePermission(ctx, "service.create");
+                const created = await serviceService(ctx).create({
                   name: args.name,
                   date: new Date(`${args.date.slice(0, 10)}T12:00:00.000Z`),
                   notes: args.notes,
                   elements,
-                  archived: args.archived,
-                },
-              );
-              return { saved: true, service: updated, validation };
-            } catch (error) {
-              let current: unknown;
-              try {
-                current = await serviceService(ctx).getByIdSerialized(
-                  args.serviceId,
-                );
-              } catch {
-                /* ignore */
+                });
+                return { saved: true, service: created, validation };
               }
-              return mapToolError(error, { current, field: "updatedAt" });
-            }
-          },
+              requirePermission(ctx, "service.update");
+              if (!args.serviceId || !args.updatedAt) {
+                return mapToolError(
+                  new Error("serviceId and updatedAt required"),
+                );
+              }
+              try {
+                const updated = await serviceService(ctx).update(
+                  args.serviceId,
+                  new Date(args.updatedAt),
+                  {
+                    name: args.name,
+                    date: new Date(`${args.date.slice(0, 10)}T12:00:00.000Z`),
+                    notes: args.notes,
+                    elements,
+                    archived: args.archived,
+                  },
+                );
+                return { saved: true, service: updated, validation };
+              } catch (error) {
+                let current: unknown;
+                try {
+                  current = await serviceService(ctx).getByIdSerialized(
+                    args.serviceId,
+                  );
+                } catch {
+                  /* ignore */
+                }
+                return mapToolError(error, { current, field: "updatedAt" });
+              }
+            },
             payload,
           ),
         );
@@ -2082,7 +2278,7 @@ function buildHosannaTools(
  * Studio chat system — intentionally shorter than MCP host instructions.
  * Avoids mandatory skill/resource loading that burns tokens on trivial edits.
  */
-const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church song libraries and service planning.
+const STUDIO_CHAT_SYSTEM = `You are Logos, the friendly AI assistant inside Hosanna Studio chat, for church song libraries and service planning. Stay warm, concise and practical.
 
 ## Style (strict)
 - Be brief. Prefer doing over asking. One short sentence + tools beats essays.
@@ -2092,11 +2288,17 @@ const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church son
 - For clear requests (transpose to D, repeat a section 2×, duplicate last verse, fix chords, complete metadata, create folder/event), act immediately with a sensible default. Ask at most ONE question only when blocked.
 - Do not offer multiple options when the user already chose (e.g. "transpose into D").
 - ChordPro/song content edits: use propose tools (prefer songs_propose_transpose / songs_propose_edit). Studio stages Accept/Decline in the editor. After Accept, the user saves in the editor — only call songs_save / services_save if they explicitly ask to persist via chat/MCP.
-- Library structural edits (folders, collections, agenda create/update, move song, add songs to collection): do them with tools when the request is clear. After those mutations, call \`studio_sync\` so the explorer refreshes immediately.
+- Library structural edits (folders, collections, agenda create/update, move song, add songs to collection): do them with tools when the request is clear. Studio refreshes the explorer automatically after mutations — do NOT call \`studio_sync\`.
+- Changing several folders/collections at once: use \`folders_update_many\` / \`folders_create_many\` / \`collections_update_many\` in ONE call instead of many single calls. Items fail independently — report any failed index honestly.
+- At the end of a turn, when natural next steps exist, you MAY call \`suggest_followups\` once (last tool call) with 2-3 short clickable prompts. Never use it for questions you need answered; do not repeat them in the text.
 - Folder/collection \`icon\` and \`color\` must be Studio ids only (see hosanna_capabilities.studioUi or hosanna://domain/library). Never invent Lucide names. Use \`icon=default\` / \`color=default\` to reset.
 - Deletes (songs/services/folders/collections/agenda): call the matching \`*_delete\` tool immediately when the user asks to delete — it only STAGES a Confirm button in Studio and does not delete. Do NOT ask for chat confirmation ("are you sure?") and do NOT claim the item is deleted until the user clicks Confirm. If they already confirmed in chat, still only stage the button.
 - When the user says "repeat" / "2x" a verse or chorus: duplicate that section's body in the ChordPro (or add \`{c: 2x}\` if they ask for a note only). Prefer physical duplication when they ask to "write a copy".
 - On stale/concurrency errors, use the returned \`current\` object (do not re-fetch blindly).
+- \`{chorus}\` (alias \`{ch}\`, optional label \`{chorus: Refrão final}\`) recalls the previous \`start_of_chorus\` block without copying it. When a chorus repeats UNCHANGED, write \`{chorus}\` instead of duplicating the lines (unless the user asks for a physical copy or the repeat has different chords/words). Never put \`{chorus}\` before any chorus exists.
+- \`{key_note: text}\` is a free-text note about key changes (e.g. \`{key_note: Verso 4 e final modulam para D (meio tom acima)}\`); the renderer shows it under the song header. Use it for modulations — not \`{c:}\`, not \`{key:}\` (which is the main key).
+- \`{tag: label}\` is an editor-only label (not rendered). Repeat the directive for several tags. Do not add tags the user did not ask for.
+- Propagating/completing chords: \`songs_draft_propagate_chords\` / \`chordpro_propagate_chords\` return a DRAFT that is NOT staged. Read \`review\` and \`skipped\`: re-place every chord marked \`check\` on the right word/syllable yourself (use the source line as reference), fill \`skipped\` lines when the chords are obvious, make sure no chord lands mid-word by accident, then call \`songs_propose_edit\` ONCE with the corrected full content. Never propose the raw draft unchecked and never invent chords the song does not already use.
 
 ## Capabilities (use them)
 - Songs: search, search_lyrics (plain lyrics ignoring chords), get/get_many, draft, propose_edit/fix/transpose, save, move, delete, restore; trash_list
@@ -2107,7 +2309,7 @@ const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church son
 - Collections: list/get/create/update/delete, add_songs/remove_songs (same icon/color ids)
 - Agenda: list/get/create/update/delete — set responsibilities with real memberIds (not only notes on service elements)
 - Services: services_search supports archived / includeArchived (rows include archived flag)
-- Studio-only UX: studio_sync, studio_navigate (open pages), studio_generate_pdf (print modal), studio_search (global find across library)
+- Studio-only UX: studio_navigate (open pages), studio_generate_pdf (print modal), studio_search (global find across library), suggest_followups (clickable chips)
 - Metadata: MusicBrainz, YouTube (for \`{youtube:}\`), DuckDuckGo web search; ChordPro validate/format/transpose/convert/propagate
 - When completing metadata: MusicBrainz for title/artist/release; YouTube search for \`{youtube: URL}\` (use hits[].directive); web search for extra confirmation. If \`metadata_web_fetch\` is available (DeepSeek org AI), use it to read CCLI/artist pages or Cifra URLs blocked by Akamai. Call metadata tools one at a time (MusicBrainz rate-limits parallel bursts with 503). If a tool returns 403/503, report the structured error — do not claim success. Propose the ChordPro edit — do not invent lyrics.
 - Unknown Studio UI constants (icons, colors, etc.): call hosanna_capabilities or hosanna_resource_read on hosanna://domain/library — do not guess.
@@ -2151,14 +2353,67 @@ ${excerpt ? `\n### Content excerpt${page.contentTruncated ? " (truncated)" : ""}
 `;
 }
 
+/**
+ * Hard safety net on model↔tool round trips. The real limit is the org's
+ * `maxToolCalls` (see `toolBudgetNotice`); this only guards against runaway
+ * loops, e.g. models that ignore the disabled tools.
+ */
+export function chatStepSafetyLimit(maxToolCalls: number): number {
+  return maxToolCalls + 3;
+}
+
+const LOCALE_NAMES: Record<string, string> = {
+  pt: "European Portuguese (pt-PT)",
+  en: "English",
+  es: "Spanish",
+};
+
+export function localePromptBlock(locale?: string): string {
+  const name = locale ? LOCALE_NAMES[locale] : undefined;
+  if (!name) return "";
+  return `
+
+## Language
+The user's Studio language is ${name}. Reply in that language unless the user writes in another one. Keep ChordPro directives, ids and tool arguments in their canonical form.
+`;
+}
+
+/**
+ * Safe, user-facing message for a stream error. Provider internals (URLs,
+ * request bodies, keys) are never forwarded.
+ */
+export function describeChatError(error: unknown): string {
+  if (error instanceof AppError) return error.message;
+  if (APICallError.isInstance(error)) {
+    const status = error.statusCode;
+    if (status === 401 || status === 403) {
+      return "The AI provider rejected the API key. Check the AI settings for this organization.";
+    }
+    if (status === 404) {
+      return "The configured AI model was not found. Check the model name in AI settings.";
+    }
+    if (status === 429) {
+      return "The AI provider is rate-limiting requests. Wait a moment and try again.";
+    }
+    if (status && status >= 500) {
+      return "The AI provider is temporarily unavailable. Please try again.";
+    }
+    return "The AI provider could not process this request.";
+  }
+  return "Something went wrong while generating the reply. Please try again.";
+}
+
 export class AiChatService {
   private config = new OrgAiConfigService();
+  private memory = new AiMemoryService();
 
   async streamChat(opts: {
     orgId: string;
     authInfo: AuthInfo;
     messages: UIMessage[];
     pageContext?: ChatPageContext;
+    locale?: string;
+    abortSignal?: AbortSignal;
   }) {
     const runtime = await this.config.getRuntimeConfig(opts.orgId);
     const model = buildModel(
@@ -2168,19 +2423,62 @@ export class AiChatService {
       runtime.baseUrl,
     );
     const nativeWebAuth = nativeWebAuthFromRuntime(runtime);
-    const tools = buildHosannaTools(opts.authInfo, { nativeWebAuth });
+    const memoryEntries = runtime.memoryEnabled
+      ? await this.memory.list(opts.orgId)
+      : [];
+    const tools = buildHosannaTools(opts.authInfo, {
+      nativeWebAuth,
+      memory: runtime.memoryEnabled ? this.memory : undefined,
+    });
     const system =
       STUDIO_CHAT_SYSTEM +
+      (runtime.memoryEnabled ? MEMORY_USAGE_PROMPT : "") +
+      customInstructionsPromptBlock(runtime.instructions) +
+      memoryPromptBlock(memoryEntries) +
+      localePromptBlock(opts.locale) +
       clockContextPromptBlock() +
       contextBlock(opts.pageContext);
     const modelMessages = await convertToModelMessages(opts.messages);
 
-    return streamText({
-      model,
-      system,
-      messages: modelMessages as ModelMessage[],
-      tools,
-      stopWhen: stepCountIs(8),
-    });
+    const budget: ToolBudgetState = {
+      max: runtime.maxToolCalls,
+      used: 0,
+      limitReached: false,
+    };
+
+    return {
+      model: { provider: runtime.provider, id: runtime.model },
+      budget,
+      result: streamText({
+        model,
+        system,
+        messages: modelMessages as ModelMessage[],
+        tools: tools as ToolSet,
+        ...(runtime.temperature != null && {
+          temperature: runtime.temperature,
+        }),
+        ...(runtime.maxOutputTokens != null && {
+          maxOutputTokens: runtime.maxOutputTokens,
+        }),
+        stopWhen: stepCountIs(chatStepSafetyLimit(budget.max)),
+        prepareStep: ({ steps, initialInstructions }) => {
+          budget.used = steps.reduce((n, s) => n + s.toolCalls.length, 0);
+          const notice = toolBudgetNotice(budget.used, budget.max);
+          if (!notice) return undefined;
+          const base =
+            typeof initialInstructions === "string"
+              ? initialInstructions
+              : system;
+          if (!notice.final) return { instructions: base + notice.text };
+          budget.limitReached = true;
+          return {
+            instructions: base + notice.text,
+            toolChoice: "none",
+            activeTools: [],
+          };
+        },
+        abortSignal: opts.abortSignal,
+      }),
+    };
   }
 }

@@ -23,12 +23,12 @@ Produce a clear, actionable review of a song’s ChordPro quality and metadata c
 
 ## Tools
 
-| Tool | Use |
-|------|-----|
-| `songs_get` | Load library song |
-| `chordpro_validate` | Lint + parse errors |
+| Tool                     | Use                                 |
+| ------------------------ | ----------------------------------- |
+| `songs_get`              | Load library song                   |
+| `chordpro_validate`      | Lint + parse errors                 |
 | `chordpro_parse_summary` | Metadata, variants, analysis, score |
-| `chordpro_directives` | Explain a specific directive |
+| `chordpro_directives`    | Explain a specific directive        |
 
 Do **not** call `songs_save` during a pure review.
 

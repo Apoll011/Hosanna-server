@@ -1,6 +1,11 @@
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { toNodeHandler } from "@modelcontextprotocol/node";
-import { Router, type Request, type Response, type NextFunction } from "express";
+import {
+  Router,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import { mcpAuthMiddleware } from "./context.js";
 import { createHosannaMcpServer } from "./server.js";
 
