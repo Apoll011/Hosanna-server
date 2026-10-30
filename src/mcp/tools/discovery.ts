@@ -15,6 +15,11 @@ import {
 import { STUDIO_UI_CATALOG } from "../lib/studioUi.js";
 import { errorResult, getMcpContext, jsonResult } from "../context.js";
 import { HOSANNA_MCP_VERSION } from "../version.js";
+import { MCP_TOOL_GROUPS, ALL_MCP_TOOL_NAMES } from "../lib/toolCatalog.js";
+import {
+  recentToolTimings,
+  toolTimingSummary,
+} from "../lib/toolMetrics.js";
 import { createSongSchema } from "../../validators/song.validators.js";
 import { createServiceSchema } from "../../validators/service.validators.js";
 import {
@@ -59,82 +64,27 @@ export function registerDiscoveryTools(
       try {
         const chordpro = getChordProCapabilities();
         return jsonResult({
-          server: { name: "hosanna", version: HOSANNA_MCP_VERSION },
+          server: {
+            name: "hosanna",
+            version: HOSANNA_MCP_VERSION,
+            toolCount: ALL_MCP_TOOL_NAMES.length,
+          },
           tools: {
-            discovery: [
-              "hosanna_capabilities",
-              "hosanna_permissions",
-              "hosanna_skills_list",
-              "hosanna_skill_read",
-              "hosanna_resources_list",
-              "hosanna_resource_read",
-              "me",
-              "members_list",
-              "members_get",
-              "org_get",
-            ],
-            chordpro: [
-              "chordpro_validate",
-              "chordpro_parse_summary",
-              "chordpro_format",
-              "chordpro_transpose",
-              "chordpro_convert",
-              "chordpro_directives",
-              "chordpro_propagate_chords",
-            ],
-            songs: [
-              "songs_search",
-              "songs_search_lyrics",
-              "songs_get",
-              "songs_get_many",
-              "songs_create_draft",
-              "songs_propose_edit",
-              "songs_propose_fix",
-              "songs_propose_transpose",
-              "songs_propose_propagate_chords",
-              "songs_save",
-              "songs_move",
-              "songs_delete",
-              "songs_restore",
-            ],
+            ...MCP_TOOL_GROUPS,
             services: [
-              "services_search (archived / includeArchived)",
-              "services_get",
-              "services_create_draft",
-              "services_propose_edit",
-              "services_validate",
-              "services_save",
-              "services_delete",
-              "services_restore",
-              "services_plan_suggest",
+              ...MCP_TOOL_GROUPS.services.map((name) =>
+                name === "services_search"
+                  ? "services_search (archived / includeArchived)"
+                  : name,
+              ),
             ],
-            library: [
-              "folders_list",
-              "folders_create",
-              "folders_update",
-              "folders_delete",
-              "folders_restore",
-              "collections_list",
-              "collections_get",
-              "collections_create",
-              "collections_update",
-              "collections_delete",
-              "collections_add_songs",
-              "collections_remove_songs",
-              "agenda_list",
-              "agenda_get",
-              "agenda_create",
-              "agenda_update",
-              "agenda_delete",
-              "trash_list",
-              "metadata_musicbrainz_search",
-              "metadata_youtube_search",
-              "metadata_web_search",
-              "metadata_web_fetch",
-            ],
-            studio: ["studio_sync"],
           },
           resources: listResources().map((r) => r.uri),
+          observability: {
+            note: "Timed tools attach _meta.durationMs. Samples are in-process only.",
+            ...toolTimingSummary(),
+            recent: recentToolTimings(10),
+          },
           prompts: {
             system: ["hosanna_system"],
             songs: [

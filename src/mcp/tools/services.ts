@@ -9,6 +9,7 @@ import {
   requireWriteEntitlement,
   services as serviceService,
   songs as songService,
+  timedToolResult,
 } from "../context.js";
 import { durationSecondsFromChordPro } from "../lib/chordproGate.js";
 import { withClientRequestId } from "../lib/idempotency.js";
@@ -150,6 +151,80 @@ export function registerServiceTools(
         return errorResult(error);
       }
     },
+  );
+
+  server.registerTool(
+    "services_get_many",
+    {
+      title: "Get many services",
+      description:
+        "Batch-fetch up to 10 service plans (elements included). Prefer services_search for lists.",
+      inputSchema: z.object({
+        serviceIds: z.array(z.string().uuid()).min(1).max(10),
+        expandSongs: z.boolean().optional().default(false),
+      }),
+    },
+    async ({ serviceIds, expandSongs }) =>
+      timedToolResult("services_get_many", async () => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "service.access");
+        const services: unknown[] = [];
+        const missing: string[] = [];
+        for (const id of serviceIds) {
+          try {
+            const service = await serviceService(ctx).getByIdForMcp(id);
+            const validation = await validateServicePlan(
+              service.elements,
+              songService(ctx),
+            );
+            let expandedSongs: unknown[] | undefined;
+            if (expandSongs) {
+              const rawElements = Array.isArray(service.elements)
+                ? service.elements
+                : [];
+              const ids = [
+                ...new Set(
+                  rawElements
+                    .map((el) =>
+                      el && typeof el === "object" && "songId" in el
+                        ? String((el as { songId?: unknown }).songId ?? "")
+                        : "",
+                    )
+                    .filter((sid) => sid.length > 0),
+                ),
+              ].slice(0, 40);
+              expandedSongs = [];
+              for (const songId of ids) {
+                try {
+                  const song = await songService(ctx).getById(songId);
+                  expandedSongs.push({
+                    id: song.id,
+                    title: song.title,
+                    artist: song.artist,
+                    contentPreview: song.content.slice(0, 200),
+                  });
+                } catch {
+                  expandedSongs.push({ id: songId, missing: true });
+                }
+              }
+            }
+            services.push({
+              service,
+              validation: {
+                ok: validation.ok,
+                errors: validation.errors,
+                warnings: validation.warnings,
+                missingSongIds: validation.missingSongIds,
+                durationUnit: validation.durationUnit,
+              },
+              expandedSongs,
+            });
+          } catch {
+            missing.push(id);
+          }
+        }
+        return { services, missing, count: services.length };
+      }),
   );
 
   server.registerTool(
@@ -310,9 +385,10 @@ export function registerServiceTools(
       try {
         const ctx = requireMcpContext(authInfo);
         requireWriteEntitlement(ctx);
+        const { clientRequestId, ...payload } = args;
         return await withClientRequestId(
           ctx.orgId,
-          args.clientRequestId,
+          clientRequestId,
           async () => {
         const elements = args.elements ?? [];
         const validation = await validateServicePlan(
@@ -361,6 +437,7 @@ export function registerServiceTools(
         );
         return jsonResult({ saved: true, service: updated, validation });
           },
+          payload,
         );
       } catch (error) {
         return errorResult(error);

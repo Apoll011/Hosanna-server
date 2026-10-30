@@ -1544,7 +1544,10 @@ function buildHosannaTools(
         const ctx = requireMcpContext(authInfo);
         requireWriteEntitlement(ctx);
         return textResult(
-          await withClientRequestId(ctx.orgId, args.clientRequestId, async () => {
+          await withClientRequestId(
+            ctx.orgId,
+            args.clientRequestId,
+            async () => {
             const validation = validateChordProContent(args.content);
             const metadataWarnings = mirroredMetadataWarnings({
               title: args.title,
@@ -1627,7 +1630,9 @@ function buildHosannaTools(
               }
               return mapToolError(error, { current, field: "updatedAt" });
             }
-          }),
+          },
+            (({ clientRequestId: _c, ...rest }) => rest)(args),
+          ),
         );
       },
     }),
@@ -1952,8 +1957,12 @@ function buildHosannaTools(
       execute: async (args) => {
         const ctx = requireMcpContext(authInfo);
         requireWriteEntitlement(ctx);
+        const { clientRequestId, ...payload } = args;
         return textResult(
-          await withClientRequestId(ctx.orgId, args.clientRequestId, async () => {
+          await withClientRequestId(
+            ctx.orgId,
+            clientRequestId,
+            async () => {
             const elements = args.elements ?? [];
             const validation = await validateServicePlan(
               elements,
@@ -1962,7 +1971,7 @@ function buildHosannaTools(
             if (!validation.ok && !args.allowInvalid) {
               return {
                 error: true,
-                code: "validation",
+                code: "validation_error",
                 message: "Validation failed",
                 retryable: false,
                 validation,
@@ -1972,7 +1981,7 @@ function buildHosannaTools(
               requirePermission(ctx, "service.create");
               const created = await serviceService(ctx).create({
                 name: args.name,
-                date: new Date(args.date),
+                date: new Date(`${args.date.slice(0, 10)}T12:00:00.000Z`),
                 notes: args.notes,
                 elements,
               });
@@ -1990,7 +1999,7 @@ function buildHosannaTools(
                 new Date(args.updatedAt),
                 {
                   name: args.name,
-                  date: new Date(args.date),
+                  date: new Date(`${args.date.slice(0, 10)}T12:00:00.000Z`),
                   notes: args.notes,
                   elements,
                   archived: args.archived,
@@ -2008,7 +2017,9 @@ function buildHosannaTools(
               }
               return mapToolError(error, { current, field: "updatedAt" });
             }
-          }),
+          },
+            payload,
+          ),
         );
       },
     }),

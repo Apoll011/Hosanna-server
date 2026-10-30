@@ -8,6 +8,7 @@ import {
   requirePermission,
   requireWriteEntitlement,
   songs as songService,
+  timedToolResult,
 } from "../context.js";
 import {
   metadataFromChordPro,
@@ -251,6 +252,57 @@ export function registerSongTools(
         return errorResult(error);
       }
     },
+  );
+
+  server.registerTool(
+    "songs_validate_many",
+    {
+      title: "Validate many songs",
+      description:
+        "Batch ChordPro + mirrored-metadata validation for up to 20 song ids. Does not save.",
+      inputSchema: z.object({
+        songIds: z.array(z.string().uuid()).min(1).max(20),
+      }),
+    },
+    async ({ songIds }) =>
+      timedToolResult("songs_validate_many", async () => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "song.access");
+        const results: Array<{
+          songId: string;
+          title?: string;
+          ok: boolean;
+          missing?: boolean;
+          validation?: unknown;
+          metadataWarnings?: string[];
+        }> = [];
+        for (const id of songIds) {
+          try {
+            const song = await songService(ctx).getById(id);
+            const validation = validateChordProContent(song.content);
+            const metadataWarnings = mirroredMetadataWarnings({
+              title: song.title,
+              artist: song.artist,
+              song_number: song.song_number,
+              content: song.content,
+            });
+            results.push({
+              songId: id,
+              title: song.title,
+              ok: validation.ok && metadataWarnings.length === 0,
+              validation,
+              metadataWarnings,
+            });
+          } catch {
+            results.push({ songId: id, ok: false, missing: true });
+          }
+        }
+        return {
+          results,
+          okCount: results.filter((r) => r.ok).length,
+          failCount: results.filter((r) => !r.ok).length,
+        };
+      }),
   );
 
   server.registerTool(
@@ -539,7 +591,11 @@ export function registerSongTools(
       try {
         const ctx = requireMcpContext(authInfo);
         requireWriteEntitlement(ctx);
-        return await withClientRequestId(ctx.orgId, args.clientRequestId, async () => {
+        const { clientRequestId, ...payload } = args;
+        return await withClientRequestId(
+          ctx.orgId,
+          clientRequestId,
+          async () => {
           const validation = validateChordProContent(args.content);
           const metadataWarnings = mirroredMetadataWarnings({
             title: args.title,
@@ -554,7 +610,7 @@ export function registerSongTools(
             return jsonResult(
               {
                 error: true,
-                code: "validation",
+                code: "validation_error",
                 message:
                   metadataWarnings.length > 0
                     ? "Database metadata does not match ChordPro directives"
@@ -626,7 +682,9 @@ export function registerSongTools(
             }
             return errorResult(error, { current, field: "updatedAt" });
           }
-        });
+        },
+          payload,
+        );
       } catch (error) {
         return errorResult(error);
       }

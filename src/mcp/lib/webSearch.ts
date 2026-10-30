@@ -1,7 +1,7 @@
 /**
  * General web search for song metadata / reference links.
  * Prefers provider-native Search (DeepSeek) when org BYOK supports it;
- * otherwise DuckDuckGo HTML (no API key).
+ * otherwise DuckDuckGo HTML → Instant Answer API → Wikipedia OpenSearch.
  */
 
 import {
@@ -9,6 +9,7 @@ import {
   nativeWebSearch,
   providerSupportsNativeSearch,
 } from "./nativeWeb.js";
+import { ProviderError } from "./providerError.js";
 
 export type WebSearchHit = {
   title: string;
@@ -17,7 +18,11 @@ export type WebSearchHit = {
   summary?: string;
 };
 
-export type WebSearchProvider = "deepseek" | "duckduckgo";
+export type WebSearchProvider =
+  | "deepseek"
+  | "duckduckgo"
+  | "duckduckgo_ia"
+  | "wikipedia";
 
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -94,16 +99,27 @@ async function fetchDuckDuckGoHtml(query: string): Promise<string> {
     res = await fetch(url, { headers });
   }
 
+  if (res.status === 403 || res.status === 429) {
+    throw new ProviderError(
+      "duckduckgo",
+      `DuckDuckGo HTML search blocked (${res.status})`,
+      res.status === 429 ? "rate_limited" : "unavailable",
+      "Falling back to Instant Answer / Wikipedia.",
+    );
+  }
+
   if (!res.ok) {
-    throw new Error(
-      `DuckDuckGo error ${res.status}: HTML search blocked or unavailable. Retry shortly.`,
+    throw new ProviderError(
+      "duckduckgo",
+      `DuckDuckGo error ${res.status}: HTML search blocked or unavailable.`,
+      "unavailable",
     );
   }
 
   return res.text();
 }
 
-async function searchDuckDuckGo(
+async function searchDuckDuckGoHtml(
   query: string,
   limit: number,
 ): Promise<WebSearchHit[]> {
@@ -115,12 +131,200 @@ async function searchDuckDuckGo(
   }
 
   if (isDuckDuckGoChallenge(html)) {
-    throw new Error(
-      "DuckDuckGo bot challenge (403/202): rate-limited from this server. Wait a minute and retry, or use DeepSeek as the org AI provider (native Search).",
+    throw new ProviderError(
+      "duckduckgo",
+      "DuckDuckGo bot challenge (403/202): rate-limited from this server.",
+      "rate_limited",
+      "Use DeepSeek org AI Search, or rely on Instant Answer / Wikipedia fallback.",
     );
   }
 
   return parseDuckDuckGoHtml(html, limit);
+}
+
+/** Less-blocked JSON Instant Answer API (Abstract / RelatedTopics). */
+async function searchDuckDuckGoInstantAnswer(
+  query: string,
+  limit: number,
+): Promise<WebSearchHit[]> {
+  const url = new URL("https://api.duckduckgo.com/");
+  url.searchParams.set("q", query);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("no_html", "1");
+  url.searchParams.set("skip_disambig", "1");
+
+  const res = await fetch(url, {
+    headers: { Accept: "application/json", "User-Agent": BROWSER_UA },
+  });
+  if (!res.ok) {
+    throw new ProviderError(
+      "duckduckgo_ia",
+      `DuckDuckGo Instant Answer HTTP ${res.status}`,
+      res.status === 429 ? "rate_limited" : "unavailable",
+    );
+  }
+
+  const data = (await res.json()) as {
+    AbstractText?: string;
+    AbstractURL?: string;
+    Heading?: string;
+    RelatedTopics?: Array<
+      | { Text?: string; FirstURL?: string }
+      | { Topics?: Array<{ Text?: string; FirstURL?: string }> }
+    >;
+  };
+
+  const hits: WebSearchHit[] = [];
+  if (data.AbstractURL && (data.Heading || data.AbstractText)) {
+    hits.push({
+      title: data.Heading || query,
+      url: data.AbstractURL,
+      snippet: data.AbstractText?.slice(0, 280),
+    });
+  }
+
+  const pushTopic = (t: { Text?: string; FirstURL?: string }) => {
+    if (!t.FirstURL || !t.Text || hits.length >= limit) return;
+    hits.push({
+      title: t.Text.split(" - ")[0]?.trim() || t.Text.slice(0, 80),
+      url: t.FirstURL,
+      snippet: t.Text.slice(0, 280),
+    });
+  };
+
+  for (const topic of data.RelatedTopics ?? []) {
+    if ("FirstURL" in topic) pushTopic(topic);
+    if ("Topics" in topic && Array.isArray(topic.Topics)) {
+      for (const nested of topic.Topics) pushTopic(nested);
+    }
+  }
+
+  return hits.slice(0, limit);
+}
+
+async function searchWikipedia(
+  query: string,
+  limit: number,
+): Promise<WebSearchHit[]> {
+  const url = new URL("https://en.wikipedia.org/w/api.php");
+  url.searchParams.set("action", "opensearch");
+  url.searchParams.set("search", query);
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("namespace", "0");
+  url.searchParams.set("format", "json");
+
+  const res = await fetch(url, {
+    headers: { Accept: "application/json", "User-Agent": "HosannaMCP/2.20" },
+  });
+  if (!res.ok) {
+    throw new ProviderError(
+      "wikipedia",
+      `Wikipedia OpenSearch HTTP ${res.status}`,
+      "unavailable",
+    );
+  }
+
+  const data = (await res.json()) as [
+    string,
+    string[],
+    string[],
+    string[],
+  ];
+  const titles = data[1] ?? [];
+  const descriptions = data[2] ?? [];
+  const links = data[3] ?? [];
+  const hits: WebSearchHit[] = [];
+  for (let i = 0; i < titles.length && hits.length < limit; i++) {
+    const href = links[i];
+    if (!href) continue;
+    hits.push({
+      title: titles[i]!,
+      url: href,
+      snippet: descriptions[i] || undefined,
+    });
+  }
+  return hits;
+}
+
+type FallbackAttempt = {
+  provider: WebSearchProvider;
+  results: WebSearchHit[];
+  note?: string;
+};
+
+async function tryFallbackChain(
+  query: string,
+  limit: number,
+  priorNote?: string,
+): Promise<FallbackAttempt> {
+  const errors: string[] = [];
+
+  try {
+    const results = await searchDuckDuckGoHtml(query, limit);
+    if (results.length) {
+      return {
+        provider: "duckduckgo",
+        results,
+        note: priorNote,
+      };
+    }
+    errors.push("duckduckgo: empty");
+  } catch (e) {
+    errors.push(
+      `duckduckgo: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+
+  try {
+    const results = await searchDuckDuckGoInstantAnswer(query, limit);
+    if (results.length) {
+      return {
+        provider: "duckduckgo_ia",
+        results,
+        note: [
+          priorNote,
+          "Fell back to DuckDuckGo Instant Answer API.",
+          errors.length ? `Prior: ${errors.join("; ")}` : undefined,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      };
+    }
+    errors.push("duckduckgo_ia: empty");
+  } catch (e) {
+    errors.push(
+      `duckduckgo_ia: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+
+  try {
+    const results = await searchWikipedia(query, limit);
+    if (results.length) {
+      return {
+        provider: "wikipedia",
+        results,
+        note: [
+          priorNote,
+          "Fell back to Wikipedia OpenSearch.",
+          errors.length ? `Prior: ${errors.join("; ")}` : undefined,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      };
+    }
+    errors.push("wikipedia: empty");
+  } catch (e) {
+    errors.push(
+      `wikipedia: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+
+  throw new ProviderError(
+    "web_search",
+    `All web search providers failed: ${errors.join("; ")}`,
+    "unavailable",
+    "Try MusicBrainz / YouTube metadata tools, or enable DeepSeek Search for the org.",
+  );
 }
 
 export async function searchWeb(opts: {
@@ -135,6 +339,7 @@ export async function searchWeb(opts: {
   query: string;
   provider: WebSearchProvider;
   note?: string;
+  providersTried?: string[];
 }> {
   const query = opts.query?.trim();
   if (!query) {
@@ -161,44 +366,32 @@ export async function searchWeb(opts: {
         snippet: h.snippet ?? h.summary?.slice(0, 200),
         summary: h.summary,
       }));
-      return {
-        results,
-        query,
-        provider: provider === "deepseek" ? "deepseek" : "duckduckgo",
-        note: results.length
-          ? `Native ${provider} Search.`
-          : `Native ${provider} Search returned no results.`,
-      };
-    } catch (nativeErr) {
-      const nativeMessage =
-        nativeErr instanceof Error ? nativeErr.message : String(nativeErr);
-      try {
-        const results = await searchDuckDuckGo(query, limit);
+      if (results.length) {
         return {
           results,
           query,
-          provider: "duckduckgo",
-          note: results.length
-            ? `Native search failed (${nativeMessage}); fell back to DuckDuckGo.`
-            : `Native search failed (${nativeMessage}); DuckDuckGo also empty.`,
+          provider: provider === "deepseek" ? "deepseek" : "duckduckgo",
+          note: `Native ${provider} Search.`,
         };
-      } catch (ddgErr) {
-        const ddgMessage =
-          ddgErr instanceof Error ? ddgErr.message : String(ddgErr);
-        throw new Error(
-          `Web search failed — native: ${nativeMessage}; DuckDuckGo: ${ddgMessage}`,
-        );
       }
+      const fallback = await tryFallbackChain(
+        query,
+        limit,
+        `Native ${provider} Search returned no results.`,
+      );
+      return { query, ...fallback };
+    } catch (nativeErr) {
+      const nativeMessage =
+        nativeErr instanceof Error ? nativeErr.message : String(nativeErr);
+      const fallback = await tryFallbackChain(
+        query,
+        limit,
+        `Native search failed (${nativeMessage}).`,
+      );
+      return { query, ...fallback };
     }
   }
 
-  const results = await searchDuckDuckGo(query, limit);
-  return {
-    results,
-    query,
-    provider: "duckduckgo",
-    note: results.length
-      ? undefined
-      : "No DuckDuckGo results for this query.",
-  };
+  const fallback = await tryFallbackChain(query, limit);
+  return { query, ...fallback };
 }

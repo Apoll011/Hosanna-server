@@ -318,3 +318,38 @@ export function errorResult(
 ) {
   return jsonResult(mapToolError(error, opts), true);
 }
+
+/** Run a tool body, attach `_meta.durationMs`, and record in-process metrics. */
+export async function timedToolResult(
+  toolName: string,
+  run: () => Promise<unknown>,
+) {
+  const started = performance.now();
+  try {
+    const data = await run();
+    const durationMs =
+      Math.round((performance.now() - started) * 100) / 100;
+    const { recordToolTiming } = await import("./lib/toolMetrics.js");
+    recordToolTiming(toolName, durationMs, true);
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      return jsonResult({
+        ...(data as Record<string, unknown>),
+        _meta: { durationMs, tool: toolName },
+      });
+    }
+    return jsonResult({
+      result: data,
+      _meta: { durationMs, tool: toolName },
+    });
+  } catch (error) {
+    const durationMs =
+      Math.round((performance.now() - started) * 100) / 100;
+    const { recordToolTiming } = await import("./lib/toolMetrics.js");
+    recordToolTiming(toolName, durationMs, false);
+    const payload = mapToolError(error);
+    return jsonResult(
+      { ...payload, _meta: { durationMs, tool: toolName } },
+      true,
+    );
+  }
+}

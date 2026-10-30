@@ -11,6 +11,7 @@ import {
   requireWriteEntitlement,
   services as serviceService,
   songs as songService,
+  timedToolResult,
 } from "../context.js";
 import {
   collectionAddSongs,
@@ -96,8 +97,11 @@ export function registerLibraryTools(
       try {
         const ctx = requireMcpContext(authInfo);
         const { clientRequestId, ...createArgs } = args;
-        return await withClientRequestId(ctx.orgId, clientRequestId, async () =>
-          jsonResult(await createFolder(ctx, createArgs)),
+        return await withClientRequestId(
+          ctx.orgId,
+          clientRequestId,
+          async () => jsonResult(await createFolder(ctx, createArgs)),
+          createArgs,
         );
       } catch (error) {
         return errorResult(error);
@@ -216,8 +220,11 @@ export function registerLibraryTools(
       try {
         const ctx = requireMcpContext(authInfo);
         const { clientRequestId, ...createArgs } = args;
-        return await withClientRequestId(ctx.orgId, clientRequestId, async () =>
-          jsonResult(await createCollection(ctx, createArgs)),
+        return await withClientRequestId(
+          ctx.orgId,
+          clientRequestId,
+          async () => jsonResult(await createCollection(ctx, createArgs)),
+          createArgs,
         );
       } catch (error) {
         return errorResult(error);
@@ -407,8 +414,11 @@ export function registerLibraryTools(
       try {
         const ctx = requireMcpContext(authInfo);
         const { clientRequestId, ...createArgs } = args;
-        return await withClientRequestId(ctx.orgId, clientRequestId, async () =>
-          jsonResult(await createAgendaEvent(ctx, createArgs)),
+        return await withClientRequestId(
+          ctx.orgId,
+          clientRequestId,
+          async () => jsonResult(await createAgendaEvent(ctx, createArgs)),
+          createArgs,
         );
       } catch (error) {
         return errorResult(error);
@@ -574,6 +584,45 @@ export function registerLibraryTools(
   );
 
   server.registerTool(
+    "library_overview",
+    {
+      title: "Library overview",
+      description:
+        "Compact org library summary: folder/collection/song counts and trash totals — one round trip for orientation.",
+      inputSchema: z.object({}),
+    },
+    async () =>
+      timedToolResult("library_overview", async () => {
+        const ctx = requireMcpContext(authInfo);
+        requirePermission(ctx, "song.access");
+        const [folders, collections, songPage, trashedSongs, trashedFolders, trashedServices] =
+          await Promise.all([
+            listFolders(ctx),
+            listCollections(ctx),
+            songService(ctx).list({
+              page: 1,
+              limit: 1,
+              sortBy: "title",
+              sortOrder: "asc",
+            }),
+            songService(ctx).listTrashed(),
+            folderService(ctx).listTrashed(),
+            serviceService(ctx).listTrashed(),
+          ]);
+        return {
+          folders: { count: folders.count },
+          collections: { count: collections.count },
+          songs: { total: songPage.total },
+          trash: {
+            songs: trashedSongs.length,
+            folders: trashedFolders.length,
+            services: trashedServices.length,
+          },
+        };
+      }),
+  );
+
+  server.registerTool(
     "metadata_musicbrainz_search",
     {
       title: "Search MusicBrainz",
@@ -638,21 +687,16 @@ export function registerLibraryTools(
         oriQuestion: z.string().max(128).optional(),
       }),
     },
-    async (args) => {
-      try {
+    async (args) =>
+      timedToolResult("metadata_web_search", async () => {
         const nativeAuth = await nativeAuthForTools(authInfo);
-        return jsonResult(
-          await searchWeb({
-            query: args.query,
-            limit: args.limit,
-            oriQuestion: args.oriQuestion,
-            nativeAuth,
-          }),
-        );
-      } catch (error) {
-        return errorResult(error);
-      }
-    },
+        return searchWeb({
+          query: args.query,
+          limit: args.limit,
+          oriQuestion: args.oriQuestion,
+          nativeAuth,
+        });
+      }),
   );
 
   server.registerTool(
@@ -672,9 +716,13 @@ export function registerLibraryTools(
           !nativeAuth ||
           !providerSupportsNativeFetch(nativeAuth.provider)
         ) {
+          const { ProviderError } = await import("../lib/providerError.js");
           return errorResult(
-            new Error(
+            new ProviderError(
+              "native_web_fetch",
               "Native web fetch unavailable. Set org AI provider to DeepSeek (with API key) to enable Fetch.",
+              "unavailable",
+              "MusicBrainz / YouTube / web search may still work without Fetch.",
             ),
           );
         }
