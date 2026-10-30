@@ -9,6 +9,7 @@ import {
 } from "@hosanna/chordpro/parser";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import {
+  APICallError,
   convertToModelMessages,
   stepCountIs,
   streamText,
@@ -104,6 +105,7 @@ import {
 import { searchWeb } from "../mcp/lib/webSearch.js";
 import { searchYouTube } from "../mcp/lib/youtubeSearch.js";
 import { clockContextPromptBlock } from "../lib/clockContext.js";
+import { AppError } from "../utils/errors.js";
 
 const folderIconSchema = z.enum(FOLDER_ICON_IDS);
 const folderColorSchema = z.enum(FOLDER_COLOR_IDS);
@@ -205,6 +207,38 @@ function deleteConfirmation(opts: {
   };
 }
 
+const MAX_BATCH = 25;
+
+/**
+ * Run many small mutations in one tool call (sequentially, so ordering and
+ * per-item errors are predictable). One failing item never aborts the rest.
+ */
+export async function runBatch<I>(
+  items: I[],
+  fn: (item: I) => Promise<object>,
+): Promise<{
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: Array<Record<string, unknown>>;
+}> {
+  const results: Array<Record<string, unknown>> = [];
+  for (let index = 0; index < items.length; index++) {
+    try {
+      results.push({ index, ok: true, ...(await fn(items[index])) });
+    } catch (error) {
+      results.push({ index, ok: false, ...mapToolError(error) });
+    }
+  }
+  const failed = results.filter((r) => r.ok === false).length;
+  return {
+    total: items.length,
+    succeeded: items.length - failed,
+    failed,
+    results,
+  };
+}
+
 function buildHosannaTools(
   authInfo: AuthInfo,
   opts?: { nativeWebAuth?: NativeWebAuth | null },
@@ -277,6 +311,7 @@ function buildHosannaTools(
             ],
             library: [
               "folders CRUD+restore",
+              "folders_create_many / folders_update_many / collections_update_many (batch)",
               "collections CRUD+songs",
               "agenda CRUD+responsibilities",
               "trash_list",
@@ -496,7 +531,7 @@ function buildHosannaTools(
     }),
     folders_create: tool({
       description:
-        "Create a folder. color/icon must be Studio ids (see hosanna_capabilities.studioUi or hosanna://domain/library). Then call studio_sync.",
+        "Create a folder. color/icon must be Studio ids (see hosanna_capabilities.studioUi or hosanna://domain/library). Studio refreshes automatically after this (do NOT call studio_sync).",
       inputSchema: z.object({
         name: z.string().min(1),
         parentId: z.string().nullable().optional(),
@@ -508,7 +543,7 @@ function buildHosannaTools(
     }),
     folders_update: tool({
       description:
-        "Rename/move/recolor a folder. Requires updatedAt. color/icon = Studio ids only (hosanna://domain/library). Use icon=default to reset. Then call studio_sync.",
+        "Rename/move/recolor a folder. Requires updatedAt. color/icon = Studio ids only (hosanna://domain/library). Use icon=default to reset. Studio refreshes automatically after this (do NOT call studio_sync).",
       inputSchema: z.object({
         folderId: z.string(),
         updatedAt: z.string(),
@@ -519,6 +554,84 @@ function buildHosannaTools(
       }),
       execute: async (args) =>
         textResult(await updateFolder(requireMcpContext(authInfo), args)),
+    }),
+    folders_create_many: tool({
+      description: `Create up to ${MAX_BATCH} folders in ONE call (prefer this over repeated folders_create). Same color/icon rules as folders_create. Per-item results; Studio refreshes automatically.`,
+      inputSchema: z.object({
+        folders: z
+          .array(
+            z.object({
+              name: z.string().min(1),
+              parentId: z.string().nullable().optional(),
+              color: folderColorSchema.optional(),
+              icon: folderIconSchema.optional(),
+            }),
+          )
+          .min(1)
+          .max(MAX_BATCH),
+      }),
+      execute: async ({ folders }) => {
+        const ctx = requireMcpContext(authInfo);
+        return textResult(await runBatch(folders, (f) => createFolder(ctx, f)));
+      },
+    }),
+    folders_update_many: tool({
+      description: `Rename/move/recolor up to ${MAX_BATCH} folders in ONE call (prefer this over repeated folders_update when changing several folders). Each item needs folderId + updatedAt (from folders_list). Per-item results; Studio refreshes automatically.`,
+      inputSchema: z.object({
+        updates: z
+          .array(
+            z.object({
+              folderId: z.string(),
+              updatedAt: z.string(),
+              name: z.string().min(1).optional(),
+              parentId: z.string().nullable().optional(),
+              color: folderColorSchema.optional(),
+              icon: folderIconSchema.optional(),
+            }),
+          )
+          .min(1)
+          .max(MAX_BATCH),
+      }),
+      execute: async ({ updates }) => {
+        const ctx = requireMcpContext(authInfo);
+        return textResult(await runBatch(updates, (u) => updateFolder(ctx, u)));
+      },
+    }),
+    collections_update_many: tool({
+      description: `Update metadata (name/description/color/icon) of up to ${MAX_BATCH} collections in ONE call. Each item needs collectionId + updatedAt. Per-item results; Studio refreshes automatically.`,
+      inputSchema: z.object({
+        updates: z
+          .array(
+            z.object({
+              collectionId: z.string(),
+              updatedAt: z.string(),
+              name: z.string().min(1).optional(),
+              description: z.string().nullable().optional(),
+              color: folderColorSchema.optional(),
+              icon: folderIconSchema.optional(),
+            }),
+          )
+          .min(1)
+          .max(MAX_BATCH),
+      }),
+      execute: async ({ updates }) => {
+        const ctx = requireMcpContext(authInfo);
+        return textResult(
+          await runBatch(updates, (u) => updateCollection(ctx, u)),
+        );
+      },
+    }),
+    suggest_followups: tool({
+      description:
+        "Studio chat UI only: show 2-3 short clickable follow-up prompts under your final answer (same language as the user). Call at most once, as the LAST tool call of a turn, only when natural next steps exist. Never use it for questions you need answered.",
+      inputSchema: z.object({
+        options: z
+          .array(z.string().min(2).max(80))
+          .min(1)
+          .max(4)
+          .describe("Short imperative prompts the user can click to send."),
+      }),
+      execute: async ({ options }) => textResult({ shown: options.length }),
     }),
     studio_sync: tool({
       description:
@@ -861,7 +974,7 @@ function buildHosannaTools(
     }),
     collections_create: tool({
       description:
-        "Create a song collection. color/icon = Studio ids (hosanna://domain/library). Then call studio_sync.",
+        "Create a song collection. color/icon = Studio ids (hosanna://domain/library). Studio refreshes automatically after this (do NOT call studio_sync).",
       inputSchema: z.object({
         name: z.string().min(1),
         description: z.string().optional(),
@@ -874,7 +987,7 @@ function buildHosannaTools(
     }),
     collections_update: tool({
       description:
-        "Update collection metadata. Requires updatedAt. color/icon = Studio ids. Then call studio_sync.",
+        "Update collection metadata. Requires updatedAt. color/icon = Studio ids. Studio refreshes automatically after this (do NOT call studio_sync).",
       inputSchema: z.object({
         collectionId: z.string(),
         updatedAt: z.string(),
@@ -2082,7 +2195,7 @@ function buildHosannaTools(
  * Studio chat system — intentionally shorter than MCP host instructions.
  * Avoids mandatory skill/resource loading that burns tokens on trivial edits.
  */
-const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church song libraries and service planning.
+const STUDIO_CHAT_SYSTEM = `You are Logos, the friendly AI assistant inside Hosanna Studio chat, for church song libraries and service planning. Stay warm, concise and practical.
 
 ## Style (strict)
 - Be brief. Prefer doing over asking. One short sentence + tools beats essays.
@@ -2092,7 +2205,9 @@ const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church son
 - For clear requests (transpose to D, repeat a section 2×, duplicate last verse, fix chords, complete metadata, create folder/event), act immediately with a sensible default. Ask at most ONE question only when blocked.
 - Do not offer multiple options when the user already chose (e.g. "transpose into D").
 - ChordPro/song content edits: use propose tools (prefer songs_propose_transpose / songs_propose_edit). Studio stages Accept/Decline in the editor. After Accept, the user saves in the editor — only call songs_save / services_save if they explicitly ask to persist via chat/MCP.
-- Library structural edits (folders, collections, agenda create/update, move song, add songs to collection): do them with tools when the request is clear. After those mutations, call \`studio_sync\` so the explorer refreshes immediately.
+- Library structural edits (folders, collections, agenda create/update, move song, add songs to collection): do them with tools when the request is clear. Studio refreshes the explorer automatically after mutations — do NOT call \`studio_sync\`.
+- Changing several folders/collections at once: use \`folders_update_many\` / \`folders_create_many\` / \`collections_update_many\` in ONE call instead of many single calls. Items fail independently — report any failed index honestly.
+- At the end of a turn, when natural next steps exist, you MAY call \`suggest_followups\` once (last tool call) with 2-3 short clickable prompts. Never use it for questions you need answered; do not repeat them in the text.
 - Folder/collection \`icon\` and \`color\` must be Studio ids only (see hosanna_capabilities.studioUi or hosanna://domain/library). Never invent Lucide names. Use \`icon=default\` / \`color=default\` to reset.
 - Deletes (songs/services/folders/collections/agenda): call the matching \`*_delete\` tool immediately when the user asks to delete — it only STAGES a Confirm button in Studio and does not delete. Do NOT ask for chat confirmation ("are you sure?") and do NOT claim the item is deleted until the user clicks Confirm. If they already confirmed in chat, still only stage the button.
 - When the user says "repeat" / "2x" a verse or chorus: duplicate that section's body in the ChordPro (or add \`{c: 2x}\` if they ask for a note only). Prefer physical duplication when they ask to "write a copy".
@@ -2107,7 +2222,7 @@ const STUDIO_CHAT_SYSTEM = `You are Hosanna AI in the Studio chat for church son
 - Collections: list/get/create/update/delete, add_songs/remove_songs (same icon/color ids)
 - Agenda: list/get/create/update/delete — set responsibilities with real memberIds (not only notes on service elements)
 - Services: services_search supports archived / includeArchived (rows include archived flag)
-- Studio-only UX: studio_sync, studio_navigate (open pages), studio_generate_pdf (print modal), studio_search (global find across library)
+- Studio-only UX: studio_navigate (open pages), studio_generate_pdf (print modal), studio_search (global find across library), suggest_followups (clickable chips)
 - Metadata: MusicBrainz, YouTube (for \`{youtube:}\`), DuckDuckGo web search; ChordPro validate/format/transpose/convert/propagate
 - When completing metadata: MusicBrainz for title/artist/release; YouTube search for \`{youtube: URL}\` (use hits[].directive); web search for extra confirmation. If \`metadata_web_fetch\` is available (DeepSeek org AI), use it to read CCLI/artist pages or Cifra URLs blocked by Akamai. Call metadata tools one at a time (MusicBrainz rate-limits parallel bursts with 503). If a tool returns 403/503, report the structured error — do not claim success. Propose the ChordPro edit — do not invent lyrics.
 - Unknown Studio UI constants (icons, colors, etc.): call hosanna_capabilities or hosanna_resource_read on hosanna://domain/library — do not guess.
@@ -2151,6 +2266,50 @@ ${excerpt ? `\n### Content excerpt${page.contentTruncated ? " (truncated)" : ""}
 `;
 }
 
+/** Max model↔tool round trips per reply (the UI offers "Continue" if hit). */
+export const CHAT_MAX_STEPS = 12;
+
+const LOCALE_NAMES: Record<string, string> = {
+  pt: "European Portuguese (pt-PT)",
+  en: "English",
+  es: "Spanish",
+};
+
+export function localePromptBlock(locale?: string): string {
+  const name = locale ? LOCALE_NAMES[locale] : undefined;
+  if (!name) return "";
+  return `
+
+## Language
+The user's Studio language is ${name}. Reply in that language unless the user writes in another one. Keep ChordPro directives, ids and tool arguments in their canonical form.
+`;
+}
+
+/**
+ * Safe, user-facing message for a stream error. Provider internals (URLs,
+ * request bodies, keys) are never forwarded.
+ */
+export function describeChatError(error: unknown): string {
+  if (error instanceof AppError) return error.message;
+  if (APICallError.isInstance(error)) {
+    const status = error.statusCode;
+    if (status === 401 || status === 403) {
+      return "The AI provider rejected the API key. Check the AI settings for this organization.";
+    }
+    if (status === 404) {
+      return "The configured AI model was not found. Check the model name in AI settings.";
+    }
+    if (status === 429) {
+      return "The AI provider is rate-limiting requests. Wait a moment and try again.";
+    }
+    if (status && status >= 500) {
+      return "The AI provider is temporarily unavailable. Please try again.";
+    }
+    return "The AI provider could not process this request.";
+  }
+  return "Something went wrong while generating the reply. Please try again.";
+}
+
 export class AiChatService {
   private config = new OrgAiConfigService();
 
@@ -2159,6 +2318,8 @@ export class AiChatService {
     authInfo: AuthInfo;
     messages: UIMessage[];
     pageContext?: ChatPageContext;
+    locale?: string;
+    abortSignal?: AbortSignal;
   }) {
     const runtime = await this.config.getRuntimeConfig(opts.orgId);
     const model = buildModel(
@@ -2171,16 +2332,21 @@ export class AiChatService {
     const tools = buildHosannaTools(opts.authInfo, { nativeWebAuth });
     const system =
       STUDIO_CHAT_SYSTEM +
+      localePromptBlock(opts.locale) +
       clockContextPromptBlock() +
       contextBlock(opts.pageContext);
     const modelMessages = await convertToModelMessages(opts.messages);
 
-    return streamText({
-      model,
-      system,
-      messages: modelMessages as ModelMessage[],
-      tools,
-      stopWhen: stepCountIs(8),
-    });
+    return {
+      model: { provider: runtime.provider, id: runtime.model },
+      result: streamText({
+        model,
+        system,
+        messages: modelMessages as ModelMessage[],
+        tools,
+        stopWhen: stepCountIs(CHAT_MAX_STEPS),
+        abortSignal: opts.abortSignal,
+      }),
+    };
   }
 }

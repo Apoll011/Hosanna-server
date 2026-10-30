@@ -14,7 +14,10 @@ import {
   deleteCollection,
   deleteFolder,
 } from "../mcp/lib/libraryCrud.js";
-import { AiChatService } from "../services/aiChat.service.js";
+import {
+  AiChatService,
+  describeChatError,
+} from "../services/aiChat.service.js";
 import { OrgAiConfigService } from "../services/orgAiConfig.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { AppError } from "../utils/errors.js";
@@ -127,16 +130,50 @@ aiRouter.post(
 
     const { authInfo } = await authInfoFromRequest(req);
     const messages = req.body.messages as UIMessage[];
-    const result = await chat.streamChat({
+
+    // Stop the model + tools as soon as the client goes away (Stop button,
+    // closed tab) instead of burning tokens on an unread stream.
+    const abort = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) abort.abort();
+    });
+
+    const startedAt = Date.now();
+    const { model, result } = await chat.streamChat({
       orgId: req.orgId,
       authInfo,
       messages,
       pageContext: req.body.context,
+      locale: req.body.locale,
+      abortSignal: abort.signal,
     });
 
     // UI message stream compatible with @ai-sdk/react useChat
     const response = result.toUIMessageStreamResponse({
       originalMessages: messages,
+      sendReasoning: true,
+      onError: (error) => {
+        if (!abort.signal.aborted) console.error("AI chat stream error:", error);
+        return describeChatError(error);
+      },
+      messageMetadata: ({ part }) => {
+        if (part.type === "start") {
+          return { model: model.id, provider: model.provider };
+        }
+        if (part.type === "finish") {
+          return {
+            finishReason: part.finishReason,
+            // Step budget exhausted while the model still wanted tools.
+            truncated: part.finishReason === "tool-calls",
+            durationMs: Date.now() - startedAt,
+            usage: {
+              inputTokens: part.totalUsage.inputTokens,
+              outputTokens: part.totalUsage.outputTokens,
+            },
+          };
+        }
+        return undefined;
+      },
     });
 
     // Pipe Web Response → Express
@@ -152,6 +189,9 @@ aiRouter.post(
     }
 
     const reader = response.body.getReader();
+    res.on("close", () => {
+      reader.cancel().catch(() => undefined);
+    });
     try {
       while (true) {
         const { done, value } = await reader.read();
@@ -161,10 +201,11 @@ aiRouter.post(
       res.end();
     } catch (err) {
       try {
-        reader.cancel();
+        await reader.cancel();
       } catch {
         /* ignore */
       }
+      if (abort.signal.aborted) return;
       if (!res.headersSent) throw err;
       res.end();
     }

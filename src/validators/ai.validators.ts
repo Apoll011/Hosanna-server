@@ -57,10 +57,21 @@ export const aiChatContextSchema = z
   .passthrough()
   .optional();
 
-export const aiChatBodySchema = z.object({
-  messages: z.array(z.any()).min(1),
-  context: aiChatContextSchema,
-});
+/** Hard caps so a runaway client cannot send unbounded history. */
+export const AI_CHAT_MAX_MESSAGES = 200;
+export const AI_CHAT_MAX_BODY_CHARS = 1_500_000;
+
+export const aiChatBodySchema = z
+  .object({
+    messages: z.array(z.any()).min(1).max(AI_CHAT_MAX_MESSAGES),
+    context: aiChatContextSchema,
+    /** Studio UI language so the model replies in it. */
+    locale: z.enum(["pt", "en", "es"]).optional(),
+  })
+  .refine(
+    (body) => JSON.stringify(body.messages).length <= AI_CHAT_MAX_BODY_CHARS,
+    { message: "Conversation is too large. Start a new chat.", path: ["messages"] },
+  );
 
 /** Execute a Studio-staged destructive confirmation (after user clicks Confirm). */
 export const aiConfirmActionSchema = z.object({
