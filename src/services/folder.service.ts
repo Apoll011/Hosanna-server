@@ -73,12 +73,14 @@ export class FolderService {
     if (parentId) {
       this.folderRepo.touch(parentId);
     }
+    // Org-scoped create injects orgId → Prisma UncheckedCreateInput requires
+    // scalar parentId (not parent: { connect }).
     return this.folderRepo.create({
       id: uuid(),
       name: name.trim(),
       color: color ?? "default",
       icon: icon ?? "default",
-      parent: parentId ? { connect: { id: parentId } } : undefined,
+      parentId: parentId ?? null,
     });
   }
 
@@ -101,13 +103,8 @@ export class FolderService {
       name: name ?? undefined,
       color: color ?? undefined,
       icon: icon ?? undefined,
-      parent:
-        parentId !== undefined
-          ? parentId
-            ? { connect: { id: parentId } }
-            : { disconnect: true }
-          : undefined,
-    });
+      ...(parentId !== undefined ? { parentId } : {}),
+    } as Parameters<FolderRepository["update"]>[1]);
 
     if (name && name !== current.name) {
       const songs = await this.songRepo.findManyByFolder(id);

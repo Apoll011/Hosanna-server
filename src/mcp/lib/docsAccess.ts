@@ -98,7 +98,13 @@ export const DOC_RESOURCES: Array<{
   title: string;
   kind: "markdown" | "json" | "chordpro";
   relativePath?: string;
-  builtin?: "directives" | "features" | "ops-catalog";
+  builtin?:
+    | "directives"
+    | "features"
+    | "ops-catalog"
+    | "schema-song"
+    | "schema-service"
+    | "schema-service-element-types";
 }> = [
   {
     uri: "hosanna://chordpro/guide",
@@ -159,6 +165,24 @@ export const DOC_RESOURCES: Array<{
     title: "Ops catalog",
     kind: "json",
     builtin: "ops-catalog",
+  },
+  {
+    uri: "hosanna://schemas/song",
+    title: "Song schema",
+    kind: "json",
+    builtin: "schema-song",
+  },
+  {
+    uri: "hosanna://schemas/service",
+    title: "Service schema",
+    kind: "json",
+    builtin: "schema-service",
+  },
+  {
+    uri: "hosanna://schemas/service-element-types",
+    title: "Service element types",
+    kind: "json",
+    builtin: "schema-service-element-types",
   },
 ];
 

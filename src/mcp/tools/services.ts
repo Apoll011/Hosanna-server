@@ -10,6 +10,7 @@ import {
   services as serviceService,
   songs as songService,
 } from "../context.js";
+import { durationSecondsFromChordPro } from "../lib/chordproGate.js";
 import { withClientRequestId } from "../lib/idempotency.js";
 import { validateServicePlan } from "../lib/serviceElements.js";
 import {
@@ -466,19 +467,21 @@ export function registerServiceTools(
               ? `Welcome — theme: ${args.theme}`
               : "Welcome",
             position: position++,
-            duration: 5,
+            duration: 60,
           });
         }
 
         for (const song of picked) {
+          const fromDirective = durationSecondsFromChordPro(song.content);
           elements.push({
             id: randomUUID(),
             type: "song",
             title: song.title,
             songId: song.id,
-            content: song.artist,
+            // Prefer notes for artist — content is user-authored text.
+            notes: song.artist || undefined,
             position: position++,
-            duration: 5,
+            duration: fromDirective ?? 210,
           });
         }
 
@@ -489,7 +492,7 @@ export function registerServiceTools(
             title: "Message",
             content: args.theme ? `Message on: ${args.theme}` : "Message",
             position: position++,
-            duration: 30,
+            duration: 1500,
           });
         }
 

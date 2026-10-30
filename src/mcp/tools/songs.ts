@@ -11,6 +11,7 @@ import {
 } from "../context.js";
 import {
   metadataFromChordPro,
+  mirroredMetadataWarnings,
   validateChordProContent,
 } from "../lib/chordproGate.js";
 import {
@@ -276,17 +277,28 @@ export function registerSongTools(
           `{title: ${args.title}}\n{artist: ${args.artist || "Unknown"}}\n{key: G}\n\n`;
         const meta = metadataFromChordPro(content);
         const validation = validateChordProContent(content);
+        const proposal = {
+          title: args.title || meta.title || "Untitled",
+          artist: args.artist ?? meta.artist ?? "Unknown",
+          content,
+          folderId: args.folderId ?? null,
+          tags: args.tags ?? [],
+          song_number: args.song_number ?? meta.song_number ?? null,
+        };
+        const metadataWarnings = mirroredMetadataWarnings({
+          title: proposal.title,
+          artist: proposal.artist,
+          song_number: proposal.song_number,
+          content,
+        });
         return jsonResult({
-          proposal: {
-            title: args.title || meta.title || "Untitled",
-            artist: args.artist ?? meta.artist ?? "Unknown",
-            content,
-            folderId: args.folderId ?? null,
-            tags: args.tags ?? [],
-            song_number: args.song_number ?? meta.song_number ?? null,
+          proposal,
+          validation: {
+            ...validation,
+            ok: validation.ok && metadataWarnings.length === 0,
+            metadataWarnings,
           },
-          validation,
-          next: "Call songs_save with mode=create after user approval.",
+          next: "Call songs_save with mode=create after user approval. Align DB title/artist with ChordPro directives (or sync content) before saving.",
         });
       } catch (error) {
         return errorResult(error);
@@ -529,15 +541,30 @@ export function registerSongTools(
         requireWriteEntitlement(ctx);
         return await withClientRequestId(ctx.orgId, args.clientRequestId, async () => {
           const validation = validateChordProContent(args.content);
-          if (!validation.ok && !args.allowInvalid) {
+          const metadataWarnings = mirroredMetadataWarnings({
+            title: args.title,
+            artist: args.artist,
+            song_number: args.song_number,
+            content: args.content,
+          });
+          if (
+            (!validation.ok || metadataWarnings.length > 0) &&
+            !args.allowInvalid
+          ) {
             return jsonResult(
               {
                 error: true,
                 code: "validation",
-                message: "ChordPro validation failed",
+                message:
+                  metadataWarnings.length > 0
+                    ? "Database metadata does not match ChordPro directives"
+                    : "ChordPro validation failed",
                 retryable: false,
-                validation,
-                hint: "Fix issues or set allowInvalid=true after user confirmation.",
+                validation: { ...validation, metadataWarnings },
+                hint:
+                  metadataWarnings.length > 0
+                    ? "Align title/artist/song_number with ChordPro (or set allowInvalid=true after user confirmation)."
+                    : "Fix issues or set allowInvalid=true after user confirmation.",
               },
               true,
             );
@@ -556,7 +583,7 @@ export function registerSongTools(
             return jsonResult({
               saved: true,
               song: serializeSong(created),
-              validation,
+              validation: { ...validation, metadataWarnings },
             });
           }
 
@@ -588,7 +615,7 @@ export function registerSongTools(
             return jsonResult({
               saved: true,
               song: serializeSong(updated),
-              validation,
+              validation: { ...validation, metadataWarnings },
             });
           } catch (error) {
             let current: unknown;

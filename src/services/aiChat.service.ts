@@ -41,7 +41,9 @@ import {
   SKILL_NAMES,
 } from "../mcp/lib/docsAccess.js";
 import {
+  durationSecondsFromChordPro,
   metadataFromChordPro,
+  mirroredMetadataWarnings,
   validateChordProContent,
 } from "../mcp/lib/chordproGate.js";
 import {
@@ -1381,6 +1383,12 @@ function buildHosannaTools(
         const content =
           args.content?.trim() ||
           `{title: ${args.title}}\n{artist: ${args.artist || "Unknown"}}\n{key: G}\n\n`;
+        const validation = validateChordProContent(content);
+        const metadataWarnings = mirroredMetadataWarnings({
+          title: args.title,
+          artist: args.artist ?? "Unknown",
+          content,
+        });
         return textResult({
           proposal: {
             title: args.title,
@@ -1389,7 +1397,11 @@ function buildHosannaTools(
             tags: args.tags ?? [],
             folderId: args.folderId ?? null,
           },
-          validation: validateChordProContent(content),
+          validation: {
+            ...validation,
+            ok: validation.ok && metadataWarnings.length === 0,
+            metadataWarnings,
+          },
         });
       },
     }),
@@ -1534,10 +1546,24 @@ function buildHosannaTools(
         return textResult(
           await withClientRequestId(ctx.orgId, args.clientRequestId, async () => {
             const validation = validateChordProContent(args.content);
-            if (!validation.ok && !args.allowInvalid) {
-              return mapToolError(new Error("Validation failed"), {
-                current: { validation },
-              });
+            const metadataWarnings = mirroredMetadataWarnings({
+              title: args.title,
+              artist: args.artist,
+              song_number: args.song_number,
+              content: args.content,
+            });
+            if (
+              (!validation.ok || metadataWarnings.length > 0) &&
+              !args.allowInvalid
+            ) {
+              return mapToolError(
+                new Error(
+                  metadataWarnings[0] ?? "Validation failed",
+                ),
+                {
+                  current: { validation: { ...validation, metadataWarnings } },
+                },
+              );
             }
             if (args.mode === "create") {
               requirePermission(ctx, "song.create");
@@ -1836,14 +1862,16 @@ function buildHosannaTools(
             title: "Welcome",
             content: args.theme ? `Theme: ${args.theme}` : "Welcome",
             position: 0,
+            duration: 60,
           },
           ...picked.map((s, i) => ({
             id: randomUUID(),
             type: "song" as const,
             title: s.title,
             songId: s.id,
-            content: s.artist,
+            notes: s.artist || undefined,
             position: i + 1,
+            duration: durationSecondsFromChordPro(s.content) ?? 210,
           })),
           {
             id: randomUUID(),
@@ -1851,6 +1879,7 @@ function buildHosannaTools(
             title: "Message",
             content: args.theme ?? "Message",
             position: picked.length + 1,
+            duration: 1500,
           },
         ];
         return textResult({

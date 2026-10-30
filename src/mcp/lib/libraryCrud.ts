@@ -352,8 +352,13 @@ export async function collectionAddSongs(
     where: { id: args.collectionId },
     data: {
       songs: { connect: args.songIds.map((id) => ({ id })) },
+      // Touch updatedAt so clients/concurrency see membership changes.
+      updatedAt: new Date(),
     },
-    include: { songs: { select: { id: true } }, _count: { select: { songs: true } } },
+    include: {
+      songs: { select: { id: true } },
+      _count: { select: { songs: true } },
+    },
   });
   syncCache.invalidate(ctx.orgId, "collections");
   return { updated: true, collection: serializeCollection(updated) };
@@ -373,8 +378,12 @@ export async function collectionRemoveSongs(
     where: { id: args.collectionId },
     data: {
       songs: { disconnect: args.songIds.map((id) => ({ id })) },
+      updatedAt: new Date(),
     },
-    include: { songs: { select: { id: true } }, _count: { select: { songs: true } } },
+    include: {
+      songs: { select: { id: true } },
+      _count: { select: { songs: true } },
+    },
   });
   syncCache.invalidate(ctx.orgId, "collections");
   return { updated: true, collection: serializeCollection(updated) };

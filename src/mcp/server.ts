@@ -11,10 +11,12 @@ import { registerLibraryTools } from "./tools/library.js";
 import { registerOrgTools } from "./tools/org.js";
 import { registerServiceTools } from "./tools/services.js";
 import { registerSongTools } from "./tools/songs.js";
+import { registerStudioTools } from "./tools/studio.js";
+import { HOSANNA_MCP_VERSION } from "./version.js";
 
 export const MCP_SERVER_INFO = {
   name: "hosanna",
-  version: "1.0.0",
+  version: HOSANNA_MCP_VERSION,
 } as const;
 
 /** Build a fresh MCP server instance for one request / stdio connection. */
@@ -29,6 +31,7 @@ export function createHosannaMcpServer(authInfo?: AuthInfo): McpServer {
   registerSongTools(server, authInfo);
   registerServiceTools(server, authInfo);
   registerLibraryTools(server, authInfo);
+  registerStudioTools(server, authInfo);
   registerResources(server, authInfo);
   registerSystemPrompts(server);
   registerSongPrompts(server);

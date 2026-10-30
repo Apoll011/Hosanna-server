@@ -14,6 +14,20 @@ import {
 } from "../lib/docsAccess.js";
 import { STUDIO_UI_CATALOG } from "../lib/studioUi.js";
 import { errorResult, getMcpContext, jsonResult } from "../context.js";
+import { HOSANNA_MCP_VERSION } from "../version.js";
+import { createSongSchema } from "../../validators/song.validators.js";
+import { createServiceSchema } from "../../validators/service.validators.js";
+import {
+  serviceElementSchema,
+  serviceElementTypeSchema,
+} from "../../validators/serviceElement.validators.js";
+
+function zToRoughJson(schema: { description?: string; _def?: unknown }) {
+  return {
+    description: schema.description ?? null,
+    def: schema._def ?? null,
+  };
+}
 
 const SONG_PERMS: PermissionString[] = [
   "song.access",
@@ -45,7 +59,7 @@ export function registerDiscoveryTools(
       try {
         const chordpro = getChordProCapabilities();
         return jsonResult({
-          server: { name: "hosanna", version: "1.0.0" },
+          server: { name: "hosanna", version: HOSANNA_MCP_VERSION },
           tools: {
             discovery: [
               "hosanna_capabilities",
@@ -118,23 +132,9 @@ export function registerDiscoveryTools(
               "metadata_web_search",
               "metadata_web_fetch",
             ],
+            studio: ["studio_sync"],
           },
-          resources: [
-            "hosanna://chordpro/guide",
-            "hosanna://chordpro/directives",
-            "hosanna://chordpro/features",
-            "hosanna://chordpro/examples/valid",
-            "hosanna://chordpro/examples/variants",
-            "hosanna://chordpro/examples/grids",
-            "hosanna://schemas/song",
-            "hosanna://schemas/service",
-            "hosanna://schemas/service-element-types",
-            "hosanna://ops/catalog",
-            "hosanna://domain/songs",
-            "hosanna://domain/services",
-            "hosanna://domain/library",
-            "hosanna://skills/{name}",
-          ],
+          resources: listResources().map((r) => r.uri),
           prompts: {
             system: ["hosanna_system"],
             songs: [
@@ -331,6 +331,54 @@ export function registerDiscoveryTools(
                 tools: "see hosanna_capabilities",
                 resources: listResources(),
                 skills: SKILL_NAMES,
+              },
+              null,
+              2,
+            ),
+          });
+        }
+        if (trimmed === "hosanna://schemas/song") {
+          return jsonResult({
+            uri: trimmed,
+            mimeType: "application/json",
+            text: JSON.stringify(zToRoughJson(createSongSchema), null, 2),
+          });
+        }
+        if (trimmed === "hosanna://schemas/service") {
+          return jsonResult({
+            uri: trimmed,
+            mimeType: "application/json",
+            text: JSON.stringify(
+              {
+                service: zToRoughJson(createServiceSchema),
+                element: zToRoughJson(serviceElementSchema),
+              },
+              null,
+              2,
+            ),
+          });
+        }
+        if (trimmed === "hosanna://schemas/service-element-types") {
+          return jsonResult({
+            uri: trimmed,
+            mimeType: "application/json",
+            text: JSON.stringify(
+              {
+                types: serviceElementTypeSchema.options,
+                fields: {
+                  song: ["id", "type", "title", "songId", "duration", "notes"],
+                  scripture: [
+                    "id",
+                    "type",
+                    "title",
+                    "passage",
+                    "content",
+                    "duration",
+                    "notes",
+                  ],
+                  other: ["id", "type", "title", "content", "duration", "notes"],
+                },
+                durationUnit: "seconds",
               },
               null,
               2,

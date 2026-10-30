@@ -85,11 +85,20 @@ export function registerLibraryTools(
         parentId: z.string().uuid().nullable().optional(),
         color: folderColorSchema.optional(),
         icon: folderIconSchema.optional(),
+        clientRequestId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Idempotency key — retries return the same result"),
       }),
     },
     async (args) => {
       try {
-        return jsonResult(await createFolder(requireMcpContext(authInfo), args));
+        const ctx = requireMcpContext(authInfo);
+        const { clientRequestId, ...createArgs } = args;
+        return await withClientRequestId(ctx.orgId, clientRequestId, async () =>
+          jsonResult(await createFolder(ctx, createArgs)),
+        );
       } catch (error) {
         return errorResult(error);
       }
@@ -196,12 +205,19 @@ export function registerLibraryTools(
         color: folderColorSchema.optional(),
         icon: folderIconSchema.optional(),
         songIds: z.array(z.string().uuid()).optional(),
+        clientRequestId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Idempotency key — retries return the same result"),
       }),
     },
     async (args) => {
       try {
-        return jsonResult(
-          await createCollection(requireMcpContext(authInfo), args),
+        const ctx = requireMcpContext(authInfo);
+        const { clientRequestId, ...createArgs } = args;
+        return await withClientRequestId(ctx.orgId, clientRequestId, async () =>
+          jsonResult(await createCollection(ctx, createArgs)),
         );
       } catch (error) {
         return errorResult(error);

@@ -350,9 +350,11 @@ export class SongService {
     if (folderId) {
       this.folderRepo.touch(folderId);
     }
+    const path =
+      newPath ?? (await this.computePath(current.title, folderId));
     return this.songRepo.update(id, {
       folder: folderId ? { connect: { id: folderId } } : { disconnect: true },
-      path: newPath ?? current.path,
+      path,
     });
   }
 }

@@ -53,3 +53,73 @@ export function metadataFromChordPro(content: string): {
     song_number,
   };
 }
+
+function normMeta(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+/**
+ * Warn when DB fields diverge from ChordPro directives (Studio syncs these on save).
+ */
+export function mirroredMetadataWarnings(args: {
+  title: string;
+  artist?: string | null;
+  song_number?: number | null;
+  content: string;
+}): string[] {
+  const meta = metadataFromChordPro(args.content);
+  const warnings: string[] = [];
+  if (meta.title && normMeta(meta.title) !== normMeta(args.title)) {
+    warnings.push(
+      `Title mismatch: database "${args.title}" vs ChordPro {title: ${meta.title}}`,
+    );
+  }
+  if (
+    meta.artist &&
+    args.artist != null &&
+    args.artist !== "" &&
+    normMeta(meta.artist) !== normMeta(args.artist)
+  ) {
+    warnings.push(
+      `Artist mismatch: database "${args.artist}" vs ChordPro {artist: ${meta.artist}}`,
+    );
+  }
+  if (
+    meta.song_number != null &&
+    args.song_number != null &&
+    meta.song_number !== args.song_number
+  ) {
+    warnings.push(
+      `song_number mismatch: database ${args.song_number} vs ChordPro {song_number: ${meta.song_number}}`,
+    );
+  }
+  return warnings;
+}
+
+/**
+ * Parse {duration:} from ChordPro into seconds.
+ * Accepts plain seconds ("180"), M:SS ("3:00"), or minutes if clearly small with unit.
+ */
+export function durationSecondsFromChordPro(
+  content: string,
+): number | undefined {
+  const match = content.match(/\{duration:\s*([^}]+)\}/i);
+  if (!match?.[1]) return undefined;
+  const raw = match[1].trim();
+  if (!raw) return undefined;
+
+  const mss = raw.match(/^(\d+)\s*:\s*(\d{1,2})$/);
+  if (mss) {
+    const minutes = Number(mss[1]);
+    const seconds = Number(mss[2]);
+    if (Number.isFinite(minutes) && Number.isFinite(seconds) && seconds < 60) {
+      return minutes * 60 + seconds;
+    }
+  }
+
+  const asNum = Number(raw.replace(/[^\d.]/g, ""));
+  if (!Number.isFinite(asNum) || asNum <= 0) return undefined;
+  // If tagged as minutes and small, convert.
+  if (/min/i.test(raw) && asNum < 60) return Math.round(asNum * 60);
+  return Math.round(asNum);
+}

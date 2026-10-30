@@ -98,10 +98,26 @@ export function mapToolError(
   if (lower.includes("not found")) {
     return toolError({ code: "not_found", message, retryable: false });
   }
+  // Prisma invalid-arg / unknown-field — never treat as concurrency stale.
   if (
-    lower.includes("modified") ||
-    lower.includes("conflict") ||
-    lower.includes("updatedat")
+    lower.includes("unknown argument") ||
+    lower.includes("unknown field") ||
+    lower.includes("invalid value") ||
+    lower.includes("argument `")
+  ) {
+    return toolError({
+      code: "validation",
+      message,
+      field: opts?.field,
+      hint: "Fix the invalid field/argument and retry.",
+      retryable: false,
+    });
+  }
+  if (
+    lower.includes("was modified") ||
+    lower.includes("modified elsewhere") ||
+    (lower.includes("conflict") && lower.includes("updatedat")) ||
+    lower.includes("optimistic")
   ) {
     return toolError({
       code: "stale",
