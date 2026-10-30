@@ -8,15 +8,20 @@
  * - unsupported: known ChordPro concepts that Hosanna does not implement
  */
 
-export type DirectiveSupportLevel = "parsed" | "formatter-only" | "unsupported";
+export type DirectiveSupportLevel =
+  | "parsed"
+  | "formatter-only"
+  | "unsupported";
 
-export type FeatureSupportLevel = "implemented" | "partial" | "not_implemented";
+export type FeatureSupportLevel =
+  | "implemented"
+  | "partial"
+  | "not_implemented";
 
 export interface ChordProDirectiveCapability {
   name: string;
   aliases?: string[];
-  category:
-    "metadata" | "comment" | "structure" | "notation" | "layout" | "other";
+  category: "metadata" | "comment" | "structure" | "notation" | "layout" | "other";
   support: DirectiveSupportLevel;
   description: string;
   hosannaSpecific?: boolean;
@@ -63,8 +68,7 @@ const DIRECTIVES: ChordProDirectiveCapability[] = [
     name: "composer",
     category: "metadata",
     support: "parsed",
-    description:
-      "Stored as metadata (generic camelCase fallback for unknown names also applies).",
+    description: "Stored as metadata (generic camelCase fallback for unknown names also applies).",
   },
   {
     name: "lyricist",
@@ -109,16 +113,14 @@ const DIRECTIVES: ChordProDirectiveCapability[] = [
     name: "duration",
     category: "metadata",
     support: "parsed",
-    description:
-      "Song duration (Hosanna uses this for service planning defaults).",
+    description: "Song duration (Hosanna uses this for service planning defaults).",
     hosannaSpecific: true,
   },
   {
     name: "song_number",
     category: "metadata",
     support: "parsed",
-    description:
-      "Catalog / hymnal number. Synced to song.song_number in Hosanna.",
+    description: "Catalog / hymnal number. Synced to song.song_number in Hosanna.",
     hosannaSpecific: true,
   },
   {
@@ -133,6 +135,31 @@ const DIRECTIVES: ChordProDirectiveCapability[] = [
     support: "parsed",
     description: "YouTube URL or video id for reference playback.",
     hosannaSpecific: true,
+  },
+  {
+    name: "key_note",
+    category: "metadata",
+    support: "parsed",
+    description:
+      "Free-text note about key changes/modulations. Stored as metadata.keyNote and shown by the renderer as a highlighted note under the song header (and in the editor).",
+    hosannaSpecific: true,
+    example: "{key_note: Verso 4 e final modulam para D (meio tom acima)}",
+  },
+  {
+    name: "tag",
+    category: "metadata",
+    support: "parsed",
+    description:
+      "Editor-only label (e.g. a theme). Repeated {tag: …} lines accumulate in metadata.tag (comma-joined). Highlighted in the editor; NOT rendered in the song view.",
+    hosannaSpecific: true,
+    example: "{tag: adoração}",
+  },
+  {
+    name: "arranger",
+    category: "metadata",
+    support: "parsed",
+    description: "Arranger credit (stored as metadata, shown in the footer).",
+    example: "{arranger: Maria Silva}",
   },
   {
     name: "comment",
@@ -204,7 +231,9 @@ const DIRECTIVES: ChordProDirectiveCapability[] = [
     aliases: ["ch"],
     category: "structure",
     support: "parsed",
-    description: "Recall the previous chorus body.",
+    description:
+      "Recall the previous chorus body (repeats the last {start_of_chorus} block without copying it). Optional label: {chorus: Refrão final}. Prefer it over duplicating an unchanged chorus.",
+    example: "{chorus}",
   },
   {
     name: "verse",
@@ -379,8 +408,7 @@ const FEATURES: ChordProFeatureCapability[] = [
     id: "lint",
     name: "Lint / validation",
     support: "implemented",
-    description:
-      "lintChordPro reports unclosed braces, bad chords, block mismatches, etc.",
+    description: "lintChordPro reports unclosed braces, bad chords, block mismatches, etc.",
   },
   {
     id: "format",
@@ -392,8 +420,7 @@ const FEATURES: ChordProFeatureCapability[] = [
     id: "transpose_ast",
     name: "AST transpose pipeline",
     support: "implemented",
-    description:
-      "parseChordPro(source).transpose(n) and related chainable ops.",
+    description: "parseChordPro(source).transpose(n) and related chainable ops.",
   },
   {
     id: "transpose_source",
@@ -451,6 +478,7 @@ export function explainChordProDirective(
   const needle = nameOrAlias.trim().toLowerCase();
   return DIRECTIVES.find(
     (d) =>
-      d.name === needle || d.aliases?.some((a) => a.toLowerCase() === needle),
+      d.name === needle ||
+      d.aliases?.some((a) => a.toLowerCase() === needle),
   );
 }

@@ -33,7 +33,7 @@ Give accurate explanations and edits based on what Hosanna **actually** implemen
 ## Core structure (parsed)
 
 - Sections: `start_of_verse` / `chorus` / `bridge` (+ end tags) or shorthand `{verse}`, `{chorus}`, `{bridge}`
-- `{chorus}` alone recalls the previous chorus body
+- `{chorus}` (alias `{ch}`, optional label `{chorus: Refrão final}`) recalls the previous chorus body — use it instead of copying an unchanged chorus; needs an earlier `start_of_chorus`
 - `{repeat}` marks repeats
 - Tabs: `start_of_tab`…`end_of_tab`
 - Grids: `start_of_grid`…`end_of_grid` with `|`, `||`, `|:`, `:|`
@@ -41,6 +41,8 @@ Give accurate explanations and edits based on what Hosanna **actually** implemen
 ## Metadata (parsed)
 
 `title`, `subtitle`, `artist`, `key`, `original_key`, `capo`, `tempo`, `time`, `duration`, `song_number`, `youtube`, `ccli`, …
+
+Hosanna extras: `{key_note: …}` (note about key changes/modulations, rendered under the song header — e.g. `{key_note: Verso 4 e final modulam para D (meio tom acima)}`), `{tag: …}` (editor-only label, repeatable, not rendered), `{arranger: …}`.
 
 Unknown `{name: value}` becomes camelCased metadata — fine for extras, but prefer documented names.
 

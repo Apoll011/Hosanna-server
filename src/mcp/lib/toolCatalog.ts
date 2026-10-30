@@ -46,7 +46,7 @@ export const MCP_TOOL_GROUPS = {
     "songs_propose_edit",
     "songs_propose_fix",
     "songs_propose_transpose",
-    "songs_propose_propagate_chords",
+    "songs_draft_propagate_chords",
     "songs_save",
     "songs_move",
     "songs_delete",

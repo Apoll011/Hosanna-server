@@ -573,11 +573,11 @@ export function registerSongTools(
   );
 
   server.registerTool(
-    "songs_propose_propagate_chords",
+    "songs_draft_propagate_chords",
     {
-      title: "Propose propagate chords",
+      title: "Draft propagate chords",
       description:
-        "Copy [chord] markers from the first chorded verse onto later verses. Does not invent chords. Returns a proposal.",
+        "Copy chords from the first chorded verse onto later verses (anchored to words/syllables; lines that already have chords are untouched). Returns a DRAFT, not a proposal: read `review` (lines marked `check` need fixing) and `skipped`, correct the draft yourself, then submit the final content with songs_propose_edit.",
       inputSchema: z.object({ songId: z.string().uuid() }),
     },
     async ({ songId }) => {
@@ -585,18 +585,20 @@ export function registerSongTools(
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "song.update");
         const current = await songService(ctx).getById(songId);
-        const result = propagateVerseChords(current.content);
+        const { content: draftContent, ...report } = propagateVerseChords(
+          current.content,
+        );
         return jsonResult({
-          proposal: {
+          draft: {
             id: current.id,
             title: current.title,
             artist: current.artist,
-            content: result.content,
+            content: draftContent,
             updatedAt: current.updatedAt.toISOString(),
           },
-          ...result,
-          validation: validateChordProContent(result.content),
-          diff: summarizeDiff(current.content, result.content),
+          ...report,
+          validation: validateChordProContent(draftContent),
+          diff: summarizeDiff(current.content, draftContent),
         });
       } catch (error) {
         return errorResult(error);

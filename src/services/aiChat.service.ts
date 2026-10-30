@@ -346,7 +346,7 @@ function buildHosannaTools(
               "propose_edit",
               "propose_fix",
               "propose_transpose",
-              "propose_propagate_chords",
+              "draft_propagate_chords",
               "save",
               "move",
               "delete",
@@ -1270,14 +1270,15 @@ function buildHosannaTools(
     }),
     chordpro_propagate_chords: tool({
       description:
-        "Copy [Am]/[G]/… chord markers from the first chorded verse onto later verses at the same lyric-character offsets. Does not invent chords.",
+        "Copy chord markers from the first chorded verse onto later verses, anchored to words/syllables (existing chords are untouched; identical choruses copied exactly). Does not invent chords. Returns a DRAFT (not staged): read `review`/`skipped`, fix lines marked `check` yourself, then submit with songs_propose_edit.",
       inputSchema: z.object({ content: z.string() }),
       execute: async ({ content }) => {
-        const result = propagateVerseChords(content);
+        const { content: draftContent, ...report } =
+          propagateVerseChords(content);
         return textResult({
-          ...result,
-          diff: summarizeDiff(content, result.content),
-          proposal: { content: result.content },
+          draft: { content: draftContent },
+          ...report,
+          diff: summarizeDiff(content, draftContent),
         });
       },
     }),
@@ -1717,26 +1718,28 @@ function buildHosannaTools(
         });
       },
     }),
-    songs_propose_propagate_chords: tool({
+    songs_draft_propagate_chords: tool({
       description:
-        "Propagate verse chords onto later verses for a library song. Does not invent chords.",
+        "Copy chords from the first chorded verse of a library song onto later verses (word/syllable anchored; existing chords untouched). Returns a DRAFT — NOT staged. Read `review` and `skipped`, fix every line marked `check` (and fill skipped lines when obvious), then call songs_propose_edit ONCE with the corrected full content. Never propose the raw draft unchecked.",
       inputSchema: z.object({ songId: z.string() }),
       execute: async ({ songId }) => {
         const ctx = requireMcpContext(authInfo);
         requirePermission(ctx, "song.update");
         const current = await songService(ctx).getById(songId);
-        const result = propagateVerseChords(current.content);
+        const { content: draftContent, ...report } = propagateVerseChords(
+          current.content,
+        );
         return textResult({
-          proposal: {
+          draft: {
             id: current.id,
             title: current.title,
             artist: current.artist,
-            content: result.content,
+            content: draftContent,
             updatedAt: current.updatedAt.toISOString(),
           },
-          ...result,
-          validation: validateChordProContent(result.content),
-          diff: summarizeDiff(current.content, result.content),
+          ...report,
+          validation: validateChordProContent(draftContent),
+          diff: summarizeDiff(current.content, draftContent),
         });
       },
     }),
@@ -2292,6 +2295,10 @@ const STUDIO_CHAT_SYSTEM = `You are Logos, the friendly AI assistant inside Hosa
 - Deletes (songs/services/folders/collections/agenda): call the matching \`*_delete\` tool immediately when the user asks to delete — it only STAGES a Confirm button in Studio and does not delete. Do NOT ask for chat confirmation ("are you sure?") and do NOT claim the item is deleted until the user clicks Confirm. If they already confirmed in chat, still only stage the button.
 - When the user says "repeat" / "2x" a verse or chorus: duplicate that section's body in the ChordPro (or add \`{c: 2x}\` if they ask for a note only). Prefer physical duplication when they ask to "write a copy".
 - On stale/concurrency errors, use the returned \`current\` object (do not re-fetch blindly).
+- \`{chorus}\` (alias \`{ch}\`, optional label \`{chorus: Refrão final}\`) recalls the previous \`start_of_chorus\` block without copying it. When a chorus repeats UNCHANGED, write \`{chorus}\` instead of duplicating the lines (unless the user asks for a physical copy or the repeat has different chords/words). Never put \`{chorus}\` before any chorus exists.
+- \`{key_note: text}\` is a free-text note about key changes (e.g. \`{key_note: Verso 4 e final modulam para D (meio tom acima)}\`); the renderer shows it under the song header. Use it for modulations — not \`{c:}\`, not \`{key:}\` (which is the main key).
+- \`{tag: label}\` is an editor-only label (not rendered). Repeat the directive for several tags. Do not add tags the user did not ask for.
+- Propagating/completing chords: \`songs_draft_propagate_chords\` / \`chordpro_propagate_chords\` return a DRAFT that is NOT staged. Read \`review\` and \`skipped\`: re-place every chord marked \`check\` on the right word/syllable yourself (use the source line as reference), fill \`skipped\` lines when the chords are obvious, make sure no chord lands mid-word by accident, then call \`songs_propose_edit\` ONCE with the corrected full content. Never propose the raw draft unchecked and never invent chords the song does not already use.
 
 ## Capabilities (use them)
 - Songs: search, search_lyrics (plain lyrics ignoring chords), get/get_many, draft, propose_edit/fix/transpose, save, move, delete, restore; trash_list
