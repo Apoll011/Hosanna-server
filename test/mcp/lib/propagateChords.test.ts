@@ -5,7 +5,7 @@ import {
   parseChordLine,
   propagateVerseChords,
   stripChords,
-} from "./propagateChords.js";
+} from "../../../src/mcp/lib/propagateChords.js";
 
 describe("parseChordLine / applyChordAnchors", () => {
   it("round-trips lyric offsets", () => {

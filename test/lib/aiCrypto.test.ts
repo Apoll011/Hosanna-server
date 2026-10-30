@@ -6,7 +6,7 @@ describe("aiCrypto", () => {
     process.env.AI_SETTINGS_ENCRYPTION_KEY = "a".repeat(64);
     // Dynamic import after env is set (module caches key via env read).
     const { encryptSecret, decryptSecret, isAiCryptoConfigured } =
-      await import("./aiCrypto.js");
+      await import("../../src/lib/aiCrypto.js");
     assert.equal(isAiCryptoConfigured(), true);
     const enc = encryptSecret("sk-test-secret-value");
     assert.ok(enc.ciphertext);

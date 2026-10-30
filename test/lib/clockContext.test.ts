@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildClockContext,
   clockContextPromptBlock,
-} from "./clockContext.js";
+} from "../../src/lib/clockContext.js";
 
 describe("clockContext", () => {
   it("formats date and next Sunday", () => {

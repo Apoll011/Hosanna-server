@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { summarizeDiff } from "./diff.js";
-import { validateServiceElements } from "../../validators/serviceElement.validators.js";
-import { validateChordProContent } from "./chordproGate.js";
-import { createHosannaMcpServer } from "../server.js";
+import { summarizeDiff } from "../../../src/mcp/lib/diff.js";
+import { validateServiceElements } from "../../../src/validators/serviceElement.validators.js";
+import { validateChordProContent } from "../../../src/mcp/lib/chordproGate.js";
+import { createHosannaMcpServer } from "../../../src/mcp/server.js";
 
 describe("summarizeDiff", () => {
   it("detects unchanged content", () => {

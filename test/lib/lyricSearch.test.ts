@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import {
   lyricsMatchQuery,
   stripChordProForSearch,
-} from "./lyricSearch.js";
+} from "../../src/lib/lyricSearch.js";
 
 describe("lyricSearch", () => {
   it("strips chords and matches plain query", () => {

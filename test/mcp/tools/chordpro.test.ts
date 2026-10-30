@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { getChordProCapabilities } from "../lib/capabilities.js";
-import { validateChordProContent } from "../lib/chordproGate.js";
-import { transposeChordProSource } from "../lib/transposeSource.js";
+import { getChordProCapabilities } from "../../../src/mcp/lib/capabilities.js";
+import { validateChordProContent } from "../../../src/mcp/lib/chordproGate.js";
+import { transposeChordProSource } from "../../../src/mcp/lib/transposeSource.js";
 
 describe("chordpro library via MCP gate", () => {
   it("transposes source and still validates", () => {

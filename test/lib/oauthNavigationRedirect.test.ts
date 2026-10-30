@@ -4,7 +4,7 @@ import {
   isOauthAuthorizeGet,
   wantsBrowserNavigation,
   withOauthNavigationRedirect,
-} from "./oauthNavigationRedirect.js";
+} from "../../src/lib/oauthNavigationRedirect.js";
 
 const authorizeUrl =
   "https://dev-api.hosanna.live/api/auth/oauth2/authorize?response_type=code&client_id=x";
