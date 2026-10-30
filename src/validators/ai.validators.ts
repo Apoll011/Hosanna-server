@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AI_LIMITS } from "../services/aiBehavior.js";
 
 export const aiProviderSchema = z.enum([
   "openai",
@@ -14,6 +15,35 @@ export const updateAiSettingsSchema = z.object({
   enabled: z.boolean().optional(),
   apiKey: z.string().min(1).optional(),
   baseUrl: z.string().trim().url().nullable().optional(),
+  maxToolCalls: z
+    .number()
+    .int()
+    .min(AI_LIMITS.maxToolCalls.min)
+    .max(AI_LIMITS.maxToolCalls.max)
+    .optional(),
+  temperature: z
+    .number()
+    .min(AI_LIMITS.temperature.min)
+    .max(AI_LIMITS.temperature.max)
+    .nullable()
+    .optional(),
+  maxOutputTokens: z
+    .number()
+    .int()
+    .min(AI_LIMITS.maxOutputTokens.min)
+    .max(AI_LIMITS.maxOutputTokens.max)
+    .nullable()
+    .optional(),
+  instructions: z
+    .string()
+    .max(AI_LIMITS.instructionsMaxChars)
+    .nullable()
+    .optional(),
+  memoryEnabled: z.boolean().optional(),
+});
+
+export const addAiMemorySchema = z.object({
+  content: z.string().trim().min(1).max(AI_LIMITS.memoryEntryMaxChars),
 });
 
 export const aiChatContextSchema = z
@@ -70,7 +100,10 @@ export const aiChatBodySchema = z
   })
   .refine(
     (body) => JSON.stringify(body.messages).length <= AI_CHAT_MAX_BODY_CHARS,
-    { message: "Conversation is too large. Start a new chat.", path: ["messages"] },
+    {
+      message: "Conversation is too large. Start a new chat.",
+      path: ["messages"],
+    },
   );
 
 /** Execute a Studio-staged destructive confirmation (after user clicks Confirm). */

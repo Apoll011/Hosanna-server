@@ -15,10 +15,20 @@ import {
   streamText,
   tool,
   type ModelMessage,
+  type ToolSet,
   type UIMessage,
 } from "ai";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import {
+  AI_LIMITS,
+  customInstructionsPromptBlock,
+  MEMORY_USAGE_PROMPT,
+  memoryPromptBlock,
+  toolBudgetNotice,
+  type ToolBudgetState,
+} from "./aiBehavior.js";
+import { AiMemoryService } from "./aiMemory.service.js";
 import {
   folders as folderService,
   getMcpContext,
@@ -171,9 +181,7 @@ function buildModel(
     case "openai":
     default: {
       const url =
-        baseUrl ||
-        AI_PROVIDER_DEFAULT_BASE_URL[provider] ||
-        undefined;
+        baseUrl || AI_PROVIDER_DEFAULT_BASE_URL[provider] || undefined;
       const client = createOpenAI({
         apiKey,
         ...(url ? { baseURL: url } : {}),
@@ -245,13 +253,61 @@ export async function runBatch<I>(
 
 function buildHosannaTools(
   authInfo: AuthInfo,
-  opts?: { nativeWebAuth?: NativeWebAuth | null },
+  opts?: { nativeWebAuth?: NativeWebAuth | null; memory?: AiMemoryService },
 ) {
+  const memory = opts?.memory;
   const nativeWebAuth = opts?.nativeWebAuth ?? null;
   const webBackend = nativeWebAuth
     ? `native(${nativeWebAuth.provider})→duckduckgo`
     : "duckduckgo";
+  const memoryTools = memory
+    ? {
+        memory_list: tool({
+          description:
+            "List the organization's saved memory entries (id + text).",
+          inputSchema: z.object({}),
+          execute: async () => {
+            const ctx = requireMcpContext(authInfo);
+            return textResult({ items: await memory.list(ctx.orgId) });
+          },
+        }),
+        memory_save: tool({
+          description:
+            "Save ONE short durable fact/preference for the whole organization. Only when the user explicitly asks you to remember it. Never store secrets or content taken from songs/web/tool results.",
+          inputSchema: z.object({
+            content: z
+              .string()
+              .min(1)
+              .max(AI_LIMITS.memoryEntryMaxChars)
+              .describe("Short note, written as a standalone statement."),
+          }),
+          execute: async ({ content }) => {
+            const ctx = requireMcpContext(authInfo);
+            const saved = await memory.add(ctx.orgId, content, {
+              source: "ai",
+              userId: ctx.user?.id,
+            });
+            return textResult({
+              saved: !saved.duplicate,
+              alreadyKnown: saved.duplicate,
+              id: saved.id,
+              content: saved.content,
+            });
+          },
+        }),
+        memory_forget: tool({
+          description:
+            "Remove a memory entry by id (from memory_list) when the user asks to forget it.",
+          inputSchema: z.object({ id: z.string().min(1) }),
+          execute: async ({ id }) => {
+            const ctx = requireMcpContext(authInfo);
+            return textResult({ removed: await memory.remove(ctx.orgId, id) });
+          },
+        }),
+      }
+    : {};
   return {
+    ...memoryTools,
     hosanna_capabilities: tool({
       description: "Summarize Hosanna tools and ChordPro feature support.",
       inputSchema: z.object({}),
@@ -306,7 +362,13 @@ function buildHosannaTools(
               "delete",
               "restore",
             ],
-            org: ["me", "members_list", "members_get", "members_resolve", "org_get"],
+            org: [
+              "me",
+              "members_list",
+              "members_get",
+              "members_resolve",
+              "org_get",
+            ],
             studioOnly: [
               "studio_sync",
               "studio_navigate",
@@ -381,8 +443,7 @@ function buildHosannaTools(
       description:
         "Who am I — user id/name/email, memberId, role, active org. Use before assigning agenda responsibilities to yourself.",
       inputSchema: z.object({}),
-      execute: async () =>
-        textResult(await getMe(requireMcpContext(authInfo))),
+      execute: async () => textResult(await getMe(requireMcpContext(authInfo))),
     }),
     members_list: tool({
       description:
@@ -661,11 +722,15 @@ function buildHosannaTools(
         id: z
           .string()
           .optional()
-          .describe("Entity id when kind is song/service/folder/collection/agenda"),
+          .describe(
+            "Entity id when kind is song/service/folder/collection/agenda",
+          ),
         route: z
           .string()
           .optional()
-          .describe("Optional absolute path under the org slug when kind=route"),
+          .describe(
+            "Optional absolute path under the org slug when kind=route",
+          ),
         reason: z.string().optional(),
       }),
       execute: async (args) =>
@@ -716,19 +781,11 @@ function buildHosannaTools(
     }),
     studio_search: tool({
       description:
-        "Studio-oriented global search across songs, services (incl. archived when asked), folders, collections, and agenda. Prefer this when the user says \"find X in Studio\".",
+        'Studio-oriented global search across songs, services (incl. archived when asked), folders, collections, and agenda. Prefer this when the user says "find X in Studio".',
       inputSchema: z.object({
         query: z.string().min(1),
         types: z
-          .array(
-            z.enum([
-              "song",
-              "service",
-              "folder",
-              "collection",
-              "agenda",
-            ]),
-          )
+          .array(z.enum(["song", "service", "folder", "collection", "agenda"]))
           .optional()
           .describe("Defaults to all types"),
         includeArchivedServices: z.boolean().optional().default(true),
@@ -785,9 +842,7 @@ function buildHosannaTools(
               type: "service",
               id: s.id,
               title: s.name,
-              subtitle: s.date
-                ? String(s.date).slice(0, 10)
-                : undefined,
+              subtitle: s.date ? String(s.date).slice(0, 10) : undefined,
               archived: s.archived,
             });
           }
@@ -913,7 +968,7 @@ function buildHosannaTools(
             ? Promise.resolve([])
             : serviceService(ctx).listTrashed(),
         ]);
-        const slice = <T,>(rows: T[]) => {
+        const slice = <T>(rows: T[]) => {
           const total = rows.length;
           const start = (page - 1) * limit;
           return {
@@ -1030,9 +1085,7 @@ function buildHosannaTools(
         songIds: z.array(z.string()).min(1),
       }),
       execute: async (args) =>
-        textResult(
-          await collectionAddSongs(requireMcpContext(authInfo), args),
-        ),
+        textResult(await collectionAddSongs(requireMcpContext(authInfo), args)),
     }),
     collections_remove_songs: tool({
       description: "Remove songs from a collection (does not delete songs).",
@@ -1251,7 +1304,8 @@ function buildHosannaTools(
       },
     }),
     chordpro_format: tool({
-      description: "Normalize ChordPro formatting. Returns a proposal for the Studio editor.",
+      description:
+        "Normalize ChordPro formatting. Returns a proposal for the Studio editor.",
       inputSchema: z.object({ content: z.string() }),
       execute: async ({ content }) => {
         const result = formatChordPro(content, {
@@ -1389,7 +1443,7 @@ function buildHosannaTools(
     }),
     songs_list_in_folder: tool({
       description:
-        "List the songs inside one folder (metadata only: id, title, artist, key, song_number, tags — no lyrics; use songs_get / songs_get_many for content). folderId from folders_list; omit/null/\"root\" = songs in no folder. recursive=true includes nested subfolders (whole library if no folderId). Also returns the folder's direct subfolders. Default title asc, page=1, limit=50 (max 100).",
+        'List the songs inside one folder (metadata only: id, title, artist, key, song_number, tags — no lyrics; use songs_get / songs_get_many for content). folderId from folders_list; omit/null/"root" = songs in no folder. recursive=true includes nested subfolders (whole library if no folderId). Also returns the folder\'s direct subfolders. Default title asc, page=1, limit=50 (max 100).',
       inputSchema: z.object({
         folderId: z.string().nullable().optional(),
         recursive: z.boolean().optional(),
@@ -1398,14 +1452,19 @@ function buildHosannaTools(
           .optional(),
         sortOrder: z.enum(["asc", "desc"]).optional(),
         page: z.number().int().positive().optional(),
-        limit: z.number().int().positive().max(FOLDER_SONGS_MAX_LIMIT).optional(),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(FOLDER_SONGS_MAX_LIMIT)
+          .optional(),
       }),
       execute: async (args) =>
         textResult(await listSongsInFolder(requireMcpContext(authInfo), args)),
     }),
     songs_search_lyrics: tool({
       description:
-        "Search lyrics ignoring ChordPro chords/directives. Query \"Pois só Tu és o Deus eterno\" matches \"Pois [D9]só Tu és o [C#m]Deus eterno\". Prefer when the user quotes plain lyrics.",
+        'Search lyrics ignoring ChordPro chords/directives. Query "Pois só Tu és o Deus eterno" matches "Pois [D9]só Tu és o [C#m]Deus eterno". Prefer when the user quotes plain lyrics.',
       inputSchema: z.object({
         query: z.string().min(1),
         folder: z.string().optional(),
@@ -1705,96 +1764,95 @@ function buildHosannaTools(
             ctx.orgId,
             args.clientRequestId,
             async () => {
-            const validation = validateChordProContent(args.content);
-            const metadataWarnings = mirroredMetadataWarnings({
-              title: args.title,
-              artist: args.artist,
-              song_number: args.song_number,
-              content: args.content,
-            });
-            if (
-              (!validation.ok || metadataWarnings.length > 0) &&
-              !args.allowInvalid
-            ) {
-              return mapToolError(
-                new Error(
-                  metadataWarnings[0] ?? "Validation failed",
-                ),
-                {
-                  current: { validation: { ...validation, metadataWarnings } },
-                },
-              );
-            }
-            if (args.mode === "create") {
-              requirePermission(ctx, "song.create");
-              const created = await songService(ctx).create({
+              const validation = validateChordProContent(args.content);
+              const metadataWarnings = mirroredMetadataWarnings({
                 title: args.title,
                 artist: args.artist,
-                content: args.content,
-                folderId: args.folderId,
-                tags: args.tags,
                 song_number: args.song_number,
+                content: args.content,
               });
-              return {
-                saved: true,
-                song: {
-                  id: created.id,
-                  title: created.title,
-                  updatedAt: created.updatedAt.toISOString(),
-                },
-              };
-            }
-            requirePermission(ctx, "song.update");
-            if (!args.songId || !args.updatedAt) {
-              return mapToolError(
-                new Error("songId and updatedAt required"),
-              );
-            }
-            try {
-              const updated = await songService(ctx).update(
-                args.songId,
-                new Date(args.updatedAt),
-                {
+              if (
+                (!validation.ok || metadataWarnings.length > 0) &&
+                !args.allowInvalid
+              ) {
+                return mapToolError(
+                  new Error(metadataWarnings[0] ?? "Validation failed"),
+                  {
+                    current: {
+                      validation: { ...validation, metadataWarnings },
+                    },
+                  },
+                );
+              }
+              if (args.mode === "create") {
+                requirePermission(ctx, "song.create");
+                const created = await songService(ctx).create({
                   title: args.title,
                   artist: args.artist,
                   content: args.content,
                   folderId: args.folderId,
                   tags: args.tags,
                   song_number: args.song_number,
-                },
-              );
-              return {
-                saved: true,
-                song: {
-                  id: updated.id,
-                  title: updated.title,
-                  updatedAt: updated.updatedAt.toISOString(),
-                },
-              };
-            } catch (error) {
-              let current: unknown;
-              try {
-                const song = await songService(ctx).getById(args.songId);
-                current = {
-                  id: song.id,
-                  title: song.title,
-                  artist: song.artist,
-                  content: song.content,
-                  updatedAt: song.updatedAt.toISOString(),
+                });
+                return {
+                  saved: true,
+                  song: {
+                    id: created.id,
+                    title: created.title,
+                    updatedAt: created.updatedAt.toISOString(),
+                  },
                 };
-              } catch {
-                /* ignore */
               }
-              return mapToolError(error, { current, field: "updatedAt" });
-            }
-          },
+              requirePermission(ctx, "song.update");
+              if (!args.songId || !args.updatedAt) {
+                return mapToolError(new Error("songId and updatedAt required"));
+              }
+              try {
+                const updated = await songService(ctx).update(
+                  args.songId,
+                  new Date(args.updatedAt),
+                  {
+                    title: args.title,
+                    artist: args.artist,
+                    content: args.content,
+                    folderId: args.folderId,
+                    tags: args.tags,
+                    song_number: args.song_number,
+                  },
+                );
+                return {
+                  saved: true,
+                  song: {
+                    id: updated.id,
+                    title: updated.title,
+                    updatedAt: updated.updatedAt.toISOString(),
+                  },
+                };
+              } catch (error) {
+                let current: unknown;
+                try {
+                  const song = await songService(ctx).getById(args.songId);
+                  current = {
+                    id: song.id,
+                    title: song.title,
+                    artist: song.artist,
+                    content: song.content,
+                    updatedAt: song.updatedAt.toISOString(),
+                  };
+                } catch {
+                  /* ignore */
+                }
+                return mapToolError(error, { current, field: "updatedAt" });
+              }
+            },
             (({ clientRequestId: _c, ...rest }) => rest)(args),
           ),
         );
       },
     }),
     songs_move: tool({
-      description: "Move a song to another folder (or root). Requires updatedAt.",
+      description:
+        "Move a song to another folder (or root). Requires updatedAt.",
       inputSchema: z.object({
         songId: z.string(),
         updatedAt: z.string(),
@@ -1832,7 +1890,9 @@ function buildHosannaTools(
           } catch {
             /* ignore */
           }
-          return textResult(mapToolError(error, { current, field: "updatedAt" }));
+          return textResult(
+            mapToolError(error, { current, field: "updatedAt" }),
+          );
         }
       },
     }),
@@ -2120,61 +2180,61 @@ function buildHosannaTools(
             ctx.orgId,
             clientRequestId,
             async () => {
-            const elements = args.elements ?? [];
-            const validation = await validateServicePlan(
-              elements,
-              songService(ctx),
-            );
-            if (!validation.ok && !args.allowInvalid) {
-              return {
-                error: true,
-                code: "validation_error",
-                message: "Validation failed",
-                retryable: false,
-                validation,
-              };
-            }
-            if (args.mode === "create") {
-              requirePermission(ctx, "service.create");
-              const created = await serviceService(ctx).create({
-                name: args.name,
-                date: new Date(`${args.date.slice(0, 10)}T12:00:00.000Z`),
-                notes: args.notes,
+              const elements = args.elements ?? [];
+              const validation = await validateServicePlan(
                 elements,
-              });
-              return { saved: true, service: created, validation };
-            }
-            requirePermission(ctx, "service.update");
-            if (!args.serviceId || !args.updatedAt) {
-              return mapToolError(
-                new Error("serviceId and updatedAt required"),
+                songService(ctx),
               );
-            }
-            try {
-              const updated = await serviceService(ctx).update(
-                args.serviceId,
-                new Date(args.updatedAt),
-                {
+              if (!validation.ok && !args.allowInvalid) {
+                return {
+                  error: true,
+                  code: "validation_error",
+                  message: "Validation failed",
+                  retryable: false,
+                  validation,
+                };
+              }
+              if (args.mode === "create") {
+                requirePermission(ctx, "service.create");
+                const created = await serviceService(ctx).create({
                   name: args.name,
                   date: new Date(`${args.date.slice(0, 10)}T12:00:00.000Z`),
                   notes: args.notes,
                   elements,
-                  archived: args.archived,
-                },
-              );
-              return { saved: true, service: updated, validation };
-            } catch (error) {
-              let current: unknown;
-              try {
-                current = await serviceService(ctx).getByIdSerialized(
-                  args.serviceId,
-                );
-              } catch {
-                /* ignore */
+                });
+                return { saved: true, service: created, validation };
               }
-              return mapToolError(error, { current, field: "updatedAt" });
-            }
-          },
+              requirePermission(ctx, "service.update");
+              if (!args.serviceId || !args.updatedAt) {
+                return mapToolError(
+                  new Error("serviceId and updatedAt required"),
+                );
+              }
+              try {
+                const updated = await serviceService(ctx).update(
+                  args.serviceId,
+                  new Date(args.updatedAt),
+                  {
+                    name: args.name,
+                    date: new Date(`${args.date.slice(0, 10)}T12:00:00.000Z`),
+                    notes: args.notes,
+                    elements,
+                    archived: args.archived,
+                  },
+                );
+                return { saved: true, service: updated, validation };
+              } catch (error) {
+                let current: unknown;
+                try {
+                  current = await serviceService(ctx).getByIdSerialized(
+                    args.serviceId,
+                  );
+                } catch {
+                  /* ignore */
+                }
+                return mapToolError(error, { current, field: "updatedAt" });
+              }
+            },
             payload,
           ),
         );
@@ -2286,8 +2346,14 @@ ${excerpt ? `\n### Content excerpt${page.contentTruncated ? " (truncated)" : ""}
 `;
 }
 
-/** Max model↔tool round trips per reply (the UI offers "Continue" if hit). */
-export const CHAT_MAX_STEPS = 12;
+/**
+ * Hard safety net on model↔tool round trips. The real limit is the org's
+ * `maxToolCalls` (see `toolBudgetNotice`); this only guards against runaway
+ * loops, e.g. models that ignore the disabled tools.
+ */
+export function chatStepSafetyLimit(maxToolCalls: number): number {
+  return maxToolCalls + 3;
+}
 
 const LOCALE_NAMES: Record<string, string> = {
   pt: "European Portuguese (pt-PT)",
@@ -2332,6 +2398,7 @@ export function describeChatError(error: unknown): string {
 
 export class AiChatService {
   private config = new OrgAiConfigService();
+  private memory = new AiMemoryService();
 
   async streamChat(opts: {
     orgId: string;
@@ -2349,22 +2416,60 @@ export class AiChatService {
       runtime.baseUrl,
     );
     const nativeWebAuth = nativeWebAuthFromRuntime(runtime);
-    const tools = buildHosannaTools(opts.authInfo, { nativeWebAuth });
+    const memoryEntries = runtime.memoryEnabled
+      ? await this.memory.list(opts.orgId)
+      : [];
+    const tools = buildHosannaTools(opts.authInfo, {
+      nativeWebAuth,
+      memory: runtime.memoryEnabled ? this.memory : undefined,
+    });
     const system =
       STUDIO_CHAT_SYSTEM +
+      (runtime.memoryEnabled ? MEMORY_USAGE_PROMPT : "") +
+      customInstructionsPromptBlock(runtime.instructions) +
+      memoryPromptBlock(memoryEntries) +
       localePromptBlock(opts.locale) +
       clockContextPromptBlock() +
       contextBlock(opts.pageContext);
     const modelMessages = await convertToModelMessages(opts.messages);
 
+    const budget: ToolBudgetState = {
+      max: runtime.maxToolCalls,
+      used: 0,
+      limitReached: false,
+    };
+
     return {
       model: { provider: runtime.provider, id: runtime.model },
+      budget,
       result: streamText({
         model,
         system,
         messages: modelMessages as ModelMessage[],
-        tools,
-        stopWhen: stepCountIs(CHAT_MAX_STEPS),
+        tools: tools as ToolSet,
+        ...(runtime.temperature != null && {
+          temperature: runtime.temperature,
+        }),
+        ...(runtime.maxOutputTokens != null && {
+          maxOutputTokens: runtime.maxOutputTokens,
+        }),
+        stopWhen: stepCountIs(chatStepSafetyLimit(budget.max)),
+        prepareStep: ({ steps, initialInstructions }) => {
+          budget.used = steps.reduce((n, s) => n + s.toolCalls.length, 0);
+          const notice = toolBudgetNotice(budget.used, budget.max);
+          if (!notice) return undefined;
+          const base =
+            typeof initialInstructions === "string"
+              ? initialInstructions
+              : system;
+          if (!notice.final) return { instructions: base + notice.text };
+          budget.limitReached = true;
+          return {
+            instructions: base + notice.text,
+            toolChoice: "none",
+            activeTools: [],
+          };
+        },
         abortSignal: opts.abortSignal,
       }),
     };

@@ -384,6 +384,7 @@ model Organization {
   serviceSongAnnotations ServiceSongAnnotation[]
   serviceNotes           ServiceNote[]
   aiConfig               OrgAiConfig?
+  aiMemory               OrgAiMemory[]
 
   stripeCustomerId String?
 
@@ -408,10 +409,37 @@ model OrgAiConfig {
   apiKeyIv         String?
   apiKeyTag        String?
 
+  /// Max tool calls the assistant may make while answering one message.
+  maxToolCalls    Int     @default(12)
+  /// null = provider default
+  temperature     Float?
+  /// null = provider default
+  maxOutputTokens Int?
+  /// Extra org-wide instructions appended to the assistant's system prompt.
+  instructions    String? @db.Text
+  /// Inject saved memory into the prompt and let the assistant manage it.
+  memoryEnabled   Boolean @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("org_ai_config")
+}
+
+/// Short durable facts the assistant should remember for the whole organization.
+model OrgAiMemory {
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  content   String
+  /// admin | ai
+  source    String   @default("admin")
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@map("org_ai_memory")
 }
 
 model Team {

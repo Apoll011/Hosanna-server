@@ -6,13 +6,10 @@ import {
 } from "../lib/aiCrypto.js";
 import { NATIVE_WEB_CAPABILITIES } from "../mcp/lib/nativeWebCapabilities.js";
 import { AppError } from "../utils/errors.js";
+import { AI_LIMITS, clampInt } from "./aiBehavior.js";
 
 export type AiProvider =
-  | "openai"
-  | "anthropic"
-  | "google"
-  | "deepseek"
-  | "openai_compatible";
+  "openai" | "anthropic" | "google" | "deepseek" | "openai_compatible";
 
 export const AI_PROVIDERS: AiProvider[] = [
   "openai",
@@ -72,13 +69,20 @@ function normalizeBaseUrl(
   return trimmed.replace(/\/+$/, "");
 }
 
-export function publicAiSettings(row: {
-  provider: string;
-  model: string;
-  enabled: boolean;
-  baseUrl: string | null;
-  apiKeyCiphertext: string | null;
-} | null) {
+export function publicAiSettings(
+  row: {
+    provider: string;
+    model: string;
+    enabled: boolean;
+    baseUrl: string | null;
+    apiKeyCiphertext: string | null;
+    maxToolCalls?: number;
+    temperature?: number | null;
+    maxOutputTokens?: number | null;
+    instructions?: string | null;
+    memoryEnabled?: boolean;
+  } | null,
+) {
   const provider = (row?.provider as AiProvider) ?? "openai";
   const nativeWeb = NATIVE_WEB_CAPABILITIES[provider];
   return {
@@ -88,6 +92,12 @@ export function publicAiSettings(row: {
     configured: Boolean(row?.apiKeyCiphertext),
     baseUrl: row?.baseUrl ?? AI_PROVIDER_DEFAULT_BASE_URL[provider] ?? null,
     encryptionReady: isAiCryptoConfigured(),
+    maxToolCalls: row?.maxToolCalls ?? AI_LIMITS.maxToolCalls.default,
+    temperature: row?.temperature ?? null,
+    maxOutputTokens: row?.maxOutputTokens ?? null,
+    instructions: row?.instructions ?? "",
+    memoryEnabled: row?.memoryEnabled ?? true,
+    limits: AI_LIMITS,
     providers: AI_PROVIDERS,
     modelPresets: AI_MODEL_PRESETS,
     defaultBaseUrls: AI_PROVIDER_DEFAULT_BASE_URL,
@@ -118,15 +128,18 @@ export class OrgAiConfigService {
       enabled?: boolean;
       apiKey?: string;
       baseUrl?: string | null;
+      maxToolCalls?: number;
+      temperature?: number | null;
+      maxOutputTokens?: number | null;
+      instructions?: string | null;
+      memoryEnabled?: boolean;
     },
   ) {
     const existing = await prisma.orgAiConfig.findUnique({ where: { orgId } });
     const provider = input.provider ?? existing?.provider ?? "openai";
     assertProvider(provider);
     const model =
-      input.model?.trim() ||
-      existing?.model ||
-      AI_MODEL_PRESETS[provider][0];
+      input.model?.trim() || existing?.model || AI_MODEL_PRESETS[provider][0];
 
     const baseUrl =
       input.baseUrl !== undefined
@@ -152,9 +165,47 @@ export class OrgAiConfigService {
     const enabled =
       input.enabled ?? existing?.enabled ?? Boolean(apiKeyCiphertext);
 
+    const behavior = {
+      ...(input.maxToolCalls !== undefined && {
+        maxToolCalls: clampInt(
+          input.maxToolCalls,
+          AI_LIMITS.maxToolCalls.min,
+          AI_LIMITS.maxToolCalls.max,
+        ),
+      }),
+      ...(input.temperature !== undefined && {
+        temperature:
+          input.temperature === null
+            ? null
+            : Math.min(
+                AI_LIMITS.temperature.max,
+                Math.max(AI_LIMITS.temperature.min, input.temperature),
+              ),
+      }),
+      ...(input.maxOutputTokens !== undefined && {
+        maxOutputTokens:
+          input.maxOutputTokens === null
+            ? null
+            : clampInt(
+                input.maxOutputTokens,
+                AI_LIMITS.maxOutputTokens.min,
+                AI_LIMITS.maxOutputTokens.max,
+              ),
+      }),
+      ...(input.instructions !== undefined && {
+        instructions:
+          input.instructions?.trim().slice(0, AI_LIMITS.instructionsMaxChars) ||
+          null,
+      }),
+      ...(input.memoryEnabled !== undefined && {
+        memoryEnabled: input.memoryEnabled,
+      }),
+    };
+
     const row = await prisma.orgAiConfig.upsert({
       where: { orgId },
       create: {
+        ...behavior,
         orgId,
         provider,
         model,
@@ -165,6 +216,7 @@ export class OrgAiConfigService {
         apiKeyTag,
       },
       update: {
+        ...behavior,
         provider,
         model,
         baseUrl,
@@ -199,17 +251,26 @@ export class OrgAiConfigService {
     model: string;
     apiKey: string;
     baseUrl: string | null;
+    maxToolCalls: number;
+    temperature: number | null;
+    maxOutputTokens: number | null;
+    instructions: string | null;
+    memoryEnabled: boolean;
   }> {
     const row = await prisma.orgAiConfig.findUnique({ where: { orgId } });
     if (!row?.enabled) {
-      throw AppError.badRequest("AI assistant is disabled for this organization.");
+      throw AppError.badRequest(
+        "AI assistant is disabled for this organization.",
+      );
     }
     if (!row.apiKeyCiphertext || !row.apiKeyIv || !row.apiKeyTag) {
       throw AppError.badRequest("AI API key is not configured.");
     }
     assertProvider(row.provider);
     if (!isAiCryptoConfigured()) {
-      throw AppError.badRequest("AI_SETTINGS_ENCRYPTION_KEY is not configured.");
+      throw AppError.badRequest(
+        "AI_SETTINGS_ENCRYPTION_KEY is not configured.",
+      );
     }
     const apiKey = decryptSecret({
       ciphertext: row.apiKeyCiphertext,
@@ -222,6 +283,15 @@ export class OrgAiConfigService {
       model: row.model,
       apiKey,
       baseUrl,
+      maxToolCalls: clampInt(
+        row.maxToolCalls,
+        AI_LIMITS.maxToolCalls.min,
+        AI_LIMITS.maxToolCalls.max,
+      ),
+      temperature: row.temperature,
+      maxOutputTokens: row.maxOutputTokens,
+      instructions: row.instructions,
+      memoryEnabled: row.memoryEnabled,
     };
   }
 }

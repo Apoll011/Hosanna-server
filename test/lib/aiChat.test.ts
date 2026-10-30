@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { APICallError } from "ai";
 import {
-  CHAT_MAX_STEPS,
+  chatStepSafetyLimit,
   describeChatError,
   localePromptBlock,
   runBatch,
@@ -22,7 +22,10 @@ const msg = (n: number) =>
 
 describe("describeChatError", () => {
   it("passes AppError messages through", () => {
-    assert.equal(describeChatError(AppError.forbidden("No AI access")), "No AI access");
+    assert.equal(
+      describeChatError(AppError.forbidden("No AI access")),
+      "No AI access",
+    );
   });
 
   it("never leaks provider internals", () => {
@@ -61,16 +64,25 @@ describe("localePromptBlock", () => {
 
 describe("aiChatBodySchema", () => {
   it("accepts a locale and rejects unknown ones", () => {
-    assert.ok(aiChatBodySchema.safeParse({ messages: msg(1), locale: "pt" }).success);
-    assert.ok(!aiChatBodySchema.safeParse({ messages: msg(1), locale: "fr" }).success);
+    assert.ok(
+      aiChatBodySchema.safeParse({ messages: msg(1), locale: "pt" }).success,
+    );
+    assert.ok(
+      !aiChatBodySchema.safeParse({ messages: msg(1), locale: "fr" }).success,
+    );
   });
 
   it("caps history length and size", () => {
     assert.ok(
-      !aiChatBodySchema.safeParse({ messages: msg(AI_CHAT_MAX_MESSAGES + 1) }).success,
+      !aiChatBodySchema.safeParse({ messages: msg(AI_CHAT_MAX_MESSAGES + 1) })
+        .success,
     );
     const huge = [
-      { id: "1", role: "user", parts: [{ type: "text", text: "x".repeat(1_600_000) }] },
+      {
+        id: "1",
+        role: "user",
+        parts: [{ type: "text", text: "x".repeat(1_600_000) }],
+      },
     ];
     assert.ok(!aiChatBodySchema.safeParse({ messages: huge }).success);
   });
@@ -97,7 +109,7 @@ describe("runBatch", () => {
 });
 
 describe("chat step budget", () => {
-  it("leaves room for batch + follow-up flows", () => {
-    assert.ok(CHAT_MAX_STEPS >= 8);
+  it("leaves room for the final answer after the tool budget", () => {
+    assert.ok(chatStepSafetyLimit(12) > 12);
   });
 });
