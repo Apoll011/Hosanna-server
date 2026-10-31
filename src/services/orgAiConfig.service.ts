@@ -245,6 +245,34 @@ export class OrgAiConfigService {
     return publicAiSettings(updated);
   }
 
+  /**
+   * Decrypt the stored API key when present. Does not require `enabled`
+   * (settings / billing can still use the key while the assistant is off).
+   */
+  async getDecryptedApiKey(orgId: string): Promise<{
+    provider: AiProvider;
+    apiKey: string;
+    baseUrl: string | null;
+  } | null> {
+    const row = await prisma.orgAiConfig.findUnique({ where: { orgId } });
+    if (!row?.apiKeyCiphertext || !row.apiKeyIv || !row.apiKeyTag) {
+      return null;
+    }
+    assertProvider(row.provider);
+    if (!isAiCryptoConfigured()) {
+      throw AppError.badRequest(
+        "AI_SETTINGS_ENCRYPTION_KEY is not configured.",
+      );
+    }
+    const apiKey = decryptSecret({
+      ciphertext: row.apiKeyCiphertext,
+      iv: row.apiKeyIv,
+      tag: row.apiKeyTag,
+    });
+    const baseUrl = normalizeBaseUrl(row.provider, row.baseUrl);
+    return { provider: row.provider, apiKey, baseUrl };
+  }
+
   /** Load decrypted API key for server-side chat only. */
   async getRuntimeConfig(orgId: string): Promise<{
     provider: AiProvider;
