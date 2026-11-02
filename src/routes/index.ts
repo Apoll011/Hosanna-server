@@ -22,6 +22,7 @@ import { requireSubscription } from "../middleware/subscription.js";
 import { cifraRouter } from "./cifra.route.js";
 import anotationRouter from "./serviceSongAnnotation.routes.js";
 import { aiRouter } from "./ai.routes.js";
+import { youtubeRouter } from "./youtube.routes.js";
 import { rateLimit } from "express-rate-limit";
 
 export const apiRouter = Router();
@@ -44,6 +45,7 @@ apiRouter.use("/songs", requireSubscription, apiLimiter, songRouter);
 apiRouter.use("/folders", requireSubscription, apiLimiter, folderRouter);
 apiRouter.use("/services", requireSubscription, apiLimiter, serviceRouter);
 apiRouter.use("/cifra", requireSubscription, apiLimiter, cifraRouter);
+apiRouter.use("/youtube", requireSubscription, apiLimiter, youtubeRouter);
 apiRouter.use("/backup", requireSubscription, backupLimiter, backupRouter);
 apiRouter.use("/ai", requireSubscription, aiChatLimiter, aiRouter);
 

@@ -18,6 +18,7 @@ import {
   AiChatService,
   describeChatError,
 } from "../services/aiChat.service.js";
+import { getOrgAiBilling } from "../services/aiBilling/index.js";
 import { OrgAiConfigService } from "../services/orgAiConfig.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { AppError } from "../utils/errors.js";
@@ -58,6 +59,15 @@ aiRouter.delete(
   requirePermission("ai.manage"),
   asyncHandler(async (req, res) => {
     const data = await settings.clearKey(req.orgId!);
+    res.json(data);
+  }),
+);
+
+aiRouter.get(
+  "/billing",
+  requirePermission("ai.manage"),
+  asyncHandler(async (req, res) => {
+    const data = await getOrgAiBilling(req.orgId!);
     res.json(data);
   }),
 );

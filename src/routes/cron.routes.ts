@@ -37,49 +37,72 @@ cronRouter.post(
   asyncHandler(agendaRemindersHandler),
 );
 
-// POST /api/cron/purge-trash — permanently delete records past their purgeAt
+const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Soft-deleted rows past purgeAt, plus stuck rows that never got a purgeAt. */
+function expiredTrashWhere(now: Date) {
+  const retentionCutoff = new Date(now.getTime() - TRASH_RETENTION_MS);
+  return {
+    deleted: true as const,
+    OR: [
+      { purgeAt: { lte: now } },
+      { purgeAt: null, updatedAt: { lte: retentionCutoff } },
+    ],
+  };
+}
+
+// GET|POST /api/cron/purge-trash — permanently delete records past their purgeAt
+// (Vercel cron issues GET requests; POST kept for manual/scripted runs.)
+async function purgeTrashHandler(_req: Request, res: Response) {
+  const now = new Date();
+  const trashWhere = expiredTrashWhere(now);
+  // Reminder dispatch rows are idempotency keys; once an event is well in the
+  // past they can never be needed again.
+  const dispatchCutoff = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+
+  // Songs before folders/collections so FK cleanups stay simple under load.
+  const songs = await prisma.song.deleteMany({ where: trashWhere });
+  const [folders, collections, services, agendaEvents, reminderDispatches] =
+    await Promise.all([
+      prisma.folder.deleteMany({ where: trashWhere }),
+      prisma.collection.deleteMany({ where: trashWhere }),
+      prisma.service.deleteMany({ where: trashWhere }),
+      prisma.agendaEvent.deleteMany({ where: trashWhere }),
+      prisma.agendaReminderDispatch.deleteMany({
+        where: { sentAt: { lt: dispatchCutoff } },
+      }),
+    ]);
+
+  const totalPurged =
+    songs.count +
+    folders.count +
+    collections.count +
+    services.count +
+    agendaEvents.count;
+  if (totalPurged > 0) {
+    syncCache.invalidateAll();
+  }
+
+  res.json({
+    purged: {
+      songs: songs.count,
+      folders: folders.count,
+      collections: collections.count,
+      services: services.count,
+      agendaEvents: agendaEvents.count,
+      reminderDispatches: reminderDispatches.count,
+    },
+  });
+}
+
 cronRouter.get(
   "/purge-trash",
   requireCronSecret,
-  asyncHandler(async (_req, res) => {
-    const now = new Date();
-    // Reminder dispatch rows are idempotency keys; once an event is well in the
-    // past they can never be needed again.
-    const dispatchCutoff = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+  asyncHandler(purgeTrashHandler),
+);
 
-    const [songs, folders, services, agendaEvents, reminderDispatches] =
-      await Promise.all([
-        prisma.song.deleteMany({
-          where: { deleted: true, purgeAt: { lte: now } },
-        }),
-        prisma.folder.deleteMany({
-          where: { deleted: true, purgeAt: { lte: now } },
-        }),
-        prisma.service.deleteMany({
-          where: { deleted: true, purgeAt: { lte: now } },
-        }),
-        prisma.agendaEvent.deleteMany({
-          where: { deleted: true, purgeAt: { lte: now } },
-        }),
-        prisma.agendaReminderDispatch.deleteMany({
-          where: { sentAt: { lt: dispatchCutoff } },
-        }),
-      ]);
-
-    const totalPurged =
-      songs.count + folders.count + services.count + agendaEvents.count;
-    if (totalPurged > 0) {
-      syncCache.invalidateAll();
-    }
-
-    res.json({
-      purged: {
-        songs: songs.count,
-        folders: folders.count,
-        services: services.count,
-        agendaEvents: agendaEvents.count,
-        reminderDispatches: reminderDispatches.count,
-      },
-    });
-  }),
+cronRouter.post(
+  "/purge-trash",
+  requireCronSecret,
+  asyncHandler(purgeTrashHandler),
 );
