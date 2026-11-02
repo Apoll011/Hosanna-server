@@ -90,12 +90,37 @@ const DELEGATE_BY_COLLECTION = {
 } as const;
 
 const DEFAULT_REMINDER = Object.freeze({ enabled: false, label: "" });
+const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 function parseDate(value: unknown): Date | null {
   if (!value) return null;
   if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
   const d = new Date(value as string | number);
   return isNaN(d.getTime()) ? null : d;
+}
+
+function defaultPurgeAt(): Date {
+  return new Date(Date.now() + TRASH_RETENTION_MS);
+}
+
+/**
+ * Apply trash fields from a wire doc. Soft-delete always gets a purgeAt so the
+ * cron (and client trash verifier) can hard-remove the row later.
+ */
+function applyTrashFields(data: Record<string, unknown>, doc: any): void {
+  if (doc.isDeleted !== undefined) {
+    const deleted = Boolean(doc.isDeleted);
+    data.deleted = deleted;
+    if (deleted) {
+      data.purgeAt = parseDate(doc.purgeAt) ?? defaultPurgeAt();
+    } else if (doc.purgeAt !== undefined) {
+      data.purgeAt = parseDate(doc.purgeAt);
+    } else {
+      data.purgeAt = null;
+    }
+  } else if (doc.purgeAt !== undefined) {
+    data.purgeAt = parseDate(doc.purgeAt);
+  }
 }
 
 function toTimestamp(value: unknown): number | null {
@@ -298,6 +323,81 @@ function optimisticIdWhere(
 
 /** Mutation returns a conflict document id, or null on success. */
 type PushMutationFn = (tx: OrgScopedTx) => Promise<string | null>;
+
+type TombstoneDelegate = {
+  deleteMany: (args: {
+    where: { id: string; updatedAt?: Date };
+  }) => Promise<{ count: number }>;
+  findFirst: (args: {
+    where: { id: string };
+    select: { id: true };
+  }) => Promise<{ id: string } | null>;
+};
+
+/**
+ * RxDB `_deleted: true` is a hard-delete tombstone (sent after purgeAt expiry
+ * by the client trash verifier). Soft-delete uses `isDeleted` + `purgeAt`.
+ * Idempotent if the row is already gone.
+ */
+async function hardDeleteOnTombstone(
+  delegate: TombstoneDelegate,
+  id: string,
+  assumed: any,
+): Promise<string | null> {
+  const result = await delegate.deleteMany({
+    where: optimisticIdWhere(id, assumed),
+  });
+  if (result.count > 0) return null;
+  const exists = await delegate.findFirst({
+    where: { id },
+    select: { id: true },
+  });
+  return exists ? id : null;
+}
+
+/** True when a tombstone should hard-delete now (expired or missing purgeAt). */
+function shouldHardDeleteTombstone(doc: any): boolean {
+  const purgeAt = parseDate(doc.purgeAt);
+  return !purgeAt || purgeAt.getTime() <= Date.now();
+}
+
+/**
+ * Handle an RxDB `_deleted` tombstone: hard-delete when purgeAt is due (or
+ * absent), otherwise keep a soft-delete with the provided purgeAt so a
+ * mistaken tombstone during the retention window stays recoverable.
+ */
+function enqueueTombstoneMutation(
+  mutations: PushMutationFn[],
+  doc: any,
+  assumed: any,
+  delegateOf: (tx: OrgScopedTx) => TombstoneDelegate,
+  updateMany: (
+    tx: OrgScopedTx,
+    where: { id: string; updatedAt?: Date },
+    data: Record<string, unknown>,
+  ) => Promise<{ count: number }>,
+): void {
+  if (shouldHardDeleteTombstone(doc)) {
+    mutations.push((tx) =>
+      hardDeleteOnTombstone(delegateOf(tx), doc.id, assumed),
+    );
+    return;
+  }
+
+  const deleteData: Record<string, unknown> = {
+    deleted: true,
+    purgeAt: parseDate(doc.purgeAt) ?? defaultPurgeAt(),
+  };
+  assignClientTimestamps(deleteData, doc);
+  mutations.push(async (tx) => {
+    const result = await updateMany(
+      tx,
+      optimisticIdWhere(doc.id, assumed),
+      deleteData,
+    );
+    return result.count === 0 ? doc.id : null;
+  });
+}
 
 async function commitPushMutations(
   db: OrgScopedPrisma,
@@ -551,15 +651,13 @@ async function pushSongs(
       }
 
       if (doc._deleted) {
-        const deleteData: Record<string, unknown> = { deleted: true };
-        assignClientTimestamps(deleteData, doc);
-        mutations.push(async (tx) => {
-          const result = await tx.song.updateMany({
-            where: optimisticIdWhere(doc.id, assumed),
-            data: deleteData,
-          });
-          return result.count === 0 ? doc.id : null;
-        });
+        enqueueTombstoneMutation(
+          mutations,
+          doc,
+          assumed,
+          (tx) => tx.song,
+          (tx, where, data) => tx.song.updateMany({ where, data }),
+        );
       } else {
         const songData: Record<string, unknown> = {};
         if (doc.title !== undefined) songData.title = doc.title;
@@ -571,10 +669,7 @@ async function pushSongs(
           songData.tags = Array.isArray(doc.tags) ? doc.tags : [];
         if (doc.song_number !== undefined)
           songData.song_number = doc.song_number;
-        if (doc.isDeleted !== undefined)
-          songData.deleted = Boolean(doc.isDeleted);
-        if (doc.purgeAt !== undefined)
-          songData.purgeAt = parseDate(doc.purgeAt);
+        applyTrashFields(songData, doc);
         assignClientTimestamps(songData, doc);
 
         const collectionIds = Array.isArray(doc.collectionIds)
@@ -614,7 +709,9 @@ async function pushSongs(
         tags: Array.isArray(doc.tags) ? doc.tags : [],
         song_number: doc.song_number ?? null,
         deleted: Boolean(doc.isDeleted),
-        purgeAt: parseDate(doc.purgeAt),
+        purgeAt: Boolean(doc.isDeleted)
+          ? (parseDate(doc.purgeAt) ?? defaultPurgeAt())
+          : parseDate(doc.purgeAt),
       };
       assignClientTimestamps(createSongData, doc, { includeCreatedAt: true });
       if (Array.isArray(doc.collectionIds)) {
@@ -696,25 +793,20 @@ async function pushFolders(
       }
 
       if (doc._deleted) {
-        const deleteData: Record<string, unknown> = { deleted: true };
-        assignClientTimestamps(deleteData, doc);
-        mutations.push(async (tx) => {
-          const result = await tx.folder.updateMany({
-            where: optimisticIdWhere(doc.id, assumed),
-            data: deleteData,
-          });
-          return result.count === 0 ? doc.id : null;
-        });
+        enqueueTombstoneMutation(
+          mutations,
+          doc,
+          assumed,
+          (tx) => tx.folder,
+          (tx, where, data) => tx.folder.updateMany({ where, data }),
+        );
       } else {
         const folderData: Record<string, unknown> = {};
         if (doc.name !== undefined) folderData.name = doc.name;
         if (doc.parentId !== undefined) folderData.parentId = doc.parentId;
         if (doc.color !== undefined) folderData.color = doc.color;
         if (doc.icon !== undefined) folderData.icon = doc.icon;
-        if (doc.isDeleted !== undefined)
-          folderData.deleted = Boolean(doc.isDeleted);
-        if (doc.purgeAt !== undefined)
-          folderData.purgeAt = parseDate(doc.purgeAt);
+        applyTrashFields(folderData, doc);
         assignClientTimestamps(folderData, doc);
 
         mutations.push(async (tx) => {
@@ -734,7 +826,9 @@ async function pushFolders(
         color: doc.color ?? "default",
         icon: doc.icon ?? "default",
         deleted: Boolean(doc.isDeleted),
-        purgeAt: parseDate(doc.purgeAt),
+        purgeAt: Boolean(doc.isDeleted)
+          ? (parseDate(doc.purgeAt) ?? defaultPurgeAt())
+          : parseDate(doc.purgeAt),
       };
       assignClientTimestamps(createData, doc, { includeCreatedAt: true });
       mutations.push(async (tx) => {
@@ -811,15 +905,13 @@ async function pushCollections(
       }
 
       if (doc._deleted) {
-        const deleteData: Record<string, unknown> = { deleted: true };
-        assignClientTimestamps(deleteData, doc);
-        mutations.push(async (tx) => {
-          const result = await tx.collection.updateMany({
-            where: optimisticIdWhere(doc.id, assumed),
-            data: deleteData,
-          });
-          return result.count === 0 ? doc.id : null;
-        });
+        enqueueTombstoneMutation(
+          mutations,
+          doc,
+          assumed,
+          (tx) => tx.collection,
+          (tx, where, data) => tx.collection.updateMany({ where, data }),
+        );
       } else {
         const updateData: Record<string, unknown> = {};
         if (doc.name !== undefined) updateData.name = doc.name;
@@ -828,10 +920,7 @@ async function pushCollections(
         if (doc.color !== undefined) updateData.color = doc.color;
         if (doc.icon !== undefined) updateData.icon = doc.icon;
         if (doc.image !== undefined) updateData.image = doc.image;
-        if (doc.isDeleted !== undefined)
-          updateData.deleted = Boolean(doc.isDeleted);
-        if (doc.purgeAt !== undefined)
-          updateData.purgeAt = parseDate(doc.purgeAt);
+        applyTrashFields(updateData, doc);
         assignClientTimestamps(updateData, doc);
 
         const songIds = Array.isArray(doc.songIds) ? doc.songIds : undefined;
@@ -866,7 +955,9 @@ async function pushCollections(
         icon: doc.icon ?? "default",
         image: doc.image ?? null,
         deleted: Boolean(doc.isDeleted),
-        purgeAt: parseDate(doc.purgeAt),
+        purgeAt: Boolean(doc.isDeleted)
+          ? (parseDate(doc.purgeAt) ?? defaultPurgeAt())
+          : parseDate(doc.purgeAt),
       };
       assignClientTimestamps(createData, doc, { includeCreatedAt: true });
       if (Array.isArray(doc.songIds)) {
@@ -948,15 +1039,13 @@ async function pushServices(
       }
 
       if (doc._deleted) {
-        const deleteData: Record<string, unknown> = { deleted: true };
-        assignClientTimestamps(deleteData, doc);
-        mutations.push(async (tx) => {
-          const result = await tx.service.updateMany({
-            where: optimisticIdWhere(doc.id, assumed),
-            data: deleteData,
-          });
-          return result.count === 0 ? doc.id : null;
-        });
+        enqueueTombstoneMutation(
+          mutations,
+          doc,
+          assumed,
+          (tx) => tx.service,
+          (tx, where, data) => tx.service.updateMany({ where, data }),
+        );
       } else {
         const serviceData: Record<string, unknown> = {};
         if (doc.name !== undefined) serviceData.name = doc.name;
@@ -966,10 +1055,7 @@ async function pushServices(
           serviceData.elements = doc.elements;
         if (doc.archived !== undefined)
           serviceData.archived = Boolean(doc.archived);
-        if (doc.isDeleted !== undefined)
-          serviceData.deleted = Boolean(doc.isDeleted);
-        if (doc.purgeAt !== undefined)
-          serviceData.purgeAt = parseDate(doc.purgeAt);
+        applyTrashFields(serviceData, doc);
         assignClientTimestamps(serviceData, doc);
 
         mutations.push(async (tx) => {
@@ -990,7 +1076,9 @@ async function pushServices(
         elements: Array.isArray(doc.elements) ? doc.elements : [],
         archived: Boolean(doc.archived),
         deleted: Boolean(doc.isDeleted),
-        purgeAt: parseDate(doc.purgeAt),
+        purgeAt: Boolean(doc.isDeleted)
+          ? (parseDate(doc.purgeAt) ?? defaultPurgeAt())
+          : parseDate(doc.purgeAt),
       };
       assignClientTimestamps(createData, doc, { includeCreatedAt: true });
       mutations.push(async (tx) => {
@@ -1062,15 +1150,13 @@ async function pushAgendaEvents(
       }
 
       if (doc._deleted) {
-        const deleteData: Record<string, unknown> = { deleted: true };
-        assignClientTimestamps(deleteData, doc);
-        mutations.push(async (tx) => {
-          const result = await tx.agendaEvent.updateMany({
-            where: optimisticIdWhere(doc.id, assumed),
-            data: deleteData,
-          });
-          return result.count === 0 ? doc.id : null;
-        });
+        enqueueTombstoneMutation(
+          mutations,
+          doc,
+          assumed,
+          (tx) => tx.agendaEvent,
+          (tx, where, data) => tx.agendaEvent.updateMany({ where, data }),
+        );
       } else {
         const eventData: Record<string, unknown> = {};
         if (doc.date !== undefined) eventData.date = doc.date;
@@ -1090,10 +1176,7 @@ async function pushAgendaEvents(
         ) {
           eventData.responsibilities = doc.responsibilities;
         }
-        if (doc.isDeleted !== undefined)
-          eventData.deleted = Boolean(doc.isDeleted);
-        if (doc.purgeAt !== undefined)
-          eventData.purgeAt = parseDate(doc.purgeAt);
+        applyTrashFields(eventData, doc);
         assignClientTimestamps(eventData, doc);
 
         mutations.push(async (tx) => {
@@ -1121,7 +1204,9 @@ async function pushAgendaEvents(
           ? doc.responsibilities
           : [],
         deleted: Boolean(doc.isDeleted),
-        purgeAt: parseDate(doc.purgeAt),
+        purgeAt: Boolean(doc.isDeleted)
+          ? (parseDate(doc.purgeAt) ?? defaultPurgeAt())
+          : parseDate(doc.purgeAt),
       };
       assignClientTimestamps(createData, doc, { includeCreatedAt: true });
       mutations.push(async (tx) => {
