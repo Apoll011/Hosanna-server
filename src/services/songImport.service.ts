@@ -1,7 +1,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateObject, generateText } from "ai";
+import { generateText, Output } from "ai";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { validateChordProContent } from "../mcp/lib/chordproGate.js";
@@ -237,9 +237,9 @@ export class SongImportService {
       .filter(Boolean)
       .join("\n");
 
-    const extracted = await generateObject({
+    const extracted = await generateText({
       model,
-      schema: draftSchema,
+      output: Output.object({ schema: draftSchema }),
       temperature: runtime.temperature ?? 0.2,
       maxOutputTokens: runtime.maxOutputTokens ?? 4096,
       messages: [
@@ -252,22 +252,26 @@ export class SongImportService {
         },
       ],
     });
+    const extractedDraft = extracted.output;
+    if (!extractedDraft) {
+      throw new Error("Model returned no structured song draft.");
+    }
 
     markStep(job, "extract", "done");
     markStep(job, "metadata", "active");
 
     let draft: SongImportDraft = {
-      title: extracted.object.title.trim(),
-      artist: (extracted.object.artist || "").trim(),
-      content: extracted.object.content.trim(),
-      key: extracted.object.key?.toString(),
-      tempo: extracted.object.tempo?.toString(),
-      timeSignature: extracted.object.timeSignature,
-      confidence: extracted.object.confidence,
+      title: extractedDraft.title.trim(),
+      artist: (extractedDraft.artist || "").trim(),
+      content: extractedDraft.content.trim(),
+      key: extractedDraft.key?.toString(),
+      tempo: extractedDraft.tempo?.toString(),
+      timeSignature: extractedDraft.timeSignature,
+      confidence: extractedDraft.confidence,
       warnings: [],
     };
-    if (extracted.object.notes) {
-      draft.warnings.push(extracted.object.notes);
+    if (extractedDraft.notes) {
+      draft.warnings.push(extractedDraft.notes);
     }
 
     markStep(job, "metadata", "done");
@@ -309,25 +313,29 @@ export class SongImportService {
         snippets || "(none)",
       ].join("\n");
 
-      const verified = await generateObject({
+      const verified = await generateText({
         model,
-        schema: draftSchema,
+        output: Output.object({ schema: draftSchema }),
         temperature: 0.1,
         maxOutputTokens: runtime.maxOutputTokens ?? 4096,
         prompt: verifyPrompt,
       });
+      const verifiedDraft = verified.output;
+      if (!verifiedDraft) {
+        throw new Error("Model returned no verified song draft.");
+      }
 
       draft = {
-        title: verified.object.title.trim() || draft.title,
-        artist: (verified.object.artist || draft.artist).trim(),
-        content: verified.object.content.trim() || draft.content,
-        key: verified.object.key?.toString() || draft.key,
-        tempo: verified.object.tempo?.toString() || draft.tempo,
-        timeSignature: verified.object.timeSignature || draft.timeSignature,
-        confidence: verified.object.confidence ?? draft.confidence,
+        title: verifiedDraft.title.trim() || draft.title,
+        artist: (verifiedDraft.artist || draft.artist).trim(),
+        content: verifiedDraft.content.trim() || draft.content,
+        key: verifiedDraft.key?.toString() || draft.key,
+        tempo: verifiedDraft.tempo?.toString() || draft.tempo,
+        timeSignature: verifiedDraft.timeSignature || draft.timeSignature,
+        confidence: verifiedDraft.confidence ?? draft.confidence,
         warnings: [
           ...draft.warnings,
-          ...(verified.object.notes ? [verified.object.notes] : []),
+          ...(verifiedDraft.notes ? [verifiedDraft.notes] : []),
           `Verified against web (${search.provider}).`,
         ],
       };
