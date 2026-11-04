@@ -1,0 +1,2020 @@
+openapi: 3.1.0
+info:
+  title: Hosanna API
+  version: 2.22.2
+  description: Production REST API for Hosanna Studio and the Flutter musician app. Authentication is Better Auth (session cookie or Bearer). `/api/auth/*` is owned by Better Auth and is not expanded here. MCP lives at `/mcp` (outside this document).
+  license:
+    name: Apache-2.0
+servers:
+  - url: https://api.hosanna.live/api
+    description: Production
+  - url: http://localhost:3000/api
+    description: Local
+tags:
+  - name: Health
+  - name: Billing
+  - name: Cron
+  - name: Songs
+  - name: Folders
+  - name: Services
+  - name: ServiceNotes
+  - name: Annotations
+  - name: Replication
+  - name: Trash
+  - name: Backup
+  - name: AI
+  - name: Integrations
+  - name: Notifications
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  timestamp:
+                    type: string
+      tags:
+        - Health
+      security: []
+      operationId: getHealth
+  /billing/pricing:
+    get:
+      summary: Public plan display prices
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanPricing"
+      tags:
+        - Billing
+      security: []
+      operationId: getBillingPricing
+  /billing/entitlement:
+    get:
+      summary: Org subscription entitlement
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entitled:
+                    type: boolean
+      tags:
+        - Billing
+      security: &a2
+        - cookieAuth: []
+        - bearerAuth: []
+      operationId: getBillingEntitlement
+  /cron/agenda-reminders:
+    get:
+      summary: "Cron: agenda-reminders"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - Cron
+      security: &a1
+        - cronSecret: []
+      operationId: getCronagendaReminders
+    post:
+      summary: "Cron: agenda-reminders"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - Cron
+      security: *a1
+      operationId: postCronagendaReminders
+  /cron/purge-trash:
+    get:
+      summary: "Cron: purge-trash"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - Cron
+      security: *a1
+      operationId: getCronpurgeTrash
+    post:
+      summary: "Cron: purge-trash"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - Cron
+      security: *a1
+      operationId: postCronpurgeTrash
+  /songs:
+    get:
+      summary: List songs
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  songs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Song"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  totalPages:
+                    type: integer
+      tags:
+        - Songs
+      security: *a2
+      operationId: listSongs
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: folder
+          in: query
+          schema:
+            type: string
+          description: UUID or "root"
+        - name: tag
+          in: query
+          schema:
+            type: string
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum:
+              - title
+              - artist
+              - createdAt
+              - updatedAt
+        - name: sortOrder
+          in: query
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+    post:
+      summary: Create song
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Song"
+        "401":
+          description: Unauthorized
+      tags:
+        - Songs
+      security: *a2
+      operationId: createSong
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+              properties:
+                title:
+                  type: string
+                artist:
+                  type: string
+                content:
+                  type: string
+                folderId:
+                  type: string
+                  format: uuid
+                  nullable: true
+                song_number:
+                  type: integer
+                  nullable: true
+                path:
+                  type: string
+                tags:
+                  type: array
+                  items:
+                    type: string
+  /songs/batch:
+    post:
+      summary: Create songs batch
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Song"
+      tags:
+        - Songs
+      security: *a2
+      operationId: createSongsBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - songs
+              properties:
+                songs:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    additionalProperties: true
+  /songs/batch-tags:
+    put:
+      summary: Batch update song tags
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  count:
+                    type: integer
+      tags:
+        - Songs
+      security: *a2
+      operationId: batchUpdateSongTags
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - songIds
+                - tags
+              properties:
+                songIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                tags:
+                  type: array
+                  items:
+                    type: string
+                mode:
+                  type: string
+                  enum:
+                    - append
+                    - replace
+                    - remove
+                  default: append
+  /songs/{id}:
+    get:
+      summary: Get song
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Song"
+      tags:
+        - Songs
+      security: *a2
+      operationId: getSong
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+    put:
+      summary: Update song
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Song"
+        "409":
+          description: Conflict
+      tags:
+        - Songs
+      security: *a2
+      operationId: updateSong
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - updatedAt
+              properties:
+                updatedAt:
+                  type: string
+                  format: date-time
+                title:
+                  type: string
+                artist:
+                  type: string
+                content:
+                  type: string
+                folderId:
+                  type: string
+                  format: uuid
+                  nullable: true
+                song_number:
+                  type: integer
+                  nullable: true
+                path:
+                  type: string
+                tags:
+                  type: array
+                  items:
+                    type: string
+    delete:
+      summary: Delete song
+      responses:
+        "204":
+          description: Deleted
+      tags:
+        - Songs
+      security: *a2
+      operationId: deleteSong
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+  /songs/{id}/download:
+    get:
+      summary: Download song ChordPro
+      responses:
+        "200":
+          description: ChordPro file
+          content:
+            text/vnd.chordpro:
+              schema:
+                type: string
+      tags:
+        - Songs
+      security: *a2
+      operationId: downloadSong
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+  /songs/{id}/move:
+    put:
+      summary: Move song
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Song"
+      tags:
+        - Songs
+      security: *a2
+      operationId: moveSong
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - updatedAt
+                - folderId
+              properties:
+                updatedAt:
+                  type: string
+                  format: date-time
+                folderId:
+                  type: string
+                  format: uuid
+                  nullable: true
+                newPath:
+                  type: string
+  /folders:
+    get:
+      summary: List folders
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Folder"
+      tags:
+        - Folders
+      security: *a2
+      operationId: listFolders
+    post:
+      summary: Create folder
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Folder"
+      tags:
+        - Folders
+      security: *a2
+      operationId: createFolder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                parentId:
+                  type: string
+                  format: uuid
+                  nullable: true
+                color:
+                  type: string
+                icon:
+                  type: string
+  /folders/flat:
+    get:
+      summary: List folders flat
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Folder"
+      tags:
+        - Folders
+      security: *a2
+      operationId: listFoldersFlat
+  /folders/{id}:
+    put:
+      summary: Update folder
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Folder"
+      tags:
+        - Folders
+      security: *a2
+      operationId: updateFolder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - updatedAt
+              properties:
+                updatedAt:
+                  type: string
+                  format: date-time
+                name:
+                  type: string
+                parentId:
+                  type: string
+                  format: uuid
+                  nullable: true
+                color:
+                  type: string
+                icon:
+                  type: string
+    delete:
+      summary: Delete folder
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - Folders
+      security: *a2
+      operationId: deleteFolder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: action
+          in: query
+          schema:
+            type: string
+            enum:
+              - move_to_root
+              - delete_songs
+            default: move_to_root
+  /folders/{id}/move-content-to-root:
+    delete:
+      summary: Delete folder moving content to root
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  movedSongs:
+                    type: integer
+                  movedFolders:
+                    type: integer
+      tags:
+        - Folders
+      security: *a2
+      operationId: deleteFolderMoveContentToRoot
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+  /folders/{id}/with-content:
+    delete:
+      summary: Delete folder with content
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - Folders
+      security: *a2
+      operationId: deleteFolderWithContent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+  /services:
+    get:
+      summary: List services
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Service"
+      tags:
+        - Services
+      security: *a2
+      operationId: listServices
+      parameters:
+        - name: archived
+          in: query
+          schema:
+            type: boolean
+            default: false
+    post:
+      summary: Create service
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+      tags:
+        - Services
+      security: *a2
+      operationId: createService
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - date
+              properties:
+                name:
+                  type: string
+                date:
+                  type: string
+                notes:
+                  type: string
+                elements:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/ServiceElement"
+  /services/{id}:
+    get:
+      summary: Get service
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+      tags:
+        - Services
+      security: *a2
+      operationId: getService
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+    put:
+      summary: Update service
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+      tags:
+        - Services
+      security: *a2
+      operationId: updateService
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - updatedAt
+              properties:
+                updatedAt:
+                  type: string
+                  format: date-time
+                name:
+                  type: string
+                date:
+                  type: string
+                notes:
+                  type: string
+                archived:
+                  type: boolean
+                elements:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/ServiceElement"
+    delete:
+      summary: Delete service
+      responses:
+        "204":
+          description: Deleted
+      tags:
+        - Services
+      security: *a2
+      operationId: deleteService
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+  /services/{id}/elements:
+    put:
+      summary: Replace service elements
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+      tags:
+        - Services
+      security: *a2
+      operationId: updateServiceElements
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - updatedAt
+                - elements
+              properties:
+                updatedAt:
+                  type: string
+                  format: date-time
+                elements:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/ServiceElement"
+  /services/{id}/notes:
+    get:
+      summary: List service notes
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ServiceNote"
+      tags:
+        - ServiceNotes
+      security: *a2
+      operationId: listServiceNotes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: elementId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: scope
+          in: query
+          schema:
+            type: string
+            enum:
+              - all
+              - service
+            default: all
+    post:
+      summary: Create service note
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceNote"
+      tags:
+        - ServiceNotes
+      security: *a2
+      operationId: createServiceNote
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - body
+              properties:
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 10000
+                elementId:
+                  type: string
+                  format: uuid
+                  nullable: true
+                private:
+                  type: boolean
+                  default: false
+  /services/{id}/notes/{noteId}:
+    put:
+      summary: Update service note
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceNote"
+      tags:
+        - ServiceNotes
+      security: *a2
+      operationId: updateServiceNote
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: noteId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                body:
+                  type: string
+                private:
+                  type: boolean
+    delete:
+      summary: Delete service note
+      responses:
+        "204":
+          description: Deleted
+      tags:
+        - ServiceNotes
+      security: *a2
+      operationId: deleteServiceNote
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: noteId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+  /annotation/services/{serviceId}/songs/{songId}/annotation:
+    get:
+      summary: Get song annotation
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnnotationGetResponse"
+        "404":
+          description: Not found
+      tags:
+        - Annotations
+      security: *a2
+      operationId: getAnnotation
+      parameters:
+        - name: serviceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: songId
+          in: path
+          required: true
+          schema:
+            type: string
+    put:
+      summary: Put song annotation
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updatedAt:
+                    type: string
+                    format: date-time
+                  updatedById:
+                    type: string
+                    nullable: true
+                  revision:
+                    type: integer
+      tags:
+        - Annotations
+      security: *a2
+      operationId: putAnnotation
+      parameters:
+        - name: serviceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: songId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - canvasDataBase64
+              properties:
+                canvasDataBase64:
+                  type: string
+  /replication/{collection}/pull:
+    post:
+      summary: Pull one collection
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PullResponse"
+      tags:
+        - Replication
+      security: *a2
+      operationId: pullCollection
+      parameters:
+        - name: collection
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ReplicationCollection"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PullRequest"
+  /replication/pull:
+    post:
+      summary: Pull multiple collections
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: "#/components/schemas/PullResponse"
+      tags:
+        - Replication
+      security: *a2
+      operationId: pullAllCollections
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                checkpoints:
+                  type: object
+                  additionalProperties:
+                    $ref: "#/components/schemas/Checkpoint"
+                limit:
+                  type: integer
+                  minimum: 1
+                  maximum: 2000
+  /replication/{collection}/push:
+    post:
+      summary: Push one collection
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                description: Conflict documents (empty if all accepted)
+      tags:
+        - Replication
+      security: *a2
+      operationId: pushCollection
+      parameters:
+        - name: collection
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ReplicationCollection"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - changeRows
+              properties:
+                changeRows:
+                  type: array
+                  minItems: 1
+                  maxItems: 2000
+                  items:
+                    $ref: "#/components/schemas/ChangeRow"
+  /trash:
+    get:
+      summary: List trash
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  songs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Song"
+                  folders:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Folder"
+                  services:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Service"
+      tags:
+        - Trash
+      security: *a2
+      operationId: listTrash
+  /trash/songs/{id}/restore:
+    post:
+      summary: Restore trashed song
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - Trash
+      security: *a2
+      operationId: restoreTrashSong
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+  /trash/folders/{id}/restore:
+    post:
+      summary: Restore trashed folder
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - Trash
+      security: *a2
+      operationId: restoreTrashFolder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+  /trash/services/{id}/restore:
+    post:
+      summary: Restore trashed service
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - Trash
+      security: *a2
+      operationId: restoreTrashService
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+  /backup:
+    get:
+      summary: Export backup
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupDocument"
+      tags:
+        - Backup
+      security: *a2
+      operationId: exportBackup
+  /backup/restore:
+    post:
+      summary: Restore backup
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  counts:
+                    type: object
+                    properties:
+                      folders:
+                        type: integer
+                      songs:
+                        type: integer
+                      services:
+                        type: integer
+                      collections:
+                        type: integer
+                      agendaEvents:
+                        type: integer
+      tags:
+        - Backup
+      security: *a2
+      operationId: restoreBackup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupDocument"
+  /ai/settings:
+    get:
+      summary: Get AI settings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - AI
+      security: *a2
+      operationId: getAiSettings
+    put:
+      summary: Update AI settings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - AI
+      security: *a2
+      operationId: updateAiSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /ai/settings/key:
+    delete:
+      summary: Clear AI API key
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - AI
+      security: *a2
+      operationId: deleteAiSettingsKey
+  /ai/billing:
+    get:
+      summary: AI provider billing/balance
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - AI
+      security: *a2
+      operationId: getAiBilling
+  /ai/memory:
+    get:
+      summary: List AI memory
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        content:
+                          type: string
+                        source:
+                          type: string
+                        createdAt:
+                          type: string
+                          format: date-time
+      tags:
+        - AI
+      security: *a2
+      operationId: listAiMemory
+    post:
+      summary: Add AI memory
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - AI
+      security: *a2
+      operationId: createAiMemory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                content:
+                  type: string
+    delete:
+      summary: Clear all AI memory
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cleared:
+                    type: integer
+      tags:
+        - AI
+      security: *a2
+      operationId: clearAiMemory
+  /ai/memory/{id}:
+    delete:
+      summary: Delete AI memory item
+      responses:
+        "204":
+          description: Deleted
+      tags:
+        - AI
+      security: *a2
+      operationId: deleteAiMemory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+  /ai/confirm:
+    post:
+      summary: Confirm staged AI destructive action
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - AI
+      security: *a2
+      operationId: confirmAiAction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+                - id
+              properties:
+                action:
+                  type: string
+                  enum:
+                    - delete_song
+                    - delete_service
+                    - delete_folder
+                    - delete_collection
+                    - delete_agenda
+                id:
+                  type: string
+                folderAction:
+                  type: string
+                  enum:
+                    - move_to_root
+                    - delete_songs
+  /ai/chat:
+    post:
+      summary: AI chat stream (UI message stream)
+      responses:
+        "200":
+          description: UI message stream
+          content:
+            text/plain:
+              schema:
+                type: string
+      tags:
+        - AI
+      security: *a2
+      operationId: aiChat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - messages
+              properties:
+                messages:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items:
+                    type: object
+                    additionalProperties: true
+                context:
+                  type: object
+                  additionalProperties: true
+                locale:
+                  type: string
+                  enum:
+                    - pt
+                    - en
+                    - es
+      description: Returns an AI SDK UI message stream (not a single JSON body).
+  /youtube/duration:
+    get:
+      summary: YouTube duration
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - Integrations
+      security: *a2
+      operationId: getYoutubeDuration
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+  /cifra:
+    get:
+      summary: Import from Cifra Club / Ultimate Guitar
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - Integrations
+      security: *a2
+      operationId: importCifra
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+  /notifications:
+    post:
+      summary: Send notification
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      tags:
+        - Notifications
+      security: *a2
+      operationId: sendNotification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - type
+                - title
+              properties:
+                userId:
+                  type: string
+                organizationId:
+                  type: string
+                roles:
+                  type: array
+                  items:
+                    type: string
+                type:
+                  type: string
+                title:
+                  type: string
+                description:
+                  type: string
+                href:
+                  type: string
+                channel:
+                  type: string
+                  enum:
+                    - inbox
+                    - push
+                    - both
+                  default: inbox
+                fcm:
+                  type: object
+                  additionalProperties: true
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: hosanna.session_token
+      description: Better Auth session cookie (actual cookie name may vary by Better Auth version/prefix).
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: "Better Auth session token (Authorization: Bearer)."
+    cronSecret:
+      type: http
+      scheme: bearer
+      description: CRON_SECRET for /api/cron/*
+  schemas:
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details: {}
+    Checkpoint:
+      type: object
+      nullable: true
+      properties:
+        updatedAt:
+          type: number
+          description: Unix epoch ms
+        id:
+          type: string
+    Song:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        orgId:
+          type: string
+        title:
+          type: string
+        artist:
+          type: string
+        content:
+          type: string
+        folderId:
+          type: string
+          format: uuid
+          nullable: true
+        path:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        song_number:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deleted:
+          type: boolean
+        purgeAt:
+          type: string
+          format: date-time
+          nullable: true
+        collectionIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        isDeleted:
+          type: boolean
+    Folder:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        orgId:
+          type: string
+        name:
+          type: string
+        color:
+          type: string
+        icon:
+          type: string
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deleted:
+          type: boolean
+        purgeAt:
+          type: string
+          format: date-time
+          nullable: true
+        songCount:
+          type: integer
+        folderCount:
+          type: integer
+        isDeleted:
+          type: boolean
+    ServiceElement:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum:
+            - welcome
+            - scripture
+            - message
+            - announcement
+            - custom
+            - song
+        title:
+          type: string
+        content:
+          type: string
+          nullable: true
+        position:
+          type: integer
+          nullable: true
+        songId:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        passage:
+          type: string
+          nullable: true
+        duration:
+          type: integer
+          nullable: true
+    Service:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        date:
+          type: string
+          format: date-time
+        notes:
+          type: string
+          nullable: true
+        elements:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceElement"
+        archived:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        isDeleted:
+          type: boolean
+        purgeAt:
+          type: string
+          format: date-time
+          nullable: true
+    ServiceNote:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        serviceId:
+          type: string
+          format: uuid
+        elementId:
+          type: string
+          nullable: true
+        body:
+          type: string
+        private:
+          type: boolean
+        author:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            image:
+              type: string
+              nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Collection:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        color:
+          type: string
+        icon:
+          type: string
+        image:
+          type: string
+          nullable: true
+        songIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        songCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        isDeleted:
+          type: boolean
+        purgeAt:
+          type: string
+          format: date-time
+          nullable: true
+    AgendaEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        date:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        time:
+          type: string
+        durationMinutes:
+          type: integer
+        location:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        reminder: {}
+        linkedServiceId:
+          type: string
+          format: uuid
+          nullable: true
+        responsibilities: {}
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        isDeleted:
+          type: boolean
+        purgeAt:
+          type: string
+          format: date-time
+          nullable: true
+    PlanPricing:
+      type: object
+      properties:
+        plan:
+          type: string
+          enum:
+            - cloud
+        currency:
+          type: string
+        monthly:
+          type: object
+          properties:
+            amount:
+              type: string
+            amountCents:
+              type: integer
+            period:
+              type: string
+        annual:
+          type: object
+          properties:
+            amount:
+              type: string
+            amountCents:
+              type: integer
+            period:
+              type: string
+    BackupDocument:
+      type: object
+      required:
+        - version
+        - folders
+        - songs
+        - services
+      properties:
+        version:
+          type: string
+          example: "2.2"
+        exportedAt:
+          type: string
+          format: date-time
+        folders:
+          type: array
+          items:
+            $ref: "#/components/schemas/Folder"
+        songs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Song"
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/Service"
+        collections:
+          type: array
+          items:
+            $ref: "#/components/schemas/Collection"
+        agendaEvents:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgendaEvent"
+    ReplicationCollection:
+      type: string
+      enum:
+        - songs
+        - folders
+        - collections
+        - services
+        - agendaEvents
+    PullRequest:
+      type: object
+      properties:
+        checkpoint:
+          $ref: "#/components/schemas/Checkpoint"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 2000
+          default: 100
+    PullResponse:
+      type: object
+      properties:
+        documents:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        checkpoint:
+          $ref: "#/components/schemas/Checkpoint"
+    ChangeRow:
+      type: object
+      required:
+        - newDocumentState
+      properties:
+        newDocumentState:
+          type: object
+          additionalProperties: true
+        assumedMasterState:
+          type: object
+          additionalProperties: true
+          nullable: true
+    AnnotationGetResponse:
+      type: object
+      properties:
+        canvasDataBase64:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+        updatedById:
+          type: string
+          nullable: true
+        revision:
+          type: integer

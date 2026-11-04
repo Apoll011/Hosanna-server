@@ -2,7 +2,7 @@
 
 Living backlog from an architecture pass across all Hosanna repos.
 
-**Suggested remaining order:** Firestore annotation ACL (#3) → re-enable skipped Flutter router tests → Redis rate limits / OpenAPI.
+**Suggested remaining order:** Firestore annotation ACL (#3) → Redis/Upstash global rate limits.
 
 ---
 
@@ -45,21 +45,27 @@ See also: [deploy-report.md](./deploy-report.md).
 
 ## Low / polish (remaining)
 
-| Item                                     | Where                             | Notes                                    |
-| ---------------------------------------- | --------------------------------- | ---------------------------------------- |
-| MCP tool error aliases deprecated        | `mcp/lib/toolErrors.ts`           | Keep until old Studio clients gone       |
-| Demo mode vs org slug `"demo"`           | Studio `src/demo/*`               | Ensure no collision                      |
-| Coming-soon feature UI                   | Studio `FeaturesTab`              | Product tracking                         |
-| Android `google-services.json` committed | Flutter                           | Restrict/rotate API keys in GCP          |
-| Skipped Flutter router shell tests       | `test/router_shell_nav_test.dart` | Fix CircleAvatar with complete test user |
-| Studio/server app version minor skew     | 2.22.3 vs 2.22.1                  | Align on release                         |
+| Item                                     | Where                    | Notes                                              |
+| ---------------------------------------- | ------------------------ | -------------------------------------------------- |
+| Coming-soon feature UI                   | Studio `FeaturesTab`     | Left as product tracking (not in this pass)        |
+| Android `google-services.json` committed | Flutter                  | Restrict/rotate API keys in GCP                    |
+| Studio/server patch skew                 | 2.22.3 vs 2.22.2         | Major.minor aligned; patch need not match          |
+
+### Done in OpenAPI / polish follow-up
+
+| Item                              | Status                                                                                         |
+| --------------------------------- | ---------------------------------------------------------------------------------------------- |
+| MCP deprecated error aliases      | **Done** — dropped `stale` / `forbidden` / `validation` / `subscription` / `error`             |
+| Demo org slug collision           | **Done** — reserved `hosanna-demo` + `demo` in Better Auth; Studio `DEMO_ORG_SLUG`             |
+| Flutter CircleAvatar router tests | **Done** — `onForegroundImageError` only when image set; shell tests re-enabled                |
+| OpenAPI 3.1 + typed clients       | **Done on branches** — server `feat/openapi` (`openapi/openapi.yaml`); Studio+Flutter `feat/openapi-client` |
 
 ---
 
 ## Nice-to-have
 
-1. OpenAPI / typed clients for Studio + Flutter
-2. Replication observability (pull lag, conflicts, syncCache hits)
+1. ~~OpenAPI / typed clients for Studio + Flutter~~ → see follow-up table above
+2. ~~Replication observability~~ — deferred / cancelled for this pass
 3. Idempotent backup policy for annotations/notes
 4. Flutter offline song edits using `mark*Dirty`
 5. Golden tests Dart ChordPro ↔ `@hosanna/chordpro`
