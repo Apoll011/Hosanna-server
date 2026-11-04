@@ -9,6 +9,7 @@ import { notificationsRouter } from "./notifications.routes.js";
 import { replicationRouter } from "./replication.routes.js";
 import { serviceRouter } from "./service.routes.js";
 import { songRouter } from "./song.routes.js";
+import { songImportRouter } from "./songImport.routes.js";
 import { trashRouter } from "./trash.routes.js";
 
 import { PLAN_PRICING } from "../config/pricing.js";
@@ -60,6 +61,12 @@ apiRouter.use(authenticate);
 apiRouter.use("/billing", apiLimiter, billingRouter);
 apiRouter.use("/replication", syncLimiter, replicationRouter);
 
+apiRouter.use(
+  "/songs/import",
+  requireSubscription,
+  apiLimiter,
+  songImportRouter,
+);
 apiRouter.use("/songs", requireSubscription, apiLimiter, songRouter);
 apiRouter.use("/folders", requireSubscription, apiLimiter, folderRouter);
 apiRouter.use("/services", requireSubscription, apiLimiter, serviceRouter);
