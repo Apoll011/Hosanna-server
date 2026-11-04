@@ -88,16 +88,16 @@ npm run dev             # tsx watch, http://localhost:3000
 
 See **`.env.example`** for the full list. Required at process start (`src/config/env.ts`):
 
-| Variable | Purpose |
-|----------|---------|
-| `DATABASE_URL` | Postgres (prefer Supabase pooler `:6543`) |
-| `BETTER_AUTH_SECRET` | Session signing (`openssl rand -hex 32`) |
-| `PUBLIC_APP_URL` | Public API origin (auth issuer base) |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth |
-| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Org billing |
-| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile |
-| `SUPABASE_URL` / `SUPABASE_SECRET_KEY` | Avatars + Supabase client |
-| `RESEND_API_KEY` | Transactional email |
+| Variable                                      | Purpose                                   |
+| --------------------------------------------- | ----------------------------------------- |
+| `DATABASE_URL`                                | Postgres (prefer Supabase pooler `:6543`) |
+| `BETTER_AUTH_SECRET`                          | Session signing (`openssl rand -hex 32`)  |
+| `PUBLIC_APP_URL`                              | Public API origin (auth issuer base)      |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`   | Google OAuth                              |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Org billing                               |
+| `TURNSTILE_SECRET_KEY`                        | Cloudflare Turnstile                      |
+| `SUPABASE_URL` / `SUPABASE_SECRET_KEY`        | Avatars + Supabase client                 |
+| `RESEND_API_KEY`                              | Transactional email                       |
 
 Important optional: `STUDIO_URL`, `MCP_RESOURCE_URL`, `CRON_SECRET`, `FCM_*`,
 `AI_SETTINGS_ENCRYPTION_KEY`, `YOUTUBE_API_KEY`, `CORS_ORIGIN`,

@@ -1,8 +1,5 @@
 import { isAiCryptoConfigured } from "../../lib/aiCrypto.js";
-import {
-  OrgAiConfigService,
-  type AiProvider,
-} from "../orgAiConfig.service.js";
+import { OrgAiConfigService, type AiProvider } from "../orgAiConfig.service.js";
 import { fetchDeepSeekBalance } from "./deepseekBalance.js";
 import type { AiBillingResponse } from "./types.js";
 

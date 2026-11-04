@@ -4,25 +4,25 @@ Hosanna is not a single app — it is a small constellation of repos that share 
 
 ## Repositories
 
-| Path / package | Role | Stack |
-|----------------|------|-------|
-| `Hosanna-server` · `@hosanna/backend` | Production REST + MCP API | Express, Prisma, Better Auth, Vercel/Docker |
-| `Hosana-dashboard` · `@hosanna/studio` | Studio SPA (planning, org, AI) | Preact/Vite PWA, IndexedDB replication |
-| `Hosanna` | Musician mobile/desktop app | Flutter, Riverpod, Drift/SQLite |
-| `hosanna-shared` · `@hosanna/chordpro` | Shared ChordPro engine | TypeScript (parser, editor, renderer, diff) |
-| `hosanna-saas` · `@hosanna/saas` | Marketing / landing | Vite, React, TanStack Router |
-| `hosanna-blog` | Content / SEO blog | Astro, MDX, Cloudflare Workers / Netlify |
+| Path / package                         | Role                           | Stack                                       |
+| -------------------------------------- | ------------------------------ | ------------------------------------------- |
+| `Hosanna-server` · `@hosanna/backend`  | Production REST + MCP API      | Express, Prisma, Better Auth, Vercel/Docker |
+| `Hosana-dashboard` · `@hosanna/studio` | Studio SPA (planning, org, AI) | Preact/Vite PWA, IndexedDB replication      |
+| `Hosanna`                              | Musician mobile/desktop app    | Flutter, Riverpod, Drift/SQLite             |
+| `hosanna-shared` · `@hosanna/chordpro` | Shared ChordPro engine         | TypeScript (parser, editor, renderer, diff) |
+| `hosanna-saas` · `@hosanna/saas`       | Marketing / landing            | Vite, React, TanStack Router                |
+| `hosanna-blog`                         | Content / SEO blog             | Astro, MDX, Cloudflare Workers / Netlify    |
 
 Spelling note: the Studio folder is historically `Hosana-dashboard` (one “n”); the product name is **Hosanna**.
 
 ## Domains
 
-| Host | Serves |
-|------|--------|
-| `hosanna.live` | Marketing site |
-| `blog.hosanna.live` | Blog |
+| Host                  | Serves          |
+| --------------------- | --------------- |
+| `hosanna.live`        | Marketing site  |
+| `blog.hosanna.live`   | Blog            |
 | `studio.hosanna.live` | Studio frontend |
-| `api.hosanna.live` | This backend |
+| `api.hosanna.live`    | This backend    |
 
 Dev / staging variants (e.g. `dev-api.hosanna.live`) follow the same split.
 
@@ -63,15 +63,15 @@ Dev / staging variants (e.g. `dev-api.hosanna.live`) follow the same split.
 
 ## Deploy shape
 
-| Component | Typical host |
-|-----------|--------------|
-| API | Vercel Fluid function **or** Docker (`docker-compose` + Postgres) |
-| Studio | Static SPA — Vercel rewrite or Cloudflare Workers assets |
-| Marketing | Vercel |
-| Blog | Cloudflare Workers static **or** Netlify |
-| Database | Supabase Postgres (pooler `:6543`, direct `:5432` for migrations) |
-| Avatars | Supabase Storage bucket `avatars` |
-| Push / live signals | Firebase (FCM + Firestore) |
+| Component           | Typical host                                                      |
+| ------------------- | ----------------------------------------------------------------- |
+| API                 | Vercel Fluid function **or** Docker (`docker-compose` + Postgres) |
+| Studio              | Static SPA — Vercel rewrite or Cloudflare Workers assets          |
+| Marketing           | Vercel                                                            |
+| Blog                | Cloudflare Workers static **or** Netlify                          |
+| Database            | Supabase Postgres (pooler `:6543`, direct `:5432` for migrations) |
+| Avatars             | Supabase Storage bucket `avatars`                                 |
+| Push / live signals | Firebase (FCM + Firestore)                                        |
 
 ## Version alignment
 

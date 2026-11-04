@@ -4,17 +4,17 @@ Hosanna is a **local-first worship planning platform**: churches organize songs 
 
 ## Docs in this folder
 
-| Doc | What it covers |
-|-----|----------------|
-| [system-overview.md](./system-overview.md) | Entire ecosystem: repos, domains, who talks to whom |
-| [diagram.md](./diagram.md) | Full Mermaid system diagram + sync sequence |
-| [clients.md](./clients.md) | Studio, Flutter, marketing, MCP clients |
-| [backend-internals.md](./backend-internals.md) | Express routes, services, middleware, Prisma |
-| [data-and-sync.md](./data-and-sync.md) | Local stores, RxDB-style replication, trash |
-| [auth-and-billing.md](./auth-and-billing.md) | Better Auth, RBAC, Stripe, entitlements |
-| [external-integrations.md](./external-integrations.md) | Supabase, Firebase, AI, YouTube, email, … |
-| [improvements.md](./improvements.md) | Bugs, TODOs, tech debt, and suggested fixes |
-| [deploy-report.md](./deploy-report.md) | Vercel / Cloudflare / Supabase / Firebase checklist |
+| Doc                                                    | What it covers                                      |
+| ------------------------------------------------------ | --------------------------------------------------- |
+| [system-overview.md](./system-overview.md)             | Entire ecosystem: repos, domains, who talks to whom |
+| [diagram.md](./diagram.md)                             | Full Mermaid system diagram + sync sequence         |
+| [clients.md](./clients.md)                             | Studio, Flutter, marketing, MCP clients             |
+| [backend-internals.md](./backend-internals.md)         | Express routes, services, middleware, Prisma        |
+| [data-and-sync.md](./data-and-sync.md)                 | Local stores, RxDB-style replication, trash         |
+| [auth-and-billing.md](./auth-and-billing.md)           | Better Auth, RBAC, Stripe, entitlements             |
+| [external-integrations.md](./external-integrations.md) | Supabase, Firebase, AI, YouTube, email, …           |
+| [improvements.md](./improvements.md)                   | Bugs, TODOs, tech debt, and suggested fixes         |
+| [deploy-report.md](./deploy-report.md)                 | Vercel / Cloudflare / Supabase / Firebase checklist |
 
 Related (outside this folder):
 

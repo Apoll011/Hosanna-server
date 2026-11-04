@@ -18,52 +18,52 @@ Vercel: default export of the Express app; `maxDuration = 60`. Docker: `listen(P
 
 ## Route map (`/api`)
 
-| Mount | Auth | Notes |
-|-------|------|-------|
-| `/health` | none | DB `SELECT 1` |
-| `/cron` | `CRON_SECRET` Bearer | purge-trash, agenda-reminders |
-| *(authenticate from here)* | session | |
-| `/billing` | session | entitlement |
-| `/replication` | session | push requires subscription |
-| `/songs` | session | writes gated |
-| `/folders` | session | writes gated |
-| `/services` | session | + nested notes |
-| `/cifra` | session | scrape import |
-| `/youtube` | session | duration |
-| `/backup` | session | export/restore |
-| `/ai` | session | chat stream, BYOK, memory |
-| `/notifications` | session | inbox ± FCM |
-| `/trash` | session | list / restore |
-| `/annotation` | session | service song canvas |
+| Mount                      | Auth                 | Notes                         |
+| -------------------------- | -------------------- | ----------------------------- |
+| `/health`                  | none                 | DB `SELECT 1`                 |
+| `/cron`                    | `CRON_SECRET` Bearer | purge-trash, agenda-reminders |
+| _(authenticate from here)_ | session              |                               |
+| `/billing`                 | session              | entitlement                   |
+| `/replication`             | session              | push requires subscription    |
+| `/songs`                   | session              | writes gated                  |
+| `/folders`                 | session              | writes gated                  |
+| `/services`                | session              | + nested notes                |
+| `/cifra`                   | session              | scrape import                 |
+| `/youtube`                 | session              | duration                      |
+| `/backup`                  | session              | export/restore                |
+| `/ai`                      | session              | chat stream, BYOK, memory     |
+| `/notifications`           | session              | inbox ± FCM                   |
+| `/trash`                   | session              | list / restore                |
+| `/annotation`              | session              | service song canvas           |
 
 Outside `/api`: Better Auth, OAuth discovery, `/mcp`.
 
 ## Middleware
 
-| Module | Role |
-|--------|------|
-| `authenticate` | Bearer preferred, else cookie → `req.user`, `req.orgId`, `req.db`, `req.locale` |
-| `requirePermission` / `requireAll` / `requireAny` / `requireRole` | RBAC |
-| `requireSubscription` | Blocks non-GET writes without active/trialing Stripe sub |
-| `validate` | Zod body/query/params |
-| Rate limiters | health / sync / api / backup / AI chat |
+| Module                                                            | Role                                                                            |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `authenticate`                                                    | Bearer preferred, else cookie → `req.user`, `req.orgId`, `req.db`, `req.locale` |
+| `requirePermission` / `requireAll` / `requireAny` / `requireRole` | RBAC                                                                            |
+| `requireSubscription`                                             | Blocks non-GET writes without active/trialing Stripe sub                        |
+| `validate`                                                        | Zod body/query/params                                                           |
+| Rate limiters                                                     | health / sync / api / backup / AI chat                                          |
 
 ## Services (business logic)
 
-| Service | Responsibility |
-|---------|----------------|
-| `ReplicationService` | Pull/push for 5 collections; conflicts; soft/hard delete |
-| `syncCache` | In-memory per-tenant pull short-circuit |
-| `SongService` / `FolderService` / `ServiceService` | CRUD, trees, elements JSON, trash |
-| `ServiceNoteService` | Threaded notes; private-note filter |
-| `ServiceSongAnnotationService` | Canvas in Postgres + Firestore realtime |
-| `BackupService` | Export/restore v2.1 |
-| `OrgAiConfigService` | BYOK providers; AES-GCM encrypted keys |
-| `AiChatService` | Streaming chat + tools (Vercel AI SDK) |
-| `AiMemoryService` | Org durable memory |
-| `aiBilling` | DeepSeek balance (when applicable) |
-| `runAgendaReminders` | Daily FCM + idempotency ledger |
-| `email.service` | Handlebars + Resend |
+| Service                                            | Responsibility                                           |
+| -------------------------------------------------- | -------------------------------------------------------- |
+| `ReplicationService`                               | Pull/push for 5 collections; conflicts; soft/hard delete |
+| `syncCache`                                        | In-memory per-tenant pull short-circuit                  |
+| `SongService` / `FolderService` / `ServiceService` | CRUD, trees, elements JSON, trash                        |
+| `ServiceNoteService`                               | Threaded notes; private-note filter                      |
+| `ServiceSongAnnotationService`                     | Canvas in Postgres + Firestore realtime                  |
+| `BackupService`                                    | Export/restore v2.1                                      |
+| `OrgAiConfigService`                               | BYOK providers; AES-GCM encrypted keys                   |
+| `AiChatService`                                    | Streaming chat + tools (Vercel AI SDK)                   |
+| `AiMemoryService`                                  | Org durable memory                                       |
+| `aiBilling`                                        | DeepSeek balance (when applicable)                       |
+| `runAgendaReminders`                               | Daily FCM + idempotency ledger                           |
+| `email.service`                                    | Handlebars + Resend                                      |
 
 Repositories (`song`, `folder`, `service`, `serviceNote`) are thin Prisma accessors used by services and MCP.
 
@@ -92,10 +92,10 @@ Soft-delete: `_deleted` + `purge_at` on songs/folders/collections/services/agend
 
 ## Cron (`vercel.json`)
 
-| Path | Schedule | Job |
-|------|----------|-----|
-| `/api/cron/purge-trash` | `0 0 * * *` | Hard-delete expired soft-deletes; prune reminder ledger |
-| `/api/cron/agenda-reminders` | `0 9 * * *` | FCM for events in 1 or 3 days |
+| Path                         | Schedule    | Job                                                     |
+| ---------------------------- | ----------- | ------------------------------------------------------- |
+| `/api/cron/purge-trash`      | `0 0 * * *` | Hard-delete expired soft-deletes; prune reminder ledger |
+| `/api/cron/agenda-reminders` | `0 9 * * *` | FCM for events in 1 or 3 days                           |
 
 Both accept GET and POST; auth is `Authorization: Bearer ${CRON_SECRET}`.
 

@@ -4,10 +4,10 @@ Hosanna is **local-first** for the core library: clients own a full org copy and
 
 ## Local stores
 
-| Client | Engine | Collections |
-|--------|--------|-------------|
-| Studio | IndexedDB (`src/db/engine`) | songs, folders, collections, services, agendaEvents |
-| Flutter | Drift / SQLite | songs, folders, collections, services |
+| Client  | Engine                      | Collections                                         |
+| ------- | --------------------------- | --------------------------------------------------- |
+| Studio  | IndexedDB (`src/db/engine`) | songs, folders, collections, services, agendaEvents |
+| Flutter | Drift / SQLite              | songs, folders, collections, services               |
 
 Studio also replicates `agendaEvents`. Flutter’s sync adapters today cover the four library/service collections; agenda may follow the same protocol when added on mobile.
 
@@ -48,13 +48,13 @@ Inspired by **RxDB HTTP replication**.
 
 ### Triggers
 
-| Studio | Flutter |
-|--------|---------|
-| Auth → start replication | First active org → `syncAll` |
-| ~15s interval | App resume if last sync > 60s |
-| `window` `online` | Pull-to-refresh on lists |
-| Debounced local change bus | Settings → manual sync |
-| AI / MCP `studio_sync` | Org switch → wipe + resync |
+| Studio                     | Flutter                       |
+| -------------------------- | ----------------------------- |
+| Auth → start replication   | First active org → `syncAll`  |
+| ~15s interval              | App resume if last sync > 60s |
+| `window` `online`          | Pull-to-refresh on lists      |
+| Debounced local change bus | Settings → manual sync        |
+| AI / MCP `studio_sync`     | Org switch → wipe + resync    |
 
 ### Order
 
@@ -69,15 +69,15 @@ Studio pulls/pushes with **services before agendaEvents** (FK / dependency).
 
 Restore: `POST /api/trash/{songs|folders|services}/:id/restore` (then sync).
 
-## What is *not* replicated
+## What is _not_ replicated
 
-| Data | Why / how instead |
-|------|-------------------|
-| Service notes | Privacy (private notes); REST `/api/services/:id/notes` + Firestore ping |
-| Song annotations | Large canvas + live presence; REST + Firestore + local `.fcv` |
-| Notifications | Better Auth inbox + FCM |
-| AI settings / memory | Org-scoped REST |
-| Auth / membership / Stripe | Better Auth + Stripe plugins |
+| Data                       | Why / how instead                                                        |
+| -------------------------- | ------------------------------------------------------------------------ |
+| Service notes              | Privacy (private notes); REST `/api/services/:id/notes` + Firestore ping |
+| Song annotations           | Large canvas + live presence; REST + Firestore + local `.fcv`            |
+| Notifications              | Better Auth inbox + FCM                                                  |
+| AI settings / memory       | Org-scoped REST                                                          |
+| Auth / membership / Stripe | Better Auth + Stripe plugins                                             |
 
 ## Conflict model
 

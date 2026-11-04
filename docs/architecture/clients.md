@@ -93,11 +93,11 @@ ChordPro tools can work without org context; library/service tools need session 
 
 ## Client comparison
 
-| Concern | Studio | Flutter | MCP |
-|---------|--------|---------|-----|
-| Primary UX | Plan & edit | Perform & read | Automate via AI |
-| Local store | IndexedDB | Drift/SQLite | None |
-| Sync | Full 5 collections | songs/folders/collections/services | N/A (direct API tools) |
-| Auth transport | Cookies | Cookies + Bearer | OAuth / Bearer |
-| ChordPro | `@hosanna/chordpro` | Dart port | Server-side package |
-| AI | Logos UI → `/api/ai/chat` | — | MCP tools |
+| Concern        | Studio                    | Flutter                            | MCP                    |
+| -------------- | ------------------------- | ---------------------------------- | ---------------------- |
+| Primary UX     | Plan & edit               | Perform & read                     | Automate via AI        |
+| Local store    | IndexedDB                 | Drift/SQLite                       | None                   |
+| Sync           | Full 5 collections        | songs/folders/collections/services | N/A (direct API tools) |
+| Auth transport | Cookies                   | Cookies + Bearer                   | OAuth / Bearer         |
+| ChordPro       | `@hosanna/chordpro`       | Dart port                          | Server-side package    |
+| AI             | Logos UI → `/api/ai/chat` | —                                  | MCP tools              |

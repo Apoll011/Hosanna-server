@@ -14,12 +14,12 @@ Configured in `src/lib/auth.ts` with the Prisma adapter.
 
 ### Session transport
 
-| Mechanism | Used by |
-|-----------|---------|
-| Cookie prefix `hosanna` (cross-subdomain on `hosanna.live`) | Studio (primary), Flutter |
-| `Authorization: Bearer <session token>` | Flutter, MCP, API clients |
-| `set-auth-token` response header | Flutter TokenStore / SessionStore |
-| JWE cookie cache (~15 min) | Performance |
+| Mechanism                                                   | Used by                           |
+| ----------------------------------------------------------- | --------------------------------- |
+| Cookie prefix `hosanna` (cross-subdomain on `hosanna.live`) | Studio (primary), Flutter         |
+| `Authorization: Bearer <session token>`                     | Flutter, MCP, API clients         |
+| `set-auth-token` response header                            | Flutter TokenStore / SessionStore |
+| JWE cookie cache (~15 min)                                  | Performance                       |
 
 Session extras: `fcm`, `notify`, `activeOrganizationId`, `activeTeamId`.
 
@@ -42,14 +42,14 @@ Organizations are the tenant boundary. Teams are optional subgroups.
 
 **Roles** (`src/permissions/roles.ts`):
 
-| Role | Typical use |
-|------|-------------|
-| `owner` | Full control + billing |
-| `admin` | Org admin without ownership transfer constraints |
-| `teamLeader` | Lead a team |
-| `editor` | Edit library / services |
-| `musician` / `member` | Consume + limited edit |
-| `guest` | Minimal access |
+| Role                  | Typical use                                      |
+| --------------------- | ------------------------------------------------ |
+| `owner`               | Full control + billing                           |
+| `admin`               | Org admin without ownership transfer constraints |
+| `teamLeader`          | Lead a team                                      |
+| `editor`              | Edit library / services                          |
+| `musician` / `member` | Consume + limited edit                           |
+| `guest`               | Minimal access                                   |
 
 Permission statements cover: song, service, folder, collection, agenda, settings, ai, export, backup, billing, notification, plus Better Auth org defaults.
 
