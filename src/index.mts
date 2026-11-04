@@ -149,8 +149,9 @@ app.all("/.well-known/openid-configuration/*", authHandler);
 
 // ── Body parsing ─────────────────────────────────────────────────────────────
 // 5 MB headroom for large replication push batches (songs with full lyrics)
-app.use(express.json({ limit: "5mb" }));
-app.use(express.urlencoded({ extended: true, limit: "5mb" }));
+// 20mb so mobile song-import jobs can send PDF + screenshot as base64 JSON.
+app.use(express.json({ limit: "20mb" }));
+app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 
 // ── Cache-Control — private APIs must not be cached by shared proxies ───────
 app.use((_req, res, next) => {

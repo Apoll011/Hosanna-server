@@ -137,6 +137,67 @@ paths:
         - Cron
       security: *a1
       operationId: postCronpurgeTrash
+  /songs/import/jobs:
+    post:
+      summary: Start a Logos AI song-import job (photo/gallery/PDF)
+      description: >
+        Accepts a sheet-music image (and PDF + screenshot for PDF sources).
+        Returns a job id immediately; poll GET /songs/import/jobs/{id}.
+        Does not persist a song — the client reviews the draft then creates locally.
+      tags:
+        - Songs
+      security: *a2
+      operationId: createSongImportJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceType, imageBase64]
+              properties:
+                sourceType:
+                  type: string
+                  enum: [photo, gallery, pdf]
+                imageBase64:
+                  type: string
+                  description: Photo/gallery bytes, or PDF page-1 screenshot (base64)
+                imageMimeType:
+                  type: string
+                  default: image/jpeg
+                pdfBase64:
+                  type: string
+                  description: Required when sourceType is pdf
+                fileName:
+                  type: string
+      responses:
+        "200":
+          description: Job finished (draft ready or failed)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SongImportJob"
+  /songs/import/jobs/{id}:
+    get:
+      summary: Poll a Logos AI song-import job
+      tags:
+        - Songs
+      security: *a2
+      operationId: getSongImportJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SongImportJob"
   /songs:
     get:
       summary: List songs
@@ -1692,6 +1753,53 @@ components:
             format: uuid
         isDeleted:
           type: boolean
+    SongImportJob:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              label:
+                type: string
+              done:
+                type: boolean
+              active:
+                type: boolean
+        result:
+          type: object
+          nullable: true
+          properties:
+            title:
+              type: string
+            artist:
+              type: string
+            content:
+              type: string
+            key:
+              type: string
+            tempo:
+              type: string
+            timeSignature:
+              type: string
+            confidence:
+              type: number
+            warnings:
+              type: array
+              items:
+                type: string
+        errorMessage:
+          type: string
+          nullable: true
     Folder:
       type: object
       properties:
