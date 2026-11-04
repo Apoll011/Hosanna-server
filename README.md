@@ -19,6 +19,7 @@ End-to-end system docs (Studio, Flutter, marketing, sync, auth, integrations):
 - [Data & sync](docs/architecture/data-and-sync.md) · [Auth & billing](docs/architecture/auth-and-billing.md)
 - [External integrations](docs/architecture/external-integrations.md)
 - [Improvements / TODOs / bugs](docs/architecture/improvements.md)
+- [Deploy report (Vercel / Cloudflare)](docs/architecture/deploy-report.md)
 - [Deploy report](docs/architecture/deploy-report.md) — Vercel / Cloudflare checklist
 
 ## Stack

@@ -14,6 +14,7 @@ Hosanna is a **local-first worship planning platform**: churches organize songs 
 | [auth-and-billing.md](./auth-and-billing.md) | Better Auth, RBAC, Stripe, entitlements |
 | [external-integrations.md](./external-integrations.md) | Supabase, Firebase, AI, YouTube, email, … |
 | [improvements.md](./improvements.md) | Bugs, TODOs, tech debt, and suggested fixes |
+| [deploy-report.md](./deploy-report.md) | Vercel / Cloudflare / Supabase / Firebase checklist |
 
 Related (outside this folder):
 
