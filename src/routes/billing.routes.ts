@@ -7,6 +7,8 @@ import { hasActiveSubscription } from "../middleware/subscription.js";
 /**
  * Lightweight billing probes for clients that need to show a read-only
  * warning without mutating tenant data.
+ *
+ * Public plan amounts live at GET /api/billing/pricing (mounted before auth).
  */
 export const billingRouter = Router();
 

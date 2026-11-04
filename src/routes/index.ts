@@ -11,6 +11,7 @@ import { serviceRouter } from "./service.routes.js";
 import { songRouter } from "./song.routes.js";
 import { trashRouter } from "./trash.routes.js";
 
+import { PLAN_PRICING } from "../config/pricing.js";
 import { authenticate } from "../middleware/auth.js";
 import {
   apiLimiter,
@@ -36,6 +37,24 @@ const aiChatLimiter = rateLimit({
 
 apiRouter.use("/health", healthLimiter, healthRouter);
 apiRouter.use("/cron", cronRouter);
+
+// Public plan display amounts (marketing + Studio checkout UI).
+apiRouter.get("/billing/pricing", apiLimiter, (_req, res) => {
+  res.json({
+    plan: PLAN_PRICING.plan,
+    currency: PLAN_PRICING.currency,
+    monthly: {
+      amount: PLAN_PRICING.monthly.amountDisplay,
+      amountCents: PLAN_PRICING.monthly.amountCents,
+      period: PLAN_PRICING.monthly.period,
+    },
+    annual: {
+      amount: PLAN_PRICING.annual.amountDisplay,
+      amountCents: PLAN_PRICING.annual.amountCents,
+      period: PLAN_PRICING.annual.period,
+    },
+  });
+});
 
 apiRouter.use(authenticate);
 apiRouter.use("/billing", apiLimiter, billingRouter);
