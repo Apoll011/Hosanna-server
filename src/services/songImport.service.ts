@@ -247,7 +247,7 @@ export class SongImportService {
           role: "user",
           content: [
             { type: "text", text: extractPrompt },
-            { type: "image", image: imageBytes, mediaType: mime },
+            { type: "file", data: imageBytes, mediaType: mime },
           ],
         },
       ],
