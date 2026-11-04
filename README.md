@@ -8,6 +8,18 @@ reference.
 This project is API-only — no frontend assets are served. The studio is
 a separate project that talks to this server over HTTP.
 
+## Architecture
+
+End-to-end system docs (Studio, Flutter, marketing, sync, auth, integrations):
+
+- **[docs/architecture/](docs/architecture/README.md)** — index
+- [System overview](docs/architecture/system-overview.md)
+- [Mermaid diagrams](docs/architecture/diagram.md)
+- [Clients](docs/architecture/clients.md) · [Backend internals](docs/architecture/backend-internals.md)
+- [Data & sync](docs/architecture/data-and-sync.md) · [Auth & billing](docs/architecture/auth-and-billing.md)
+- [External integrations](docs/architecture/external-integrations.md)
+- [Improvements / TODOs / bugs](docs/architecture/improvements.md)
+
 ## Stack
 
 Node.js, TypeScript, Express, Prisma ORM, PostgreSQL, Zod, Better Auth,
@@ -40,6 +52,7 @@ src/
   utils/
   types/
   index.mts        app entrypoint
+docs/architecture/ Ecosystem diagrams + architecture guides
 docs/mcp/          ChordPro guide, domain docs, and AI workflow skills
                    (copied to dist/mcp/docs on build for Vercel/Docker)
 prisma/
