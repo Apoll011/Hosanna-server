@@ -65,4 +65,12 @@ export class FolderRepository {
       data: { parentId: null },
     });
   }
+
+  /** Reparent all direct children of `fromParentId` under `toParentId` (or root). */
+  reparentChildren(fromParentId: string, toParentId: string | null) {
+    return this.db.folder.updateMany({
+      where: { parentId: fromParentId },
+      data: { parentId: toParentId },
+    });
+  }
 }

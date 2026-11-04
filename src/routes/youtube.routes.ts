@@ -32,9 +32,7 @@ youtubeRouter.get(
 
     try {
       const result = await getYouTubeDuration(url);
-      return res
-        .set("Cache-Control", "private, max-age=3600")
-        .json(result);
+      return res.set("Cache-Control", "private, max-age=3600").json(result);
     } catch (error) {
       return res.status(502).json({
         error:

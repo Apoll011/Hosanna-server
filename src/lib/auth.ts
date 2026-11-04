@@ -450,6 +450,14 @@ export const auth = betterAuth({
       },
       organizationHooks: {
         beforeCreateOrganization: async ({ organization, user }) => {
+          // Reserved for Studio isolated demo mode (`DEMO_ORG_SLUG`).
+          const reservedSlugs = new Set(["hosanna-demo", "demo"]);
+          const slug = (organization?.slug ?? "").toLowerCase();
+          if (reservedSlugs.has(slug)) {
+            throw new Error(
+              "This organization slug is reserved. Please choose another.",
+            );
+          }
           const locale =
             (organization?.metadata?.["locale"] as string) || "pt-PT";
           return {
