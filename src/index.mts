@@ -79,6 +79,7 @@ const corsOrigins = [
   "https://chatgpt.com",
   "https://chat.openai.com",
   "https://cursor.com",
+  ...env.corsOriginExtra,
 ];
 app.use(
   cors({
@@ -179,7 +180,9 @@ const globalLimiter = rateLimit({
       message: t(DEFAULT_LOCALE, "error.rate_limit_exceeded"),
     },
   },
-  skip: () => env.nodeEnv !== "production",
+  // Enabled for staging/production; skipped in development unless forced off
+  // via RATE_LIMIT_DISABLED (see env.rateLimitDisabled).
+  skip: () => env.rateLimitDisabled,
 });
 
 // ── MCP (Streamable HTTP) ───────────────────────────────────────────────────

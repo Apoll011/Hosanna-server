@@ -123,6 +123,7 @@ export class FolderService {
   async deleteMovingContentToRoot(id: string) {
     const folder = await this.getById(id);
     const songs = await this.songRepo.findManyByFolder(id);
+    const childFolders = await this.folderRepo.findManyByFolder(id);
     const purgeAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     await Promise.all(
       songs.map((s) =>
@@ -132,13 +133,17 @@ export class FolderService {
         }),
       ),
     );
-    //TODO: move the folders to....
+    // Lift nested folders up one level (to this folder's parent, or root).
+    await this.folderRepo.reparentChildren(id, folder.parentId ?? null);
     await this.folderRepo.update(id, { deleted: true, purgeAt });
     if (folder.parentId) {
       this.folderRepo.touch(folder.parentId);
     }
     this.invalidateCache();
-    return { movedSongs: songs.length };
+    return {
+      movedSongs: songs.length,
+      movedFolders: childFolders.length,
+    };
   }
 
   async deleteWithContent(id: string) {

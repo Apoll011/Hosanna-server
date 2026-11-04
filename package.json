@@ -15,7 +15,6 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
-    "prisma:seed": "tsx prisma/seed.ts",
     "prisma:push": "prisma db push",
     "postinstall": "prisma generate",
     "typecheck": "tsc --noEmit"
@@ -29,7 +28,7 @@
     "@better-auth/infra": "^0.4.5",
     "@better-auth/mcp": "^1.7.14",
     "@better-auth/stripe": "^1.7.14",
-    "@hosanna/chordpro": "^1.6.2",
+    "@hosanna/chordpro": "^1.7.2",
     "@modelcontextprotocol/node": "^2.1.2",
     "@modelcontextprotocol/server": "^2.4.0",
     "@prisma/adapter-pg": "^7.9.1",

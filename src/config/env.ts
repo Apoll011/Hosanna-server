@@ -23,6 +23,21 @@ export const env = {
   devMode: process.env.DEV_MODE === "true",
   /** Vercel Fluid / serverless runtime. */
   isVercel,
+  /**
+   * Extra CORS origins (comma-separated). Merged with the built-in allowlist
+   * (Studio, localhost, MCP hosts, *.hosanna.live).
+   */
+  corsOriginExtra: (process.env.CORS_ORIGIN ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+  /**
+   * Global + route rate limits. On by default outside development.
+   * Set RATE_LIMIT_DISABLED=true to turn off (e.g. local load tests).
+   */
+  rateLimitDisabled:
+    process.env.RATE_LIMIT_DISABLED === "true" ||
+    (process.env.NODE_ENV ?? "development") === "development",
 
   // ── Database ─────────────────────────────────────────────────────────────
   databaseUrl: required("DATABASE_URL"),
