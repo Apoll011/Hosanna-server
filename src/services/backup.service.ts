@@ -96,6 +96,8 @@ export class BackupService {
       await tx.collection.deleteMany();
       await tx.folder.deleteMany();
 
+      // OrgScopedPrisma injects orgId at runtime; cast like the repositories
+      // so Exact<> create inputs typecheck without repeating orgId/org.
       if (folders.length > 0) {
         await tx.folder.createMany({
           data: folders.map((f: any) => ({
@@ -108,7 +110,7 @@ export class BackupService {
             updatedAt: f.updatedAt ? new Date(f.updatedAt) : undefined,
             deleted: false,
             purgeAt: null,
-          })),
+          })) as any,
         });
       }
 
@@ -125,7 +127,7 @@ export class BackupService {
             updatedAt: c.updatedAt ? new Date(c.updatedAt) : undefined,
             deleted: false,
             purgeAt: null,
-          })),
+          })) as any,
         });
       }
 
@@ -154,7 +156,7 @@ export class BackupService {
                   },
                 }
               : {}),
-          },
+          } as any,
         });
       }
 
@@ -184,7 +186,7 @@ export class BackupService {
             updatedAt: svc.updatedAt ? new Date(svc.updatedAt) : undefined,
             deleted: false,
             purgeAt: null,
-          })),
+          })) as any,
         });
       }
 
@@ -206,7 +208,7 @@ export class BackupService {
             updatedAt: ev.updatedAt ? new Date(ev.updatedAt) : undefined,
             deleted: false,
             purgeAt: null,
-          })),
+          })) as any,
         });
       }
     });
