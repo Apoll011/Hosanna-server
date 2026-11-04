@@ -171,8 +171,8 @@ paths:
                 fileName:
                   type: string
       responses:
-        "202":
-          description: Job accepted
+        "200":
+          description: Job finished (draft ready or failed)
           content:
             application/json:
               schema:
