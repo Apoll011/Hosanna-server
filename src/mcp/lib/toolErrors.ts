@@ -14,17 +14,7 @@ export type ToolErrorCode =
   | "conflict"
   | "rate_limited"
   | "provider_unavailable"
-  | "internal_error"
-  /** @deprecated use conflict — kept for older Studio clients */
-  | "stale"
-  /** @deprecated use permission_denied */
-  | "forbidden"
-  /** @deprecated use validation_error */
-  | "validation"
-  /** @deprecated use subscription_required */
-  | "subscription"
-  /** @deprecated use internal_error */
-  | "error";
+  | "internal_error";
 
 export type ToolErrorPayload = {
   error: true;
