@@ -108,8 +108,9 @@ function buildModel(
       return createGoogleGenerativeAI({ apiKey })(modelId);
     case "deepseek":
     case "openai_compatible": {
-      // DeepSeek rejects json_schema response_format; structure via tool calls
-      // instead (same pattern as skyhack vision).
+      // DeepSeek rejects json_schema; we use tool calls for structure instead.
+      // deepseek-flash defaults to thinking mode, which rejects forced
+      // tool_choice — disable thinking on every import request.
       const url = baseUrl || AI_PROVIDER_DEFAULT_BASE_URL[provider];
       if (!url) {
         throw AppError.badRequest(
@@ -121,6 +122,15 @@ function buildModel(
         apiKey,
         baseURL: url,
         supportsStructuredOutputs: false,
+        ...(provider === "deepseek"
+          ? {
+              transformRequestBody: (body: Record<string, unknown>) => ({
+                ...body,
+                reasoning_effort: "none",
+                thinking: { type: "disabled" },
+              }),
+            }
+          : {}),
       }).chatModel(modelId);
     }
     case "openai":
@@ -137,52 +147,126 @@ function buildModel(
   }
 }
 
+function parseDraftJson(text: string): DraftFields | null {
+  const raw = text.trim();
+  if (!raw) return null;
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidates = [
+    fence?.[1]?.trim(),
+    raw,
+    (() => {
+      const start = raw.indexOf("{");
+      const end = raw.lastIndexOf("}");
+      if (start >= 0 && end > start) return raw.slice(start, end + 1);
+      return undefined;
+    })(),
+  ].filter((v): v is string => Boolean(v));
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = draftSchema.safeParse(JSON.parse(candidate));
+      if (parsed.success) return parsed.data;
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
 /**
- * Force a structured draft via tool call — works on DeepSeek (no json_schema)
- * and other OpenAI-compatible vision models, matching the skyhack approach.
+ * Structured draft via forced tool call (skyhack-style). DeepSeek thinking is
+ * disabled in buildModel so tool_choice is accepted. Falls back to plain JSON
+ * text if the model ignores the tool.
  */
 async function generateSongDraft(opts: {
   model: LanguageModel;
+  provider: AiProvider;
   temperature?: number;
   maxOutputTokens?: number;
   messages?: ModelMessage[];
   prompt?: string;
 }): Promise<DraftFields> {
-  const result = await generateText({
+  const promptBase = opts.prompt ?? "";
+  const messages = opts.messages;
+
+  try {
+    const result = await generateText({
+      model: opts.model,
+      temperature: opts.temperature,
+      maxOutputTokens: opts.maxOutputTokens,
+      // Keep thinking off even if transformRequestBody is skipped by a proxy.
+      ...(opts.provider === "deepseek" || opts.provider === "openai_compatible"
+        ? { reasoning: "none" as const }
+        : {}),
+      ...(messages ? { messages } : { prompt: promptBase }),
+      tools: {
+        submit_song_draft: tool({
+          description:
+            "Submit the ChordPro song draft with title, artist, metadata, and content. Always call this tool with the final draft — do not reply with plain text or markdown JSON.",
+          inputSchema: draftSchema,
+        }),
+      },
+      toolChoice: { type: "tool", toolName: "submit_song_draft" },
+    });
+
+    const call = result.toolCalls.find(
+      (c) => c.toolName === "submit_song_draft",
+    );
+    if (call && "input" in call && call.input != null) {
+      return draftSchema.parse(call.input);
+    }
+
+    const fromText = parseDraftJson(result.text ?? "");
+    if (fromText) return fromText;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Thinking mode / tool_choice rejection → JSON-only retry.
+    if (
+      !/tool[_\s-]?choice|thinking mode|response_format/i.test(msg) &&
+      opts.provider !== "deepseek" &&
+      opts.provider !== "openai_compatible"
+    ) {
+      throw err;
+    }
+  }
+
+  const jsonHint =
+    'Respond with a single JSON object only (no markdown) with keys: title, artist, key, tempo, timeSignature, content, confidence, notes. The word json must appear because some providers require it.';
+
+  const retry = await generateText({
     model: opts.model,
     temperature: opts.temperature,
     maxOutputTokens: opts.maxOutputTokens,
-    ...(opts.messages
-      ? { messages: opts.messages }
-      : { prompt: opts.prompt ?? "" }),
-    tools: {
-      submit_song_draft: tool({
-        description:
-          "Submit the ChordPro song draft with title, artist, metadata, and content. Always call this tool with the final draft — do not reply with plain text or markdown JSON.",
-        inputSchema: draftSchema,
-      }),
-    },
-    toolChoice: { type: "tool", toolName: "submit_song_draft" },
+    ...(opts.provider === "deepseek" || opts.provider === "openai_compatible"
+      ? { reasoning: "none" as const }
+      : {}),
+    ...(messages
+      ? {
+          messages: messages.map((m) => {
+            if (m.role !== "user" || typeof m.content === "string") {
+              return m.role === "user" && typeof m.content === "string"
+                ? { ...m, content: `${m.content}\n\n${jsonHint}` }
+                : m;
+            }
+            return {
+              ...m,
+              content: [
+                ...m.content,
+                { type: "text" as const, text: jsonHint },
+              ],
+            };
+          }),
+        }
+      : { prompt: `${promptBase}\n\n${jsonHint}` }),
   });
 
-  const call = result.toolCalls.find((c) => c.toolName === "submit_song_draft");
-  if (call && "input" in call && call.input != null) {
-    return draftSchema.parse(call.input);
+  const parsed = parseDraftJson(retry.text ?? "");
+  if (!parsed) {
+    throw new Error(
+      "Model returned no song draft tool call and text was not valid JSON.",
+    );
   }
-
-  // Rare fallback if a provider ignores forced tool choice but returns JSON text.
-  const text = result.text?.trim() ?? "";
-  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fence?.[1]?.trim() || text;
-  try {
-    const parsed = draftSchema.safeParse(JSON.parse(candidate));
-    if (parsed.success) return parsed.data;
-  } catch {
-    /* not JSON */
-  }
-  throw new Error(
-    "Model returned no song draft tool call and text was not valid JSON.",
-  );
+  return parsed;
 }
 
 function initialSteps(): SongImportStep[] {
@@ -340,6 +424,7 @@ export class SongImportService {
 
     const extractedDraft = await generateSongDraft({
       model,
+      provider: runtime.provider,
       temperature: runtime.temperature ?? 0.2,
       maxOutputTokens: runtime.maxOutputTokens ?? 4096,
       messages: [
@@ -399,6 +484,7 @@ export class SongImportService {
 
       const verifiedDraft = await generateSongDraft({
         model,
+        provider: runtime.provider,
         temperature: 0.1,
         maxOutputTokens: runtime.maxOutputTokens ?? 4096,
         prompt: verifyPrompt,
