@@ -1,6 +1,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText, Output } from "ai";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -86,7 +87,22 @@ function buildModel(
     case "google":
       return createGoogleGenerativeAI({ apiKey })(modelId);
     case "deepseek":
-    case "openai_compatible":
+    case "openai_compatible": {
+      // DeepSeek + many OpenAI-compatible gateways reject json_schema
+      // ("This response_format type is unavailable now"). Use json_object.
+      const url = baseUrl || AI_PROVIDER_DEFAULT_BASE_URL[provider];
+      if (!url) {
+        throw AppError.badRequest(
+          "baseUrl is required for this AI provider.",
+        );
+      }
+      return createOpenAICompatible({
+        name: provider,
+        apiKey,
+        baseURL: url,
+        supportsStructuredOutputs: false,
+      }).chatModel(modelId);
+    }
     case "openai":
     default: {
       const url =
@@ -210,6 +226,11 @@ export class SongImportService {
     markStep(job, "process", "active");
 
     const runtime = await this.config.getRuntimeConfig(input.orgId);
+    if (runtime.provider === "deepseek") {
+      throw AppError.badRequest(
+        "Song photo/PDF import needs a vision model. Switch org AI to OpenAI, Anthropic, or Google — DeepSeek chat models cannot read images.",
+      );
+    }
     const model = buildModel(
       runtime.provider,
       runtime.model,
@@ -226,7 +247,7 @@ export class SongImportService {
     const extractPrompt = [
       "You are Logos, Hosanna's worship-song assistant.",
       "Extract a ChordPro song from the attached sheet-music image (and note if a PDF was the source).",
-      "Return structured fields only.",
+      "Return a JSON object with fields: title, artist, key, tempo, timeSignature, content, confidence (0-1), notes.",
       "content MUST be valid ChordPro with {title}, {artist}, {key}, optional {tempo}/{time}, and lyric lines with [Chords].",
       "Do not invent verses you cannot see — prefer shorter accurate content over hallucination.",
       input.fileName ? `Original filename: ${input.fileName}` : "",
@@ -300,7 +321,7 @@ export class SongImportService {
         "You are Logos verifying a ChordPro draft against web search hits.",
         "Correct obvious OCR mistakes in title/artist/lyrics/chords when the web evidence is clear.",
         "If the web does not confirm the song, keep the visual draft and set a lower confidence; add a short warning.",
-        "Return the improved ChordPro draft.",
+        "Return a JSON object with fields: title, artist, key, tempo, timeSignature, content, confidence (0-1), notes.",
         "",
         `Draft title: ${draft.title}`,
         `Draft artist: ${draft.artist}`,
