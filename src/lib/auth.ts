@@ -867,6 +867,16 @@ export const auth = betterAuth({
       },
     },
   },
+  // Link Google to an existing user with the same verified email (covers
+  // orphan users left when account.create failed on required `issuer`).
+  account: {
+    accountLinking: {
+      enabled: true,
+      trustedProviders: ["google"],
+      // Local email may be unverified after a partial sign-up failure.
+      requireLocalEmailVerified: false,
+    },
+  },
   rateLimit: {
     enabled: true,
 
