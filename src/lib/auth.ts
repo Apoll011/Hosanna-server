@@ -1,11 +1,11 @@
+import { cimd } from "@better-auth/cimd";
+import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import { i18n, locales } from "@better-auth/i18n";
 import { dash, sentinel } from "@better-auth/infra";
+import { mcp } from "@better-auth/mcp";
 import { stripe } from "@better-auth/stripe";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { betterAuth } from "better-auth/minimal";
-import { cimd } from "@better-auth/cimd";
-import { fetchClientMetadataResource } from "@better-auth/cimd/node";
-import { mcp } from "@better-auth/mcp";
 import {
   admin,
   bearer,
@@ -379,7 +379,7 @@ export const auth = betterAuth({
       apiKey: env.betterAuthApiKey,
       security: {
         credentialStuffing: {
-          enabled: true,
+          enabled: false, //TODO: true
           thresholds: {
             challenge: 3,
             block: 5,
@@ -388,7 +388,7 @@ export const auth = betterAuth({
           cooldownSeconds: 900,
         },
         freeTrialAbuse: {
-          enabled: true,
+          enabled: false, //TODO: true
           thresholds: {
             challenge: 2,
             block: 3,
@@ -397,7 +397,7 @@ export const auth = betterAuth({
           action: "block",
         },
         suspiciousIpBlocking: {
-          action: "block",
+          action: "challenge",
         },
         emailValidation: {
           enabled: true,
