@@ -226,11 +226,6 @@ export class SongImportService {
     markStep(job, "process", "active");
 
     const runtime = await this.config.getRuntimeConfig(input.orgId);
-    if (runtime.provider === "deepseek") {
-      throw AppError.badRequest(
-        "Song photo/PDF import needs a vision model. Switch org AI to OpenAI, Anthropic, or Google — DeepSeek chat models cannot read images.",
-      );
-    }
     const model = buildModel(
       runtime.provider,
       runtime.model,
