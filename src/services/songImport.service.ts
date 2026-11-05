@@ -16,6 +16,7 @@ import {
   getYouTubeDuration,
   searchYouTube,
 } from "../mcp/lib/youtubeSearch.js";
+import { prisma } from "../database/prisma.js";
 import { AppError } from "../utils/errors.js";
 import {
   AI_PROVIDER_DEFAULT_BASE_URL,
@@ -32,6 +33,19 @@ export type SongImportStep = {
   active: boolean;
 };
 
+export type SongImportDiagnostic = {
+  severity: string;
+  message: string;
+  line?: number;
+};
+
+export type SongImportDuplicate = {
+  id: string;
+  title: string;
+  artist: string;
+  score: number;
+};
+
 export type SongImportDraft = {
   title: string;
   artist: string;
@@ -41,6 +55,14 @@ export type SongImportDraft = {
   timeSignature?: string;
   confidence?: number;
   warnings: string[];
+  diagnostics?: SongImportDiagnostic[];
+  possibleDuplicates?: SongImportDuplicate[];
+  youtube?: string;
+  ccli?: string;
+  composer?: string;
+  copyright?: string;
+  subtitle?: string;
+  duration?: string;
 };
 
 export type SongImportCancelCode =
@@ -57,9 +79,12 @@ export type SongImportJob = {
   steps: SongImportStep[];
   result?: SongImportDraft;
   errorMessage?: string;
-  /** Present when status is cancelled — AI decided the image is not importable. */
+  /** Present when status is cancelled. */
   cancelCode?: SongImportCancelCode;
   cancelReason?: string;
+  cancelledBy?: "ai" | "user";
+  /** Set by DELETE cancel — checked between pipeline stages. */
+  abortRequested?: boolean;
   createdAt: number;
   updatedAt: number;
 };
@@ -73,11 +98,21 @@ class ImportCancelledError extends Error {
   }
 }
 
+class UserCancelledError extends Error {
+  constructor() {
+    super("Import cancelled by user.");
+    this.name = "UserCancelledError";
+  }
+}
+
 type CreateInput = {
   orgId: string;
   sourceType: SongImportSourceType;
   imageBase64: string;
   imageMimeType: string;
+  /** Extra page screenshots (multi-page PDF), base64 without data-URL prefix OK. */
+  imagesBase64?: string[];
+  imageMimeTypes?: string[];
   pdfBase64?: string;
   fileName?: string;
 };
@@ -491,6 +526,7 @@ function publicJob(job: SongImportJob) {
     errorMessage: job.errorMessage,
     cancelCode: job.cancelCode,
     cancelReason: job.cancelReason,
+    cancelledBy: job.cancelledBy,
   };
 }
 
@@ -548,19 +584,87 @@ function toImportDraft(
   const normalized = applyDraftMetadata(fields);
   const warnings = [...extraWarnings];
   if (normalized.notes) warnings.push(normalized.notes);
+  const content = normalized.content.trim();
   return {
     title: normalized.title.trim(),
     artist: (normalized.artist || "").trim(),
-    content: normalized.content.trim(),
-    key: normalized.key?.toString() || readDirective(normalized.content, "key"),
-    tempo:
-      normalized.tempo?.toString() ||
-      readDirective(normalized.content, "tempo"),
+    content,
+    key: normalized.key?.toString() || readDirective(content, "key"),
+    tempo: normalized.tempo?.toString() || readDirective(content, "tempo"),
     timeSignature:
-      normalized.timeSignature || readDirective(normalized.content, "time"),
+      normalized.timeSignature || readDirective(content, "time"),
     confidence: normalized.confidence,
     warnings,
+    youtube: normalized.youtube || readDirective(content, "youtube"),
+    ccli: normalized.ccli || readDirective(content, "ccli"),
+    composer: normalized.composer || readDirective(content, "composer"),
+    copyright: normalized.copyright || readDirective(content, "copyright"),
+    subtitle: normalized.subtitle || readDirective(content, "subtitle"),
+    duration: normalized.duration || readDirective(content, "duration"),
   };
+}
+
+function assertNotAborted(job: SongImportJob) {
+  if (job.abortRequested) {
+    throw new UserCancelledError();
+  }
+}
+
+async function findPossibleDuplicates(
+  orgId: string,
+  title: string,
+  artist: string,
+): Promise<SongImportDuplicate[]> {
+  const t = title.trim();
+  if (!t) return [];
+  const rows = await prisma.song.findMany({
+    where: {
+      orgId,
+      deleted: false,
+      OR: [
+        { title: { equals: t, mode: "insensitive" } },
+        { title: { contains: t, mode: "insensitive" } },
+        ...(artist.trim()
+          ? [
+              {
+                AND: [
+                  { title: { contains: t.split(/\s+/)[0]!, mode: "insensitive" as const } },
+                  {
+                    artist: {
+                      contains: artist.trim(),
+                      mode: "insensitive" as const,
+                    },
+                  },
+                ],
+              },
+            ]
+          : []),
+      ],
+    },
+    select: { id: true, title: true, artist: true },
+    take: 8,
+  });
+  const titleLower = t.toLowerCase();
+  const artistLower = artist.trim().toLowerCase();
+  return rows
+    .map((r) => {
+      const rt = r.title.toLowerCase();
+      const ra = (r.artist || "").toLowerCase();
+      let score = 0;
+      if (rt === titleLower) score += 0.7;
+      else if (rt.includes(titleLower) || titleLower.includes(rt)) score += 0.4;
+      if (artistLower && ra === artistLower) score += 0.3;
+      else if (artistLower && ra.includes(artistLower)) score += 0.15;
+      return {
+        id: r.id,
+        title: r.title,
+        artist: r.artist || "",
+        score: Math.min(1, score),
+      };
+    })
+    .filter((d) => d.score >= 0.4)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
 }
 
 type OnlineEvidence = {
@@ -699,6 +803,29 @@ export class SongImportService {
     return publicJob(job);
   }
 
+  /** Request abort; in-flight pipeline stops at the next stage boundary. */
+  cancelJob(orgId: string, id: string) {
+    pruneJobsSafe();
+    const job = jobs.get(id);
+    if (!job || job.orgId !== orgId) {
+      throw AppError.notFound("SONG_NOT_FOUND", "Import job not found.");
+    }
+    if (
+      job.status === "completed" ||
+      job.status === "failed" ||
+      job.status === "cancelled"
+    ) {
+      return publicJob(job);
+    }
+    job.abortRequested = true;
+    job.status = "cancelled";
+    job.cancelledBy = "user";
+    job.cancelReason = "Import cancelled by user.";
+    job.errorMessage = job.cancelReason;
+    job.updatedAt = Date.now();
+    return publicJob(job);
+  }
+
   async createJob(input: CreateInput) {
     pruneJobsSafe();
     if (!input.imageBase64?.trim()) {
@@ -719,14 +846,298 @@ export class SongImportService {
     };
     jobs.set(id, job);
 
-    // Await the pipeline so the draft survives serverless (Vercel) and the
-    // mobile progress screen can finish on the create response. GET polling
-    // still works for clients that disconnect mid-request and retry.
-    try {
-      await this.run(job, input);
-    } catch (err) {
-      if (err instanceof ImportCancelledError) {
+    // Return immediately; client polls GET for real step progress.
+    void this.run(job, input).catch((err) => {
+      if (job.status === "cancelled" && job.cancelledBy === "user") return;
+      if (err instanceof UserCancelledError) {
         job.status = "cancelled";
+        job.cancelledBy = "user";
+        job.cancelReason = err.message;
+        job.errorMessage = err.message;
+      } else if (err instanceof ImportCancelledError) {
+        job.status = "cancelled";
+        job.cancelledBy = "ai";
+        job.cancelCode = err.code;
+        job.cancelReason = err.message;
+        job.errorMessage = err.message;
+      } else {
+        job.status = "failed";
+        job.errorMessage =
+          err instanceof Error ? err.message : "Import failed unexpectedly.";
+      }
+      job.updatedAt = Date.now();
+    });
+
+    // Kick status to running so the first poll is not stuck on queued.
+    job.status = "running";
+    job.updatedAt = Date.now();
+    return publicJob(job);
+  }
+
+  private async run(job: SongImportJob, input: CreateInput) {
+    try {
+      assertNotAborted(job);
+      job.status = "running";
+      markStep(job, "process", "active");
+
+      const runtime = await this.config.getRuntimeConfig(input.orgId);
+      assertNotAborted(job);
+      const model = buildModel(
+        runtime.provider,
+        runtime.model,
+        runtime.apiKey,
+        runtime.baseUrl,
+      );
+
+      markStep(job, "process", "done");
+      assertNotAborted(job);
+      markStep(job, "extract", "active");
+
+      const primaryBytes = Buffer.from(
+        stripDataUrl(input.imageBase64),
+        "base64",
+      );
+      const primaryMime = input.imageMimeType || "image/jpeg";
+      const extraImages = (input.imagesBase64 ?? [])
+        .map((raw, i) => ({
+          bytes: Buffer.from(stripDataUrl(raw), "base64"),
+          mime: input.imageMimeTypes?.[i] || "image/png",
+        }))
+        .filter((img) => img.bytes.length > 0);
+      const pageCount = 1 + extraImages.length;
+
+      const extractPrompt = [
+        "You are Logos, Hosanna's worship-song assistant.",
+        `Inspect the attached image(s) (${pageCount} page${pageCount > 1 ? "s" : ""}).`,
+        "If it is clearly NOT a usable song / chord-lyric sheet (random photo, blank page, blurry unreadable, menu, receipt, sermon notes without chords/lyrics, etc.), call cancel_import with a short reason.",
+        "If it IS a song sheet, call submit_song_draft with ChordPro content spanning all pages. Do not invent verses you cannot see.",
+        "content MUST be valid ChordPro with {title}, {artist}, {key}, optional {tempo}/{time}, and lyric lines with [Chords].",
+        "Set confidence honestly (0-1).",
+        input.fileName ? `Original filename: ${input.fileName}` : "",
+        input.sourceType === "pdf"
+          ? `Source type: PDF (${pageCount} page screenshot${pageCount > 1 ? "s" : ""}).`
+          : `Source type: ${input.sourceType}.`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      const analysis = await analyzeSheetMusic({
+        model,
+        provider: runtime.provider,
+        temperature: runtime.temperature ?? 0.2,
+        maxOutputTokens: runtime.maxOutputTokens ?? 4096,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: extractPrompt },
+              {
+                type: "file",
+                data: primaryBytes,
+                mediaType: primaryMime,
+              },
+              ...extraImages.map((img) => ({
+                type: "file" as const,
+                data: img.bytes,
+                mediaType: img.mime,
+              })),
+            ],
+          },
+        ],
+      });
+
+      assertNotAborted(job);
+
+      if (analysis.kind === "cancel") {
+        throw new ImportCancelledError(
+          analysis.cancel.code,
+          analysis.cancel.reason,
+        );
+      }
+
+      const lyricBody = analysis.draft.content
+        .replace(/\{[^}]+\}/g, "")
+        .replace(/\[[^\]]*\]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (lyricBody.length < 8) {
+        throw new ImportCancelledError(
+          "blank",
+          "Could not find readable lyrics or chords on this image.",
+        );
+      }
+
+      markStep(job, "extract", "done");
+      assertNotAborted(job);
+      markStep(job, "metadata", "active");
+
+      let draft = toImportDraft(analysis.draft);
+
+      markStep(job, "metadata", "done");
+      assertNotAborted(job);
+      markStep(job, "verify", "active");
+
+      try {
+        const nativeAuth = nativeWebAuthFromRuntime(runtime);
+        const evidence = await gatherOnlineEvidence(draft, nativeAuth);
+        assertNotAborted(job);
+
+        const verifyPrompt = [
+          "You are Logos verifying a ChordPro draft and enriching metadata from online evidence.",
+          "Correct obvious OCR mistakes in title/artist/lyrics/chords when the evidence is clear.",
+          "Fill every ChordPro metadata field you can confidently support: title, artist, key, tempo, time, youtube, ccli, composer, copyright, subtitle, duration, album.",
+          "Put those values BOTH in the structured fields AND as {directive:} lines in content.",
+          "For youtube: use a full watch URL from the YouTube hits when it clearly matches the song — prefer official / lyric videos.",
+          "For ccli: only set when an explicit CCLI song number appears in the evidence.",
+          "Do not invent lyrics or chords. If evidence is weak, keep the visual draft, lower confidence, and note it.",
+          "Call submit_song_draft with the improved draft.",
+          "",
+          `Draft title: ${draft.title}`,
+          `Draft artist: ${draft.artist}`,
+          `Draft key: ${draft.key ?? ""}`,
+          evidence.artistHint && !draft.artist
+            ? `Artist hint from MusicBrainz: ${evidence.artistHint}`
+            : "",
+          evidence.youtubeUrl
+            ? `Suggested YouTube URL: ${evidence.youtubeUrl}`
+            : "",
+          evidence.duration ? `Suggested duration: ${evidence.duration}` : "",
+          "",
+          "Current ChordPro:",
+          draft.content,
+          "",
+          "Online evidence:",
+          evidence.block || "(none)",
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+        const verifiedDraft = await generateSongDraft({
+          model,
+          provider: runtime.provider,
+          temperature: 0.1,
+          maxOutputTokens: runtime.maxOutputTokens ?? 4096,
+          prompt: verifyPrompt,
+        });
+        assertNotAborted(job);
+
+        const merged: DraftFields = {
+          ...verifiedDraft,
+          title: verifiedDraft.title.trim() || draft.title,
+          artist:
+            (verifiedDraft.artist || "").trim() ||
+            draft.artist ||
+            evidence.artistHint ||
+            "",
+          key: verifiedDraft.key || draft.key,
+          tempo: verifiedDraft.tempo || draft.tempo,
+          timeSignature: verifiedDraft.timeSignature || draft.timeSignature,
+          youtube:
+            verifiedDraft.youtube ||
+            readDirective(verifiedDraft.content, "youtube") ||
+            evidence.youtubeUrl,
+          ccli:
+            verifiedDraft.ccli || readDirective(verifiedDraft.content, "ccli"),
+          composer:
+            verifiedDraft.composer ||
+            readDirective(verifiedDraft.content, "composer"),
+          copyright:
+            verifiedDraft.copyright ||
+            readDirective(verifiedDraft.content, "copyright"),
+          subtitle:
+            verifiedDraft.subtitle ||
+            readDirective(verifiedDraft.content, "subtitle"),
+          duration:
+            verifiedDraft.duration ||
+            readDirective(verifiedDraft.content, "duration") ||
+            evidence.duration,
+          album:
+            verifiedDraft.album ||
+            readDirective(verifiedDraft.content, "album"),
+          content: verifiedDraft.content.trim() || draft.content,
+          confidence: verifiedDraft.confidence ?? draft.confidence,
+        };
+
+        draft = toImportDraft(merged, [
+          ...draft.warnings,
+          `Verified & enriched online (${evidence.sources.join(", ") || "search"}).`,
+        ]);
+      } catch (err) {
+        if (
+          err instanceof UserCancelledError ||
+          err instanceof ImportCancelledError
+        ) {
+          throw err;
+        }
+        draft.warnings.push(
+          `Online verification skipped: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+
+      markStep(job, "verify", "done");
+      assertNotAborted(job);
+      markStep(job, "draft", "active");
+
+      const validation = validateChordProContent(draft.content);
+      draft.diagnostics = [
+        ...validation.parseErrors.map((message) => ({
+          severity: "error",
+          message,
+        })),
+        ...validation.diagnostics.map((d) => ({
+          severity: d.severity,
+          message: d.message,
+          line: typeof d.line === "number" ? d.line : undefined,
+        })),
+      ];
+      if (!validation.ok) {
+        const msgs = [
+          ...validation.parseErrors,
+          ...validation.diagnostics
+            .filter((d) => d.severity === "error")
+            .map((d) => d.message),
+        ];
+        draft.warnings.push(
+          `ChordPro validation warnings: ${msgs.join("; ") || "see content"}`,
+        );
+      }
+
+      if (!/\{title:/i.test(draft.content)) {
+        draft.content = `{title: ${draft.title}}\n${draft.content}`;
+      }
+      if (draft.artist && !/\{artist:/i.test(draft.content)) {
+        draft.content = draft.content.replace(
+          /\{title:[^}]*\}/i,
+          (m) => `${m}\n{artist: ${draft.artist}}`,
+        );
+      }
+
+      try {
+        draft.possibleDuplicates = await findPossibleDuplicates(
+          input.orgId,
+          draft.title,
+          draft.artist,
+        );
+      } catch {
+        draft.possibleDuplicates = [];
+      }
+
+      assertNotAborted(job);
+      job.result = draft;
+      markStep(job, "draft", "done");
+      job.status = "completed";
+      job.updatedAt = Date.now();
+    } catch (err) {
+      if (job.abortRequested || err instanceof UserCancelledError) {
+        job.status = "cancelled";
+        job.cancelledBy = "user";
+        job.cancelReason = "Import cancelled by user.";
+        job.errorMessage = job.cancelReason;
+      } else if (err instanceof ImportCancelledError) {
+        job.status = "cancelled";
+        job.cancelledBy = "ai";
         job.cancelCode = err.code;
         job.cancelReason = err.message;
         job.errorMessage = err.message;
@@ -737,207 +1148,5 @@ export class SongImportService {
       }
       job.updatedAt = Date.now();
     }
-
-    return publicJob(job);
-  }
-
-  private async run(job: SongImportJob, input: CreateInput) {
-    job.status = "running";
-    markStep(job, "process", "active");
-
-    const runtime = await this.config.getRuntimeConfig(input.orgId);
-    const model = buildModel(
-      runtime.provider,
-      runtime.model,
-      runtime.apiKey,
-      runtime.baseUrl,
-    );
-
-    markStep(job, "process", "done");
-    markStep(job, "extract", "active");
-
-    const imageBytes = Buffer.from(stripDataUrl(input.imageBase64), "base64");
-    const mime = input.imageMimeType || "image/jpeg";
-
-    const extractPrompt = [
-      "You are Logos, Hosanna's worship-song assistant.",
-      "Inspect the attached image (or PDF page screenshot).",
-      "If it is clearly NOT a usable song / chord-lyric sheet (random photo, blank page, blurry unreadable, menu, receipt, sermon notes without chords/lyrics, etc.), call cancel_import with a short reason.",
-      "If it IS a song sheet, call submit_song_draft with ChordPro content. Do not invent verses you cannot see.",
-      "content MUST be valid ChordPro with {title}, {artist}, {key}, optional {tempo}/{time}, and lyric lines with [Chords].",
-      "Set confidence honestly (0-1).",
-      input.fileName ? `Original filename: ${input.fileName}` : "",
-      input.sourceType === "pdf"
-        ? "Source type: PDF (image is a screenshot of page 1)."
-        : `Source type: ${input.sourceType}.`,
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    const analysis = await analyzeSheetMusic({
-      model,
-      provider: runtime.provider,
-      temperature: runtime.temperature ?? 0.2,
-      maxOutputTokens: runtime.maxOutputTokens ?? 4096,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: extractPrompt },
-            { type: "file", data: imageBytes, mediaType: mime },
-          ],
-        },
-      ],
-    });
-
-    if (analysis.kind === "cancel") {
-      throw new ImportCancelledError(
-        analysis.cancel.code,
-        analysis.cancel.reason,
-      );
-    }
-
-    // Safety net: empty / near-empty "songs" should not proceed to review.
-    const lyricBody = analysis.draft.content
-      .replace(/\{[^}]+\}/g, "")
-      .replace(/\[[^\]]*\]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-    if (lyricBody.length < 8) {
-      throw new ImportCancelledError(
-        "blank",
-        "Could not find readable lyrics or chords on this image.",
-      );
-    }
-
-    markStep(job, "extract", "done");
-    markStep(job, "metadata", "active");
-
-    let draft = toImportDraft(analysis.draft);
-
-    markStep(job, "metadata", "done");
-    markStep(job, "verify", "active");
-
-    // Online verify + enrich metadata (YouTube, MusicBrainz, CCLI, web).
-    try {
-      const nativeAuth = nativeWebAuthFromRuntime(runtime);
-      const evidence = await gatherOnlineEvidence(draft, nativeAuth);
-
-      const verifyPrompt = [
-        "You are Logos verifying a ChordPro draft and enriching metadata from online evidence.",
-        "Correct obvious OCR mistakes in title/artist/lyrics/chords when the evidence is clear.",
-        "Fill every ChordPro metadata field you can confidently support: title, artist, key, tempo, time, youtube, ccli, composer, copyright, subtitle, duration, album.",
-        "Put those values BOTH in the structured fields AND as {directive:} lines in content.",
-        "For youtube: use a full watch URL from the YouTube hits when it clearly matches the song — prefer official / lyric videos.",
-        "For ccli: only set when an explicit CCLI song number appears in the evidence.",
-        "Do not invent lyrics or chords. If evidence is weak, keep the visual draft, lower confidence, and note it.",
-        "Call submit_song_draft with the improved draft.",
-        "",
-        `Draft title: ${draft.title}`,
-        `Draft artist: ${draft.artist}`,
-        `Draft key: ${draft.key ?? ""}`,
-        evidence.artistHint && !draft.artist
-          ? `Artist hint from MusicBrainz: ${evidence.artistHint}`
-          : "",
-        evidence.youtubeUrl ? `Suggested YouTube URL: ${evidence.youtubeUrl}` : "",
-        evidence.duration ? `Suggested duration: ${evidence.duration}` : "",
-        "",
-        "Current ChordPro:",
-        draft.content,
-        "",
-        "Online evidence:",
-        evidence.block || "(none)",
-      ]
-        .filter(Boolean)
-        .join("\n");
-
-      const verifiedDraft = await generateSongDraft({
-        model,
-        provider: runtime.provider,
-        temperature: 0.1,
-        maxOutputTokens: runtime.maxOutputTokens ?? 4096,
-        prompt: verifyPrompt,
-      });
-
-      // Merge structured fields; fall back to extraction + search hints.
-      const merged: DraftFields = {
-        ...verifiedDraft,
-        title: verifiedDraft.title.trim() || draft.title,
-        artist:
-          (verifiedDraft.artist || "").trim() ||
-          draft.artist ||
-          evidence.artistHint ||
-          "",
-        key: verifiedDraft.key || draft.key,
-        tempo: verifiedDraft.tempo || draft.tempo,
-        timeSignature: verifiedDraft.timeSignature || draft.timeSignature,
-        youtube:
-          verifiedDraft.youtube ||
-          readDirective(verifiedDraft.content, "youtube") ||
-          evidence.youtubeUrl,
-        ccli:
-          verifiedDraft.ccli || readDirective(verifiedDraft.content, "ccli"),
-        composer:
-          verifiedDraft.composer ||
-          readDirective(verifiedDraft.content, "composer"),
-        copyright:
-          verifiedDraft.copyright ||
-          readDirective(verifiedDraft.content, "copyright"),
-        subtitle:
-          verifiedDraft.subtitle ||
-          readDirective(verifiedDraft.content, "subtitle"),
-        duration:
-          verifiedDraft.duration ||
-          readDirective(verifiedDraft.content, "duration") ||
-          evidence.duration,
-        album:
-          verifiedDraft.album || readDirective(verifiedDraft.content, "album"),
-        content: verifiedDraft.content.trim() || draft.content,
-        confidence: verifiedDraft.confidence ?? draft.confidence,
-      };
-
-      draft = toImportDraft(merged, [
-        ...draft.warnings,
-        `Verified & enriched online (${evidence.sources.join(", ") || "search"}).`,
-      ]);
-    } catch (err) {
-      draft.warnings.push(
-        `Online verification skipped: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
-
-    markStep(job, "verify", "done");
-    markStep(job, "draft", "active");
-
-    const validation = validateChordProContent(draft.content);
-    if (!validation.ok) {
-      const msgs = [
-        ...validation.parseErrors,
-        ...validation.diagnostics
-          .filter((d) => d.severity === "error")
-          .map((d) => d.message),
-      ];
-      draft.warnings.push(
-        `ChordPro validation warnings: ${msgs.join("; ") || "see content"}`,
-      );
-    }
-
-    // Ensure required directives exist.
-    if (!/\{title:/i.test(draft.content)) {
-      draft.content = `{title: ${draft.title}}\n${draft.content}`;
-    }
-    if (draft.artist && !/\{artist:/i.test(draft.content)) {
-      draft.content = draft.content.replace(
-        /\{title:[^}]*\}/i,
-        (m) => `${m}\n{artist: ${draft.artist}}`,
-      );
-    }
-
-    job.result = draft;
-    markStep(job, "draft", "done");
-    job.status = "completed";
-    job.updatedAt = Date.now();
   }
 }

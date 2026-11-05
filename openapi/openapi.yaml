@@ -141,9 +141,10 @@ paths:
     post:
       summary: Start a Logos AI song-import job (photo/gallery/PDF)
       description: >
-        Accepts a sheet-music image (and PDF + screenshot for PDF sources).
-        Returns a job id immediately; poll GET /songs/import/jobs/{id}.
-        Does not persist a song — the client reviews the draft then creates locally.
+        Accepts a sheet-music image (and optional extra page screenshots for PDFs).
+        Returns 202 with a job id immediately; poll GET /songs/import/jobs/{id}
+        for real step progress. Cancel with DELETE. Does not persist a song —
+        the client reviews the draft then creates locally.
       tags:
         - Songs
       security: *a2
@@ -165,14 +166,25 @@ paths:
                 imageMimeType:
                   type: string
                   default: image/jpeg
+                imagesBase64:
+                  type: array
+                  maxItems: 4
+                  items:
+                    type: string
+                  description: Extra page screenshots (pages 2+)
+                imageMimeTypes:
+                  type: array
+                  maxItems: 4
+                  items:
+                    type: string
                 pdfBase64:
                   type: string
                   description: Required when sourceType is pdf
                 fileName:
                   type: string
       responses:
-        "200":
-          description: Job finished (draft ready or failed)
+        "202":
+          description: Job accepted (queued/running); poll GET for progress
           content:
             application/json:
               schema:
@@ -194,6 +206,26 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SongImportJob"
+    delete:
+      summary: Cancel a running Logos AI song-import job
+      tags:
+        - Songs
+      security: *a2
+      operationId: cancelSongImportJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Job cancelled (or already terminal)
           content:
             application/json:
               schema:
@@ -1761,7 +1793,7 @@ components:
           format: uuid
         status:
           type: string
-          enum: [queued, running, completed, failed]
+          enum: [queued, running, completed, failed, cancelled]
         steps:
           type: array
           items:
@@ -1797,9 +1829,56 @@ components:
               type: array
               items:
                 type: string
+            youtube:
+              type: string
+            ccli:
+              type: string
+            composer:
+              type: string
+            copyright:
+              type: string
+            subtitle:
+              type: string
+            duration:
+              type: string
+            diagnostics:
+              type: array
+              items:
+                type: object
+                properties:
+                  severity:
+                    type: string
+                  message:
+                    type: string
+                  line:
+                    type: integer
+            possibleDuplicates:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  title:
+                    type: string
+                  artist:
+                    type: string
+                  score:
+                    type: number
         errorMessage:
           type: string
           nullable: true
+        cancelCode:
+          type: string
+          nullable: true
+          enum: [not_a_song, unreadable, blank, wrong_content, multiple_unclear]
+        cancelReason:
+          type: string
+          nullable: true
+        cancelledBy:
+          type: string
+          nullable: true
+          enum: [ai, user]
     Folder:
       type: object
       properties:
