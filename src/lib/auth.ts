@@ -379,7 +379,7 @@ export const auth = betterAuth({
       apiKey: env.betterAuthApiKey,
       security: {
         credentialStuffing: {
-          enabled: false, //TODO: true
+          enabled: true,
           thresholds: {
             challenge: 3,
             block: 5,
@@ -388,7 +388,7 @@ export const auth = betterAuth({
           cooldownSeconds: 900,
         },
         freeTrialAbuse: {
-          enabled: false, //TODO: true
+          enabled: true,
           thresholds: {
             challenge: 2,
             block: 3,
@@ -397,7 +397,7 @@ export const auth = betterAuth({
           action: "block",
         },
         suspiciousIpBlocking: {
-          action: "challenge",
+          action: "block",
         },
         emailValidation: {
           enabled: true,
