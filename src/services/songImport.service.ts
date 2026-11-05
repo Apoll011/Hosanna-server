@@ -6,7 +6,16 @@ import { generateText, tool, type LanguageModel, type ModelMessage } from "ai";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { validateChordProContent } from "../mcp/lib/chordproGate.js";
+import { searchMusicBrainzRecordings } from "../mcp/lib/musicbrainz.js";
+import {
+  nativeWebAuthFromRuntime,
+  type NativeWebAuth,
+} from "../mcp/lib/nativeWeb.js";
 import { searchWeb } from "../mcp/lib/webSearch.js";
+import {
+  getYouTubeDuration,
+  searchYouTube,
+} from "../mcp/lib/youtubeSearch.js";
 import { AppError } from "../utils/errors.js";
 import {
   AI_PROVIDER_DEFAULT_BASE_URL,
@@ -65,11 +74,24 @@ const draftSchema = z.object({
     .optional()
     .describe("Tempo marking or BPM"),
   timeSignature: z.string().optional().describe("Time signature, e.g. 4/4"),
+  youtube: z
+    .string()
+    .optional()
+    .describe("YouTube watch URL for {youtube:} when a clear match exists"),
+  ccli: z.string().optional().describe("CCLI song number when confirmed"),
+  composer: z.string().optional().describe("Composer / writers if known"),
+  copyright: z.string().optional().describe("Copyright / publisher line"),
+  subtitle: z.string().optional().describe("Subtitle or alternate title"),
+  duration: z
+    .string()
+    .optional()
+    .describe("Song duration like 4:35 when known from YouTube/web"),
+  album: z.string().optional().describe("Release / album title if known"),
   content: z
     .string()
     .min(1)
     .describe(
-      "Full ChordPro body with {title}/{artist}/{key} and lyric lines with [Chords]",
+      "Full ChordPro with metadata directives ({title},{artist},{key},{youtube},{ccli},…) and lyric lines with [Chords]",
     ),
   confidence: z
     .number()
@@ -231,7 +253,7 @@ async function generateSongDraft(opts: {
   }
 
   const jsonHint =
-    'Respond with a single JSON object only (no markdown) with keys: title, artist, key, tempo, timeSignature, content, confidence, notes. The word json must appear because some providers require it.';
+    'Respond with a single JSON object only (no markdown) with keys: title, artist, key, tempo, timeSignature, youtube, ccli, composer, copyright, subtitle, duration, album, content, confidence, notes. The word json must appear because some providers require it.';
 
   const retry = await generateText({
     model: opts.model,
@@ -286,7 +308,7 @@ function initialSteps(): SongImportStep[] {
     },
     {
       id: "verify",
-      label: "Verify online (reduce hallucinations)",
+      label: "Verify online & enrich metadata",
       done: false,
       active: false,
     },
@@ -326,21 +348,191 @@ function stripDataUrl(raw: string): string {
   return idx >= 0 ? raw.slice(idx + "base64,".length) : raw;
 }
 
+function upsertDirective(
+  content: string,
+  name: string,
+  value?: string | null,
+): string {
+  const trimmed = value?.toString().trim();
+  if (!trimmed) return content;
+  const re = new RegExp(`\\{${name}:\\s*[^}]*\\}`, "i");
+  const directive = `{${name}: ${trimmed}}`;
+  if (re.test(content)) return content.replace(re, directive);
+  if (/\{title:\s*[^}]*\}/i.test(content)) {
+    return content.replace(/\{title:\s*[^}]*\}/i, (m) => `${m}\n${directive}`);
+  }
+  return `${directive}\n${content}`;
+}
+
+function readDirective(content: string, name: string): string | undefined {
+  const m = content.match(new RegExp(`\\{${name}:\\s*([^}]*)\\}`, "i"));
+  const v = m?.[1]?.trim();
+  return v || undefined;
+}
+
+/** Ensure ChordPro header carries every confirmed metadata field. */
+function applyDraftMetadata(fields: DraftFields): DraftFields {
+  let content = fields.content.trim();
+  const title = fields.title.trim();
+  const artist = (fields.artist || "").trim();
+  content = upsertDirective(content, "title", title);
+  content = upsertDirective(content, "artist", artist || undefined);
+  content = upsertDirective(content, "key", fields.key);
+  content = upsertDirective(content, "tempo", fields.tempo?.toString());
+  content = upsertDirective(content, "time", fields.timeSignature);
+  content = upsertDirective(content, "youtube", fields.youtube);
+  content = upsertDirective(content, "ccli", fields.ccli);
+  content = upsertDirective(content, "composer", fields.composer);
+  content = upsertDirective(content, "copyright", fields.copyright);
+  content = upsertDirective(content, "subtitle", fields.subtitle);
+  content = upsertDirective(content, "duration", fields.duration);
+  content = upsertDirective(content, "album", fields.album);
+  return { ...fields, title, artist, content };
+}
+
 function toImportDraft(
   fields: DraftFields,
   extraWarnings: string[] = [],
 ): SongImportDraft {
+  const normalized = applyDraftMetadata(fields);
   const warnings = [...extraWarnings];
-  if (fields.notes) warnings.push(fields.notes);
+  if (normalized.notes) warnings.push(normalized.notes);
   return {
-    title: fields.title.trim(),
-    artist: (fields.artist || "").trim(),
-    content: fields.content.trim(),
-    key: fields.key?.toString(),
-    tempo: fields.tempo?.toString(),
-    timeSignature: fields.timeSignature,
-    confidence: fields.confidence,
+    title: normalized.title.trim(),
+    artist: (normalized.artist || "").trim(),
+    content: normalized.content.trim(),
+    key: normalized.key?.toString() || readDirective(normalized.content, "key"),
+    tempo:
+      normalized.tempo?.toString() ||
+      readDirective(normalized.content, "tempo"),
+    timeSignature:
+      normalized.timeSignature || readDirective(normalized.content, "time"),
+    confidence: normalized.confidence,
     warnings,
+  };
+}
+
+type OnlineEvidence = {
+  block: string;
+  youtubeUrl?: string;
+  duration?: string;
+  artistHint?: string;
+  sources: string[];
+};
+
+async function gatherOnlineEvidence(
+  draft: SongImportDraft,
+  nativeAuth: NativeWebAuth | null,
+): Promise<OnlineEvidence> {
+  const title = draft.title;
+  const artist = draft.artist;
+  const sources: string[] = [];
+  const sections: string[] = [];
+  let youtubeUrl: string | undefined;
+  let duration: string | undefined;
+  let artistHint: string | undefined;
+
+  const [mbRes, ytRes, webRes, ccliRes] = await Promise.allSettled([
+    searchMusicBrainzRecordings({
+      title,
+      artist: artist || undefined,
+      limit: 5,
+    }),
+    searchYouTube({
+      title,
+      artist: artist || undefined,
+      limit: 5,
+      nativeAuth,
+    }),
+    searchWeb({
+      query: [title, artist, "worship song lyrics"].filter(Boolean).join(" "),
+      limit: 5,
+      oriQuestion: `Song metadata for ${title}`,
+      nativeAuth,
+    }),
+    searchWeb({
+      query: [title, artist, "CCLI"].filter(Boolean).join(" "),
+      limit: 3,
+      oriQuestion: `CCLI number for ${title}`,
+      nativeAuth,
+    }),
+  ]);
+
+  if (mbRes.status === "fulfilled") {
+    sources.push("MusicBrainz");
+    const lines = mbRes.value.hits.slice(0, 4).map((h, i) => {
+      if (i === 0 && !artist && h.artist) artistHint = h.artist;
+      return `${i + 1}. "${h.title}" — ${h.artist}${
+        h.release ? ` (release: ${h.release})` : ""
+      }${h.firstReleaseDate ? ` [${h.firstReleaseDate}]` : ""} score=${h.score}`;
+    });
+    sections.push(
+      "MusicBrainz recordings:\n" + (lines.join("\n") || "(none)"),
+    );
+  } else {
+    sections.push(
+      `MusicBrainz: skipped (${mbRes.reason instanceof Error ? mbRes.reason.message : String(mbRes.reason)})`,
+    );
+  }
+
+  if (ytRes.status === "fulfilled") {
+    sources.push(`YouTube (${ytRes.value.provider})`);
+    const lines = ytRes.value.hits.slice(0, 4).map((h, i) => {
+      if (i === 0) youtubeUrl = h.url;
+      return `${i + 1}. ${h.title}${h.channel ? ` — ${h.channel}` : ""}\n   ${h.url}\n   directive: ${h.directive}`;
+    });
+    sections.push(
+      "YouTube hits (prefer official / lyric video when clear):\n" +
+        (lines.join("\n") || "(none)"),
+    );
+    if (youtubeUrl) {
+      try {
+        const dur = await getYouTubeDuration(youtubeUrl);
+        if (dur?.duration) {
+          duration = dur.duration;
+          sections.push(`YouTube duration for top hit: ${dur.duration}`);
+        }
+      } catch {
+        /* optional */
+      }
+    }
+  } else {
+    sections.push(
+      `YouTube: skipped (${ytRes.reason instanceof Error ? ytRes.reason.message : String(ytRes.reason)})`,
+    );
+  }
+
+  if (webRes.status === "fulfilled") {
+    sources.push(`Web (${webRes.value.provider})`);
+    const lines = webRes.value.results.slice(0, 4).map(
+      (h, i) =>
+        `${i + 1}. ${h.title}\n${h.url}\n${h.snippet || h.summary || ""}`,
+    );
+    sections.push("Web search:\n" + (lines.join("\n\n") || "(none)"));
+  } else {
+    sections.push(
+      `Web search: skipped (${webRes.reason instanceof Error ? webRes.reason.message : String(webRes.reason)})`,
+    );
+  }
+
+  if (ccliRes.status === "fulfilled") {
+    sources.push(`CCLI web (${ccliRes.value.provider})`);
+    const lines = ccliRes.value.results.slice(0, 3).map(
+      (h, i) =>
+        `${i + 1}. ${h.title}\n${h.url}\n${h.snippet || h.summary || ""}`,
+    );
+    sections.push(
+      "CCLI / licensing search (only set {ccli:} when the number is explicit):\n" +
+        (lines.join("\n\n") || "(none)"),
+    );
+  }
+
+  return {
+    block: sections.join("\n\n"),
+    youtubeUrl,
+    duration,
+    artistHint,
+    sources,
   };
 }
 
@@ -446,41 +638,38 @@ export class SongImportService {
     markStep(job, "metadata", "done");
     markStep(job, "verify", "active");
 
-    // Web verify to reduce hallucinations.
+    // Online verify + enrich metadata (YouTube, MusicBrainz, CCLI, web).
     try {
-      const query = [draft.title, draft.artist, "lyrics chords"]
-        .filter(Boolean)
-        .join(" ")
-        .trim();
-      const search = await searchWeb({
-        query,
-        limit: 5,
-        oriQuestion: `Verify worship song sheet: ${draft.title}`,
-      });
-      const snippets = search.results
-        .slice(0, 4)
-        .map(
-          (h, i) =>
-            `${i + 1}. ${h.title}\n${h.url}\n${h.snippet || h.summary || ""}`,
-        )
-        .join("\n\n");
+      const nativeAuth = nativeWebAuthFromRuntime(runtime);
+      const evidence = await gatherOnlineEvidence(draft, nativeAuth);
 
       const verifyPrompt = [
-        "You are Logos verifying a ChordPro draft against web search hits.",
-        "Correct obvious OCR mistakes in title/artist/lyrics/chords when the web evidence is clear.",
-        "If the web does not confirm the song, keep the visual draft and set a lower confidence; add a short warning in notes.",
+        "You are Logos verifying a ChordPro draft and enriching metadata from online evidence.",
+        "Correct obvious OCR mistakes in title/artist/lyrics/chords when the evidence is clear.",
+        "Fill every ChordPro metadata field you can confidently support: title, artist, key, tempo, time, youtube, ccli, composer, copyright, subtitle, duration, album.",
+        "Put those values BOTH in the structured fields AND as {directive:} lines in content.",
+        "For youtube: use a full watch URL from the YouTube hits when it clearly matches the song — prefer official / lyric videos.",
+        "For ccli: only set when an explicit CCLI song number appears in the evidence.",
+        "Do not invent lyrics or chords. If evidence is weak, keep the visual draft, lower confidence, and note it.",
         "Call submit_song_draft with the improved draft.",
         "",
         `Draft title: ${draft.title}`,
         `Draft artist: ${draft.artist}`,
         `Draft key: ${draft.key ?? ""}`,
+        evidence.artistHint && !draft.artist
+          ? `Artist hint from MusicBrainz: ${evidence.artistHint}`
+          : "",
+        evidence.youtubeUrl ? `Suggested YouTube URL: ${evidence.youtubeUrl}` : "",
+        evidence.duration ? `Suggested duration: ${evidence.duration}` : "",
         "",
         "Current ChordPro:",
         draft.content,
         "",
-        "Web search hits:",
-        snippets || "(none)",
-      ].join("\n");
+        "Online evidence:",
+        evidence.block || "(none)",
+      ]
+        .filter(Boolean)
+        .join("\n");
 
       const verifiedDraft = await generateSongDraft({
         model,
@@ -490,19 +679,47 @@ export class SongImportService {
         prompt: verifyPrompt,
       });
 
-      draft = toImportDraft(verifiedDraft, [
+      // Merge structured fields; fall back to extraction + search hints.
+      const merged: DraftFields = {
+        ...verifiedDraft,
+        title: verifiedDraft.title.trim() || draft.title,
+        artist:
+          (verifiedDraft.artist || "").trim() ||
+          draft.artist ||
+          evidence.artistHint ||
+          "",
+        key: verifiedDraft.key || draft.key,
+        tempo: verifiedDraft.tempo || draft.tempo,
+        timeSignature: verifiedDraft.timeSignature || draft.timeSignature,
+        youtube:
+          verifiedDraft.youtube ||
+          readDirective(verifiedDraft.content, "youtube") ||
+          evidence.youtubeUrl,
+        ccli:
+          verifiedDraft.ccli || readDirective(verifiedDraft.content, "ccli"),
+        composer:
+          verifiedDraft.composer ||
+          readDirective(verifiedDraft.content, "composer"),
+        copyright:
+          verifiedDraft.copyright ||
+          readDirective(verifiedDraft.content, "copyright"),
+        subtitle:
+          verifiedDraft.subtitle ||
+          readDirective(verifiedDraft.content, "subtitle"),
+        duration:
+          verifiedDraft.duration ||
+          readDirective(verifiedDraft.content, "duration") ||
+          evidence.duration,
+        album:
+          verifiedDraft.album || readDirective(verifiedDraft.content, "album"),
+        content: verifiedDraft.content.trim() || draft.content,
+        confidence: verifiedDraft.confidence ?? draft.confidence,
+      };
+
+      draft = toImportDraft(merged, [
         ...draft.warnings,
-        `Verified against web (${search.provider}).`,
+        `Verified & enriched online (${evidence.sources.join(", ") || "search"}).`,
       ]);
-      // Prefer non-empty prior fields if the verify pass blanks them.
-      draft.title = draft.title || extractedDraft.title.trim();
-      draft.artist = draft.artist || (extractedDraft.artist || "").trim();
-      draft.content = draft.content || extractedDraft.content.trim();
-      draft.key = draft.key || extractedDraft.key?.toString();
-      draft.tempo = draft.tempo || extractedDraft.tempo?.toString();
-      draft.timeSignature =
-        draft.timeSignature || extractedDraft.timeSignature;
-      draft.confidence = draft.confidence ?? extractedDraft.confidence;
     } catch (err) {
       draft.warnings.push(
         `Online verification skipped: ${
