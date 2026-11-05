@@ -43,16 +43,35 @@ export type SongImportDraft = {
   warnings: string[];
 };
 
+export type SongImportCancelCode =
+  | "not_a_song"
+  | "unreadable"
+  | "blank"
+  | "wrong_content"
+  | "multiple_unclear";
+
 export type SongImportJob = {
   id: string;
   orgId: string;
-  status: "queued" | "running" | "completed" | "failed";
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
   steps: SongImportStep[];
   result?: SongImportDraft;
   errorMessage?: string;
+  /** Present when status is cancelled — AI decided the image is not importable. */
+  cancelCode?: SongImportCancelCode;
+  cancelReason?: string;
   createdAt: number;
   updatedAt: number;
 };
+
+class ImportCancelledError extends Error {
+  readonly code: SongImportCancelCode;
+  constructor(code: SongImportCancelCode, reason: string) {
+    super(reason);
+    this.name = "ImportCancelledError";
+    this.code = code;
+  }
+}
 
 type CreateInput = {
   orgId: string;
@@ -106,6 +125,27 @@ const draftSchema = z.object({
 });
 
 type DraftFields = z.infer<typeof draftSchema>;
+
+const cancelSchema = z.object({
+  code: z
+    .enum([
+      "not_a_song",
+      "unreadable",
+      "blank",
+      "wrong_content",
+      "multiple_unclear",
+    ])
+    .describe(
+      "not_a_song=photo of something else; unreadable=too blurry/dark; blank=empty page; wrong_content=text but not a chord/lyric sheet; multiple_unclear=several songs mixed with no clear primary",
+    ),
+  reason: z
+    .string()
+    .min(1)
+    .max(400)
+    .describe("Short user-facing explanation of why import was cancelled"),
+});
+
+type CancelFields = z.infer<typeof cancelSchema>;
 
 const JOB_TTL_MS = 30 * 60 * 1000;
 const jobs = new Map<string, SongImportJob>();
@@ -195,19 +235,149 @@ function parseDraftJson(text: string): DraftFields | null {
   return null;
 }
 
-/**
- * Structured draft via forced tool call (skyhack-style). DeepSeek thinking is
- * disabled in buildModel so tool_choice is accepted. Falls back to plain JSON
- * text if the model ignores the tool.
- */
-async function generateSongDraft(opts: {
+type GenerateOpts = {
   model: LanguageModel;
   provider: AiProvider;
   temperature?: number;
   maxOutputTokens?: number;
   messages?: ModelMessage[];
   prompt?: string;
-}): Promise<DraftFields> {
+};
+
+function providerExtras(provider: AiProvider) {
+  return provider === "deepseek" || provider === "openai_compatible"
+    ? ({ reasoning: "none" as const } as const)
+    : {};
+}
+
+function appendTextToMessages(
+  messages: ModelMessage[],
+  text: string,
+): ModelMessage[] {
+  return messages.map((m) => {
+    if (m.role !== "user") return m;
+    if (typeof m.content === "string") {
+      return { ...m, content: `${m.content}\n\n${text}` };
+    }
+    return {
+      ...m,
+      content: [...m.content, { type: "text" as const, text }],
+    };
+  });
+}
+
+/**
+ * Extract pass: submit a draft OR cancel when the image is not a valid song.
+ * Thinking is disabled for DeepSeek so tool_choice works.
+ */
+async function analyzeSheetMusic(
+  opts: GenerateOpts,
+): Promise<{ kind: "draft"; draft: DraftFields } | { kind: "cancel"; cancel: CancelFields }> {
+  const promptBase = opts.prompt ?? "";
+  const messages = opts.messages;
+  const tools = {
+    submit_song_draft: tool({
+      description:
+        "Submit the ChordPro song draft when the image clearly shows a worship song / chord-lyric sheet.",
+      inputSchema: draftSchema,
+    }),
+    cancel_import: tool({
+      description:
+        "Cancel the import when the image is NOT a usable song sheet (random photo, blank page, unreadable blur, menu/receipt, unrelated document, etc.). Prefer this over inventing a song.",
+      inputSchema: cancelSchema,
+    }),
+  };
+
+  try {
+    const result = await generateText({
+      model: opts.model,
+      temperature: opts.temperature,
+      maxOutputTokens: opts.maxOutputTokens,
+      ...providerExtras(opts.provider),
+      ...(messages ? { messages } : { prompt: promptBase }),
+      tools,
+      // Must call one of the tools; model picks draft vs cancel.
+      toolChoice: "required",
+    });
+
+    const cancelCall = result.toolCalls.find(
+      (c) => c.toolName === "cancel_import",
+    );
+    if (cancelCall && "input" in cancelCall && cancelCall.input != null) {
+      return { kind: "cancel", cancel: cancelSchema.parse(cancelCall.input) };
+    }
+
+    const draftCall = result.toolCalls.find(
+      (c) => c.toolName === "submit_song_draft",
+    );
+    if (draftCall && "input" in draftCall && draftCall.input != null) {
+      return { kind: "draft", draft: draftSchema.parse(draftCall.input) };
+    }
+
+    const fromText = parseDraftJson(result.text ?? "");
+    if (fromText) return { kind: "draft", draft: fromText };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (
+      !/tool[_\s-]?choice|thinking mode|response_format/i.test(msg) &&
+      opts.provider !== "deepseek" &&
+      opts.provider !== "openai_compatible"
+    ) {
+      throw err;
+    }
+  }
+
+  // JSON fallback — allow explicit cancel object or draft.
+  const jsonHint = [
+    "Respond with a single JSON object only (no markdown).",
+    'To cancel: {"cancel":true,"code":"not_a_song|unreadable|blank|wrong_content|multiple_unclear","reason":"..."}.',
+    'To submit a draft: {"title":"...","artist":"...","content":"...","confidence":0-1,...}.',
+    "The word json must appear because some providers require it.",
+  ].join(" ");
+
+  const retry = await generateText({
+    model: opts.model,
+    temperature: opts.temperature,
+    maxOutputTokens: opts.maxOutputTokens,
+    ...providerExtras(opts.provider),
+    ...(messages
+      ? { messages: appendTextToMessages(messages, jsonHint) }
+      : { prompt: `${promptBase}\n\n${jsonHint}` }),
+  });
+
+  const raw = retry.text?.trim() ?? "";
+  try {
+    const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const candidate = fence?.[1]?.trim() || raw;
+    const start = candidate.indexOf("{");
+    const end = candidate.lastIndexOf("}");
+    const jsonText =
+      start >= 0 && end > start ? candidate.slice(start, end + 1) : candidate;
+    const obj = JSON.parse(jsonText) as Record<string, unknown>;
+    if (obj.cancel === true || obj.cancel_import === true) {
+      return { kind: "cancel", cancel: cancelSchema.parse(obj) };
+    }
+    if (typeof obj.code === "string" && typeof obj.reason === "string" && !obj.content) {
+      return { kind: "cancel", cancel: cancelSchema.parse(obj) };
+    }
+    const draft = draftSchema.safeParse(obj);
+    if (draft.success) return { kind: "draft", draft: draft.data };
+  } catch {
+    /* fall through */
+  }
+
+  const parsed = parseDraftJson(raw);
+  if (parsed) return { kind: "draft", draft: parsed };
+
+  throw new Error(
+    "Model returned neither a song draft nor a cancel decision.",
+  );
+}
+
+/**
+ * Verify/enrich pass — always submit an improved draft (no cancel).
+ */
+async function generateSongDraft(opts: GenerateOpts): Promise<DraftFields> {
   const promptBase = opts.prompt ?? "";
   const messages = opts.messages;
 
@@ -216,15 +386,12 @@ async function generateSongDraft(opts: {
       model: opts.model,
       temperature: opts.temperature,
       maxOutputTokens: opts.maxOutputTokens,
-      // Keep thinking off even if transformRequestBody is skipped by a proxy.
-      ...(opts.provider === "deepseek" || opts.provider === "openai_compatible"
-        ? { reasoning: "none" as const }
-        : {}),
+      ...providerExtras(opts.provider),
       ...(messages ? { messages } : { prompt: promptBase }),
       tools: {
         submit_song_draft: tool({
           description:
-            "Submit the ChordPro song draft with title, artist, metadata, and content. Always call this tool with the final draft — do not reply with plain text or markdown JSON.",
+            "Submit the improved ChordPro song draft with metadata.",
           inputSchema: draftSchema,
         }),
       },
@@ -242,7 +409,6 @@ async function generateSongDraft(opts: {
     if (fromText) return fromText;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // Thinking mode / tool_choice rejection → JSON-only retry.
     if (
       !/tool[_\s-]?choice|thinking mode|response_format/i.test(msg) &&
       opts.provider !== "deepseek" &&
@@ -253,32 +419,15 @@ async function generateSongDraft(opts: {
   }
 
   const jsonHint =
-    'Respond with a single JSON object only (no markdown) with keys: title, artist, key, tempo, timeSignature, youtube, ccli, composer, copyright, subtitle, duration, album, content, confidence, notes. The word json must appear because some providers require it.';
+    "Respond with a single JSON object only (no markdown) with keys: title, artist, key, tempo, timeSignature, youtube, ccli, composer, copyright, subtitle, duration, album, content, confidence, notes. The word json must appear because some providers require it.";
 
   const retry = await generateText({
     model: opts.model,
     temperature: opts.temperature,
     maxOutputTokens: opts.maxOutputTokens,
-    ...(opts.provider === "deepseek" || opts.provider === "openai_compatible"
-      ? { reasoning: "none" as const }
-      : {}),
+    ...providerExtras(opts.provider),
     ...(messages
-      ? {
-          messages: messages.map((m) => {
-            if (m.role !== "user" || typeof m.content === "string") {
-              return m.role === "user" && typeof m.content === "string"
-                ? { ...m, content: `${m.content}\n\n${jsonHint}` }
-                : m;
-            }
-            return {
-              ...m,
-              content: [
-                ...m.content,
-                { type: "text" as const, text: jsonHint },
-              ],
-            };
-          }),
-        }
+      ? { messages: appendTextToMessages(messages, jsonHint) }
       : { prompt: `${promptBase}\n\n${jsonHint}` }),
   });
 
@@ -340,6 +489,8 @@ function publicJob(job: SongImportJob) {
     steps: job.steps,
     result: job.result,
     errorMessage: job.errorMessage,
+    cancelCode: job.cancelCode,
+    cancelReason: job.cancelReason,
   };
 }
 
@@ -574,9 +725,16 @@ export class SongImportService {
     try {
       await this.run(job, input);
     } catch (err) {
-      job.status = "failed";
-      job.errorMessage =
-        err instanceof Error ? err.message : "Import failed unexpectedly.";
+      if (err instanceof ImportCancelledError) {
+        job.status = "cancelled";
+        job.cancelCode = err.code;
+        job.cancelReason = err.message;
+        job.errorMessage = err.message;
+      } else {
+        job.status = "failed";
+        job.errorMessage =
+          err instanceof Error ? err.message : "Import failed unexpectedly.";
+      }
       job.updatedAt = Date.now();
     }
 
@@ -603,9 +761,11 @@ export class SongImportService {
 
     const extractPrompt = [
       "You are Logos, Hosanna's worship-song assistant.",
-      "Extract a ChordPro song from the attached sheet-music image (and note if a PDF was the source).",
-      "Call submit_song_draft with the result. Do not invent verses you cannot see — prefer shorter accurate content over hallucination.",
+      "Inspect the attached image (or PDF page screenshot).",
+      "If it is clearly NOT a usable song / chord-lyric sheet (random photo, blank page, blurry unreadable, menu, receipt, sermon notes without chords/lyrics, etc.), call cancel_import with a short reason.",
+      "If it IS a song sheet, call submit_song_draft with ChordPro content. Do not invent verses you cannot see.",
       "content MUST be valid ChordPro with {title}, {artist}, {key}, optional {tempo}/{time}, and lyric lines with [Chords].",
+      "Set confidence honestly (0-1).",
       input.fileName ? `Original filename: ${input.fileName}` : "",
       input.sourceType === "pdf"
         ? "Source type: PDF (image is a screenshot of page 1)."
@@ -614,7 +774,7 @@ export class SongImportService {
       .filter(Boolean)
       .join("\n");
 
-    const extractedDraft = await generateSongDraft({
+    const analysis = await analyzeSheetMusic({
       model,
       provider: runtime.provider,
       temperature: runtime.temperature ?? 0.2,
@@ -630,10 +790,30 @@ export class SongImportService {
       ],
     });
 
+    if (analysis.kind === "cancel") {
+      throw new ImportCancelledError(
+        analysis.cancel.code,
+        analysis.cancel.reason,
+      );
+    }
+
+    // Safety net: empty / near-empty "songs" should not proceed to review.
+    const lyricBody = analysis.draft.content
+      .replace(/\{[^}]+\}/g, "")
+      .replace(/\[[^\]]*\]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (lyricBody.length < 8) {
+      throw new ImportCancelledError(
+        "blank",
+        "Could not find readable lyrics or chords on this image.",
+      );
+    }
+
     markStep(job, "extract", "done");
     markStep(job, "metadata", "active");
 
-    let draft = toImportDraft(extractedDraft);
+    let draft = toImportDraft(analysis.draft);
 
     markStep(job, "metadata", "done");
     markStep(job, "verify", "active");
