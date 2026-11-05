@@ -21,10 +21,12 @@ songImportRouter.post(
       sourceType: req.body.sourceType,
       imageBase64: req.body.imageBase64,
       imageMimeType: req.body.imageMimeType,
+      imagesBase64: req.body.imagesBase64,
+      imageMimeTypes: req.body.imageMimeTypes,
       pdfBase64: req.body.pdfBase64,
       fileName: req.body.fileName,
     });
-    res.status(200).json(job);
+    res.status(202).json(job);
   }),
 );
 
@@ -34,5 +36,14 @@ songImportRouter.get(
   validate({ params: songImportJobIdParamSchema }),
   asyncHandler(async (req, res) => {
     res.json(service.getJob(req.orgId!, req.params.id));
+  }),
+);
+
+songImportRouter.delete(
+  "/jobs/:id",
+  requirePermission("song.import"),
+  validate({ params: songImportJobIdParamSchema }),
+  asyncHandler(async (req, res) => {
+    res.json(service.cancelJob(req.orgId!, req.params.id));
   }),
 );
