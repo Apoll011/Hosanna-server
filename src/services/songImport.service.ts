@@ -2,7 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateText, Output } from "ai";
+import { generateText, tool, type LanguageModel, type ModelMessage } from "ai";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { validateChordProContent } from "../mcp/lib/chordproGate.js";
@@ -55,15 +55,35 @@ type CreateInput = {
 };
 
 const draftSchema = z.object({
-  title: z.string().min(1),
-  artist: z.string().default(""),
-  key: z.string().optional(),
-  tempo: z.union([z.string(), z.number()]).optional(),
-  timeSignature: z.string().optional(),
-  content: z.string().min(1),
-  confidence: z.number().min(0).max(1).optional(),
-  notes: z.string().optional(),
+  title: z.string().min(1).describe("Song title"),
+  artist: z
+    .string()
+    .describe("Artist or songwriter; empty string if unknown"),
+  key: z.string().optional().describe("Musical key, e.g. G or Am"),
+  tempo: z
+    .union([z.string(), z.number()])
+    .optional()
+    .describe("Tempo marking or BPM"),
+  timeSignature: z.string().optional().describe("Time signature, e.g. 4/4"),
+  content: z
+    .string()
+    .min(1)
+    .describe(
+      "Full ChordPro body with {title}/{artist}/{key} and lyric lines with [Chords]",
+    ),
+  confidence: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .describe("Confidence 0-1 in the extraction"),
+  notes: z
+    .string()
+    .optional()
+    .describe("Short warning or note about uncertainty"),
 });
+
+type DraftFields = z.infer<typeof draftSchema>;
 
 const JOB_TTL_MS = 30 * 60 * 1000;
 const jobs = new Map<string, SongImportJob>();
@@ -88,8 +108,8 @@ function buildModel(
       return createGoogleGenerativeAI({ apiKey })(modelId);
     case "deepseek":
     case "openai_compatible": {
-      // DeepSeek + many OpenAI-compatible gateways reject json_schema
-      // ("This response_format type is unavailable now"). Use json_object.
+      // DeepSeek rejects json_schema response_format; structure via tool calls
+      // instead (same pattern as skyhack vision).
       const url = baseUrl || AI_PROVIDER_DEFAULT_BASE_URL[provider];
       if (!url) {
         throw AppError.badRequest(
@@ -115,6 +135,54 @@ function buildModel(
       return client.chat(modelId);
     }
   }
+}
+
+/**
+ * Force a structured draft via tool call — works on DeepSeek (no json_schema)
+ * and other OpenAI-compatible vision models, matching the skyhack approach.
+ */
+async function generateSongDraft(opts: {
+  model: LanguageModel;
+  temperature?: number;
+  maxOutputTokens?: number;
+  messages?: ModelMessage[];
+  prompt?: string;
+}): Promise<DraftFields> {
+  const result = await generateText({
+    model: opts.model,
+    temperature: opts.temperature,
+    maxOutputTokens: opts.maxOutputTokens,
+    ...(opts.messages
+      ? { messages: opts.messages }
+      : { prompt: opts.prompt ?? "" }),
+    tools: {
+      submit_song_draft: tool({
+        description:
+          "Submit the ChordPro song draft with title, artist, metadata, and content. Always call this tool with the final draft — do not reply with plain text or markdown JSON.",
+        inputSchema: draftSchema,
+      }),
+    },
+    toolChoice: { type: "tool", toolName: "submit_song_draft" },
+  });
+
+  const call = result.toolCalls.find((c) => c.toolName === "submit_song_draft");
+  if (call && "input" in call && call.input != null) {
+    return draftSchema.parse(call.input);
+  }
+
+  // Rare fallback if a provider ignores forced tool choice but returns JSON text.
+  const text = result.text?.trim() ?? "";
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fence?.[1]?.trim() || text;
+  try {
+    const parsed = draftSchema.safeParse(JSON.parse(candidate));
+    if (parsed.success) return parsed.data;
+  } catch {
+    /* not JSON */
+  }
+  throw new Error(
+    "Model returned no song draft tool call and text was not valid JSON.",
+  );
 }
 
 function initialSteps(): SongImportStep[] {
@@ -172,6 +240,24 @@ function publicJob(job: SongImportJob) {
 function stripDataUrl(raw: string): string {
   const idx = raw.indexOf("base64,");
   return idx >= 0 ? raw.slice(idx + "base64,".length) : raw;
+}
+
+function toImportDraft(
+  fields: DraftFields,
+  extraWarnings: string[] = [],
+): SongImportDraft {
+  const warnings = [...extraWarnings];
+  if (fields.notes) warnings.push(fields.notes);
+  return {
+    title: fields.title.trim(),
+    artist: (fields.artist || "").trim(),
+    content: fields.content.trim(),
+    key: fields.key?.toString(),
+    tempo: fields.tempo?.toString(),
+    timeSignature: fields.timeSignature,
+    confidence: fields.confidence,
+    warnings,
+  };
 }
 
 export class SongImportService {
@@ -242,9 +328,8 @@ export class SongImportService {
     const extractPrompt = [
       "You are Logos, Hosanna's worship-song assistant.",
       "Extract a ChordPro song from the attached sheet-music image (and note if a PDF was the source).",
-      "Return a JSON object with fields: title, artist, key, tempo, timeSignature, content, confidence (0-1), notes.",
+      "Call submit_song_draft with the result. Do not invent verses you cannot see — prefer shorter accurate content over hallucination.",
       "content MUST be valid ChordPro with {title}, {artist}, {key}, optional {tempo}/{time}, and lyric lines with [Chords].",
-      "Do not invent verses you cannot see — prefer shorter accurate content over hallucination.",
       input.fileName ? `Original filename: ${input.fileName}` : "",
       input.sourceType === "pdf"
         ? "Source type: PDF (image is a screenshot of page 1)."
@@ -253,9 +338,8 @@ export class SongImportService {
       .filter(Boolean)
       .join("\n");
 
-    const extracted = await generateText({
+    const extractedDraft = await generateSongDraft({
       model,
-      output: Output.object({ schema: draftSchema }),
       temperature: runtime.temperature ?? 0.2,
       maxOutputTokens: runtime.maxOutputTokens ?? 4096,
       messages: [
@@ -268,27 +352,11 @@ export class SongImportService {
         },
       ],
     });
-    const extractedDraft = extracted.output;
-    if (!extractedDraft) {
-      throw new Error("Model returned no structured song draft.");
-    }
 
     markStep(job, "extract", "done");
     markStep(job, "metadata", "active");
 
-    let draft: SongImportDraft = {
-      title: extractedDraft.title.trim(),
-      artist: (extractedDraft.artist || "").trim(),
-      content: extractedDraft.content.trim(),
-      key: extractedDraft.key?.toString(),
-      tempo: extractedDraft.tempo?.toString(),
-      timeSignature: extractedDraft.timeSignature,
-      confidence: extractedDraft.confidence,
-      warnings: [],
-    };
-    if (extractedDraft.notes) {
-      draft.warnings.push(extractedDraft.notes);
-    }
+    let draft = toImportDraft(extractedDraft);
 
     markStep(job, "metadata", "done");
     markStep(job, "verify", "active");
@@ -315,8 +383,8 @@ export class SongImportService {
       const verifyPrompt = [
         "You are Logos verifying a ChordPro draft against web search hits.",
         "Correct obvious OCR mistakes in title/artist/lyrics/chords when the web evidence is clear.",
-        "If the web does not confirm the song, keep the visual draft and set a lower confidence; add a short warning.",
-        "Return a JSON object with fields: title, artist, key, tempo, timeSignature, content, confidence (0-1), notes.",
+        "If the web does not confirm the song, keep the visual draft and set a lower confidence; add a short warning in notes.",
+        "Call submit_song_draft with the improved draft.",
         "",
         `Draft title: ${draft.title}`,
         `Draft artist: ${draft.artist}`,
@@ -329,47 +397,32 @@ export class SongImportService {
         snippets || "(none)",
       ].join("\n");
 
-      const verified = await generateText({
+      const verifiedDraft = await generateSongDraft({
         model,
-        output: Output.object({ schema: draftSchema }),
         temperature: 0.1,
         maxOutputTokens: runtime.maxOutputTokens ?? 4096,
         prompt: verifyPrompt,
       });
-      const verifiedDraft = verified.output;
-      if (!verifiedDraft) {
-        throw new Error("Model returned no verified song draft.");
-      }
 
-      draft = {
-        title: verifiedDraft.title.trim() || draft.title,
-        artist: (verifiedDraft.artist || draft.artist).trim(),
-        content: verifiedDraft.content.trim() || draft.content,
-        key: verifiedDraft.key?.toString() || draft.key,
-        tempo: verifiedDraft.tempo?.toString() || draft.tempo,
-        timeSignature: verifiedDraft.timeSignature || draft.timeSignature,
-        confidence: verifiedDraft.confidence ?? draft.confidence,
-        warnings: [
-          ...draft.warnings,
-          ...(verifiedDraft.notes ? [verifiedDraft.notes] : []),
-          `Verified against web (${search.provider}).`,
-        ],
-      };
+      draft = toImportDraft(verifiedDraft, [
+        ...draft.warnings,
+        `Verified against web (${search.provider}).`,
+      ]);
+      // Prefer non-empty prior fields if the verify pass blanks them.
+      draft.title = draft.title || extractedDraft.title.trim();
+      draft.artist = draft.artist || (extractedDraft.artist || "").trim();
+      draft.content = draft.content || extractedDraft.content.trim();
+      draft.key = draft.key || extractedDraft.key?.toString();
+      draft.tempo = draft.tempo || extractedDraft.tempo?.toString();
+      draft.timeSignature =
+        draft.timeSignature || extractedDraft.timeSignature;
+      draft.confidence = draft.confidence ?? extractedDraft.confidence;
     } catch (err) {
       draft.warnings.push(
         `Online verification skipped: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
-      // Lightweight second pass without web if search failed completely.
-      try {
-        await generateText({
-          model,
-          prompt: `Briefly sanity-check this ChordPro title "${draft.title}" — reply OK.`,
-        });
-      } catch {
-        /* ignore */
-      }
     }
 
     markStep(job, "verify", "done");
