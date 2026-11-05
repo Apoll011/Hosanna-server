@@ -187,6 +187,11 @@ export const auth = betterAuth({
     "https://*.cursor.com",
     "https://*.cursor.sh",
   ],
+  // OAuth cancel/callback failures must land in Studio, not Better Auth's
+  // built-in /api/auth/error page (dev-only UX).
+  onAPIError: {
+    errorURL: `${appUrl.replace(/\/+$/, "")}/auth/error`,
+  },
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,
@@ -792,9 +797,13 @@ export const auth = betterAuth({
       ipAddressHeaders: ["cf-connecting-ip", "x-forwarded-for"],
     },
     cookiePrefix: "hosanna",
+    // Studio (studio.hosanna.live) and API are different origins; SameSite=None
+    // + Secure is required for credentialed cross-origin requests. CSRF is
+    // still covered by Better Auth origin checks + trustedOrigins.
     defaultCookieAttributes: {
-      sameSite: env.devMode ? "None" : "Lax",
+      sameSite: "none",
       secure: true,
+      httpOnly: true,
     },
     crossSubDomainCookies: {
       enabled: true,

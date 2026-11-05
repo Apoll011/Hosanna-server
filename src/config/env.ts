@@ -19,7 +19,7 @@ export const env = {
   // ── Server ──────────────────────────────────────────────────────────────
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: parseInt(process.env.PORT ?? "3000", 10),
-  /** Set DEV_MODE=true in .env to use sameSite: None cookies locally. */
+  /** Legacy local flag; cookie SameSite is always `none`+`secure` for cross-origin Studio↔API. */
   devMode: process.env.DEV_MODE === "true",
   /** Vercel Fluid / serverless runtime. */
   isVercel,
