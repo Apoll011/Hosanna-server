@@ -27,7 +27,7 @@ export const AI_MODEL_PRESETS: Record<AiProvider, string[]> = {
     "claude-opus-4-5",
   ],
   google: ["gemini-2.5-flash", "gemini-2.5-pro"],
-  deepseek: ["deepseek-chat", "deepseek-reasoner"],
+  deepseek: ["deepseek-flash", "deepseek-chat", "deepseek-reasoner"],
   openai_compatible: ["gpt-4o-mini", "llama-3.3-70b", "qwen-plus"],
 };
 
