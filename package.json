@@ -25,11 +25,11 @@
     "@ai-sdk/google": "^4.0.108",
     "@ai-sdk/openai": "^4.0.105",
     "@ai-sdk/openai-compatible": "^3.0.84",
-    "@better-auth/cimd": "^1.7.14",
-    "@better-auth/i18n": "^1.7.14",
-    "@better-auth/infra": "^0.4.5",
-    "@better-auth/mcp": "^1.7.14",
-    "@better-auth/stripe": "^1.7.14",
+    "@better-auth/cimd": "^1.7.18",
+    "@better-auth/i18n": "^1.7.18",
+    "@better-auth/infra": "^0.4.27",
+    "@better-auth/mcp": "^1.7.18",
+    "@better-auth/stripe": "^1.7.18",
     "@hosanna/chordpro": "^1.7.2",
     "@modelcontextprotocol/node": "^2.1.2",
     "@modelcontextprotocol/server": "^2.4.0",
@@ -38,7 +38,7 @@
     "@supabase/supabase-js": "^2.49.0",
     "@vercel/functions": "^3.9.9",
     "ai": "^7.0.157",
-    "better-auth": "^1.7.14",
+    "better-auth": "^1.7.18",
     "better-inbox": "^0.1.2",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
@@ -70,6 +70,6 @@
     "yaml": "^2.9.1"
   },
   "overrides": {
-    "better-call": "1.4.4"
+    "better-call": "1.4.5"
   }
 }

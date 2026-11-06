@@ -312,10 +312,10 @@ model Account {
   password              String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
+  /// Legacy Better Auth 1.7.0–1.7.2 column; ≥1.7.3 no longer writes it.
+  issuer                String?
 
-  issuer String
-
-  @@unique([issuer, accountId], map: "account_issuer_accountId_uidx")
+  @@unique([providerId, accountId])
   @@index([userId])
   @@map("account")
 }

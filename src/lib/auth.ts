@@ -1,11 +1,11 @@
+import { cimd } from "@better-auth/cimd";
+import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import { i18n, locales } from "@better-auth/i18n";
 import { dash, sentinel } from "@better-auth/infra";
+import { mcp } from "@better-auth/mcp";
 import { stripe } from "@better-auth/stripe";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { betterAuth } from "better-auth/minimal";
-import { cimd } from "@better-auth/cimd";
-import { fetchClientMetadataResource } from "@better-auth/cimd/node";
-import { mcp } from "@better-auth/mcp";
 import {
   admin,
   bearer,
@@ -187,6 +187,11 @@ export const auth = betterAuth({
     "https://*.cursor.com",
     "https://*.cursor.sh",
   ],
+  // OAuth cancel/callback failures must land in Studio, not Better Auth's
+  // built-in /api/auth/error page (dev-only UX).
+  onAPIError: {
+    errorURL: `${appUrl.replace(/\/+$/, "")}/auth/error`,
+  },
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,
@@ -792,9 +797,13 @@ export const auth = betterAuth({
       ipAddressHeaders: ["cf-connecting-ip", "x-forwarded-for"],
     },
     cookiePrefix: "hosanna",
+    // Studio (studio.hosanna.live) and API are different origins; SameSite=None
+    // + Secure is required for credentialed cross-origin requests. CSRF is
+    // still covered by Better Auth origin checks + trustedOrigins.
     defaultCookieAttributes: {
-      sameSite: env.devMode ? "None" : "Lax",
+      sameSite: "none",
       secure: true,
+      httpOnly: true,
     },
     crossSubDomainCookies: {
       enabled: true,
@@ -856,6 +865,16 @@ export const auth = betterAuth({
         type: "boolean",
         defaultValue: false,
       },
+    },
+  },
+  // Link Google to an existing user with the same verified email (covers
+  // orphan users left when account.create failed on required `issuer`).
+  account: {
+    accountLinking: {
+      enabled: true,
+      trustedProviders: ["google"],
+      // Local email may be unverified after a partial sign-up failure.
+      requireLocalEmailVerified: false,
     },
   },
   rateLimit: {
